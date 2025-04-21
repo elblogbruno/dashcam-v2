@@ -45,9 +45,30 @@ class CameraManager:
             # Try to import picamera2 for road camera (Raspberry Pi Camera Module)
             try:
                 from picamera2 import Picamera2
-                self.road_camera = Picamera2()
-                self.road_camera.configure(self.road_camera.create_video_configuration())
-                logger.info("Initialized road camera with Picamera2")
+                # Agregamos un timeout para evitar bloqueos
+                import signal
+                
+                # Función para manejar timeout
+                def timeout_handler(signum, frame):
+                    raise TimeoutError("Camera initialization timed out")
+                
+                # Configuramos un timeout de 10 segundos
+                signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(10)
+                
+                try:
+                    self.road_camera = Picamera2()
+                    self.road_camera.configure(self.road_camera.create_video_configuration())
+                    logger.info("Initialized road camera with Picamera2")
+                except TimeoutError as e:
+                    logger.error(f"Timeout initializing PiCamera2: {str(e)}")
+                    self.camera_errors.append(f"PiCamera2 initialization timeout: {str(e)}")
+                    self.road_camera = None
+                    raise ImportError("Falling back to OpenCV due to PiCamera2 timeout")
+                finally:
+                    # Desactivamos el timeout
+                    signal.alarm(0)
+                
             except (ImportError, ModuleNotFoundError):
                 # Fallback to OpenCV for road camera
                 import cv2

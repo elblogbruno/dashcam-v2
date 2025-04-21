@@ -71,16 +71,33 @@ trap cleanup SIGINT SIGTERM
 # Start backend server
 echo "Starting backend server..."
 cd backend
-python main.py &
+python main.py > ../backend_log.txt 2>&1 &
 BACKEND_PID=$!
 cd ..
 
 # Wait for backend to start
 sleep 2
 
-# Check if backend started successfully
+# Check if backend started successfully and log the result
 if ! kill -0 $BACKEND_PID 2>/dev/null; then
-  echo "Error: Backend failed to start."
+  echo "Error: Backend failed to start. Check backend_log.txt for details."
+  echo "This could be related to camera access issues."
+  
+  # Check for camera permissions
+  if [ -c /dev/vchiq ]; then
+    echo "Checking camera access permissions..."
+    if ! groups | grep -q "video"; then
+      echo "Warning: Current user might not have access to the camera."
+      echo "Consider running with: sudo -u pi ./start.sh"
+    else
+      echo "User has video group permissions."
+    fi
+  fi
+  
+  # Still show the logs to make debugging easier
+  echo "Last 20 lines of backend logs:"
+  tail -n 20 backend_log.txt
+  
   exit 1
 fi
 
