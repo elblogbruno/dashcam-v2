@@ -303,12 +303,70 @@ except Exception as e:
 @app.on_event("shutdown")
 async def shutdown_event():
     logger.info("Evento de apagado ejecutándose...")
+    
+    # Cerrar los clientes WebSocket de forma ordenada
+    for websocket in list(connected_clients):
+        try:
+            await websocket.close()
+            logger.info("Conexión WebSocket cerrada correctamente")
+        except Exception as e:
+            logger.warning(f"Error al cerrar conexión WebSocket: {e}")
+    connected_clients.clear()
+    
     # Stop the settings manager's watcher thread
+    logger.info("Deteniendo el administrador de configuración...")
     settings_manager.stop()
     
-    # Perform any other necessary cleanup
-    if camera_manager:
-        camera_manager.cleanup()
+    # Limpiar cada componente individual con manejo de excepciones
+    try:
+        if camera_manager:
+            logger.info("Limpiando recursos de CameraManager...")
+            camera_manager.cleanup()
+    except Exception as e:
+        logger.error(f"Error al limpiar CameraManager: {e}")
+    
+    try:
+        if gps_reader:
+            logger.info("Limpiando recursos de GPSReader...")
+            gps_reader.cleanup()
+    except Exception as e:
+        logger.error(f"Error al limpiar GPSReader: {e}")
+        
+    try:
+        if trip_logger:
+            logger.info("Limpiando recursos de TripLogger...")
+            trip_logger.cleanup()
+    except Exception as e:
+        logger.error(f"Error al limpiar TripLogger: {e}")
+        
+    try:
+        if audio_notifier:
+            logger.info("Limpiando recursos de AudioNotifier...")
+            audio_notifier.cleanup()
+    except Exception as e:
+        logger.error(f"Error al limpiar AudioNotifier: {e}")
+        
+    try:
+        if video_maker:
+            logger.info("Limpiando recursos de VideoMaker...")
+            video_maker.cleanup()
+    except Exception as e:
+        logger.error(f"Error al limpiar VideoMaker: {e}")
+        
+    try:
+        if shutdown_monitor:
+            logger.info("Deteniendo ShutdownMonitor...")
+            shutdown_monitor.stop()
+    except Exception as e:
+        logger.error(f"Error al detener ShutdownMonitor: {e}")
+        
+    try:
+        if disk_manager:
+            logger.info("Limpiando recursos de DiskManager...")
+            disk_manager.cleanup()
+    except Exception as e:
+        logger.error(f"Error al limpiar DiskManager: {e}")
+    
     logger.info("Evento de apagado completado")
 
 if __name__ == "__main__":

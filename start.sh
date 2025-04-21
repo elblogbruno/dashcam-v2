@@ -92,8 +92,8 @@ echo "Iniciando servidor backend..."
 # Eliminar logs anteriores
 > backend_log.txt
 cd backend
-# Lanzar el servidor
-python3 main.py > ../backend_log.txt 2>&1 &
+# Lanzar el servidor - CAMBIADO PARA USAR start_server.py
+python3 start_server.py > ../backend_log.txt 2>&1 &
 BACKEND_PID=$!
 cd ..
 
@@ -119,7 +119,7 @@ while [ $(($(date +%s) - START_TIME)) -lt $MAX_WAIT ]; do
     break
   else
     # Check logs for useful information
-    if grep -q "Iniciando servidor Uvicorn en puerto 8000" backend_log.txt; then
+    if grep -q "INICIANDO SERVIDOR FASTAPI DESDE SCRIPT INDEPENDIENTE" backend_log.txt; then
       echo "El servidor Uvicorn ha iniciado, esperando a que esté listo..."
     elif grep -q "Error fatal al iniciar Uvicorn" backend_log.txt; then
       echo "Error: Falló el inicio de Uvicorn."
