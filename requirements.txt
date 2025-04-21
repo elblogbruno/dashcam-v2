@@ -1,0 +1,17 @@
+fastapi[standard]>=0.95.0
+uvicorn>=0.21.1
+websockets>=11.0.1
+python-multipart>=0.0.6
+aiofiles>=23.1.0
+opencv-python>=4.7.0.72
+numpy>=1.24.2
+Pillow>=9.5.0
+pyttsx3>=2.90
+moviepy>=1.0.3
+python-dateutil>=2.8.2
+requests>=2.28.2
+psutil>=2023.3.0
+# Optional dependencies based on platform
+# RPi.GPIO>=0.7.1  # Raspberry Pi GPIO
+# gpiozero>=1.6.2  # Alternative GPIO library
+# picamera2>=0.0.1 # Raspberry Pi camera

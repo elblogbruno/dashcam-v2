@@ -1,0 +1,21 @@
+# Ignore node_modules and build directories
+frontend/dist
+frontend/node_modules
+
+venv
+
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+*.db
+*.sqlite3
+*.log
+*.env
+*.DS_Store
+*.egg-info/
+*.egg
+*.coverage
+*.cover
+*.mypy_cache/
+
