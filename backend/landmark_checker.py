@@ -4,9 +4,10 @@ import math
 import logging
 from datetime import datetime
 from data_persistence import get_persistence_manager
+from landmarks_db import LandmarksDB
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime%s - %(name)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 class LandmarkChecker:
@@ -22,55 +23,40 @@ class LandmarkChecker:
         data_path = os.environ.get('DASHCAM_DATA_PATH', os.path.join(os.path.dirname(__file__), 'data'))
         self.landmarks_file = landmarks_file or os.environ.get('DASHCAM_LANDMARKS_PATH') or os.path.join(data_path, 'landmarks.json')
         
+        # Initialize the landmarks database
+        self.landmarks_db = LandmarksDB()
+        
+        # Import existing landmarks from JSON file to the new database
+        self._migrate_json_to_db()
+        
         # Load landmarks
         self.load_landmarks()
         
-    def load_landmarks(self, file_path=None):
-        """Load landmarks from JSON file"""
+    def _migrate_json_to_db(self):
+        """Migrate existing landmarks from JSON to the new database"""
         try:
-            file_to_load = file_path or self.landmarks_file
-            
-            # Create directory if it doesn't exist
-            os.makedirs(os.path.dirname(file_to_load), exist_ok=True)
-            
-            # If file doesn't exist, create it with sample data
-            if not os.path.exists(file_to_load):
-                sample_landmarks = [
-                    {
-                        "id": "gc1",
-                        "name": "Grand Canyon",
-                        "lat": 36.1,
-                        "lon": -112.1,
-                        "radius_m": 500,
-                        "description": "A steep-sided canyon carved by the Colorado River",
-                        "category": "natural"
-                    },
-                    {
-                        "id": "hs1",
-                        "name": "Hoover Dam",
-                        "lat": 36.0162,
-                        "lon": -114.7377,
-                        "radius_m": 300,
-                        "description": "A concrete arch-gravity dam in the Black Canyon of the Colorado River",
-                        "category": "infrastructure"
-                    }
-                ]
+            if os.path.exists(self.landmarks_file):
+                logger.info(f"Migrating landmarks from {self.landmarks_file} to database")
+                count = self.landmarks_db.import_from_json(self.landmarks_file)
                 
-                # Use persistence manager to save sample data
-                self.persistence.save_json(sample_landmarks, os.path.basename(file_to_load), 
-                                          os.path.dirname(file_to_load))
-                logger.info(f"Created sample landmarks file at {file_to_load}")
-                
-            # Use persistence manager to load the landmarks
-            if os.path.basename(file_to_load) == 'landmarks.json' and os.path.dirname(file_to_load) == self.persistence.data_dir:
-                # If it's directly in the data directory, use simple load
-                self.landmarks = self.persistence.load_json('landmarks.json', default=[])
-            else:
-                # Otherwise, load from the specific path
-                with open(file_to_load, 'r') as f:
-                    self.landmarks = json.load(f)
-                
-            logger.info(f"Loaded {len(self.landmarks)} landmarks")
+                if count > 0:
+                    # Create backup of the original file
+                    backup_path = f"{self.landmarks_file}.migrated"
+                    try:
+                        import shutil
+                        shutil.copy2(self.landmarks_file, backup_path)
+                        logger.info(f"Created backup of landmarks file at {backup_path}")
+                    except Exception as e:
+                        logger.error(f"Failed to create backup of landmarks file: {str(e)}")
+        except Exception as e:
+            logger.error(f"Error during landmark migration: {str(e)}")
+        
+    def load_landmarks(self, file_path=None):
+        """Load landmarks from database"""
+        try:
+            # Load landmarks from the database
+            self.landmarks = self.landmarks_db.get_all_landmarks()
+            logger.info(f"Loaded {len(self.landmarks)} landmarks from database")
                 
         except Exception as e:
             logger.error(f"Error loading landmarks: {str(e)}")
@@ -79,100 +65,34 @@ class LandmarkChecker:
             
     def check_nearby(self, lat, lon, max_distance=None):
         """Check if vehicle is near any landmarks, return details of closest one within radius"""
-        if not lat or not lon:
-            return None
-            
-        closest_landmark = None
-        min_distance = float('inf')
-        
-        for landmark in self.landmarks:
-            try:
-                # Calculate distance from current location to landmark
-                distance = self._calculate_distance(
-                    lat, lon, 
-                    landmark['lat'], landmark['lon']
-                )
-                
-                # Check if within landmark's radius
-                landmark_radius = landmark.get('radius_m', 500)  # Default 500m if not specified
-                
-                # Apply max_distance override if provided
-                if max_distance is not None:
-                    landmark_radius = min(landmark_radius, max_distance)
-                    
-                if distance <= landmark_radius:
-                    # If found multiple landmarks within radius, pick the closest one
-                    if distance < min_distance:
-                        min_distance = distance
-                        
-                        # Copy landmark data and add distance
-                        closest_landmark = landmark.copy()
-                        closest_landmark['distance'] = distance
-                        
-                        # Check notification cooldown
-                        landmark_id = landmark.get('id', f"{landmark['lat']},{landmark['lon']}")
-                        current_time = datetime.now().timestamp()
-                        
-                        # Only mark for notification if cooldown expired or first time
-                        if (landmark_id not in self.last_notified or 
-                                current_time - self.last_notified[landmark_id] > self.notification_cooldown):
-                            closest_landmark['notify'] = True
-                            self.last_notified[landmark_id] = current_time
-                        else:
-                            closest_landmark['notify'] = False
-            except Exception as e:
-                logger.error(f"Error checking landmark {landmark.get('name', 'unknown')}: {str(e)}")
-                
-        return closest_landmark
+        return self.landmarks_db.check_nearby(lat, lon, max_distance)
 
     def get_landmarks_in_area(self, center_lat, center_lon, radius_km=10):
         """Get all landmarks within a specific area (for map displays)"""
-        if not center_lat or not center_lon:
-            return []
-            
-        nearby_landmarks = []
+        return self.landmarks_db.get_landmarks_in_area(center_lat, center_lon, radius_km)
         
-        for landmark in self.landmarks:
-            try:
-                # Calculate distance
-                distance = self._calculate_distance(
-                    center_lat, center_lon,
-                    landmark['lat'], landmark['lon']
-                )
-                
-                # Convert to km and check radius
-                if distance / 1000 <= radius_km:
-                    landmark_copy = landmark.copy()
-                    landmark_copy['distance'] = distance
-                    nearby_landmarks.append(landmark_copy)
-            except Exception as e:
-                logger.error(f"Error in area search for landmark {landmark.get('name', 'unknown')}: {str(e)}")
-                
-        return nearby_landmarks
-        
-    def add_landmark(self, name, lat, lon, radius_m=500, description="", category="custom"):
+    def add_landmark(self, name, lat, lon, radius_m=500, description="", category="custom", trip_id=None):
         """Add a new landmark"""
         try:
-            # Create a unique ID
-            import uuid
-            landmark_id = str(uuid.uuid4())[:8]
-            
-            new_landmark = {
-                "id": landmark_id,
+            # Create landmark object
+            landmark = {
                 "name": name,
                 "lat": lat,
                 "lon": lon,
                 "radius_m": radius_m,
                 "description": description,
-                "category": category
+                "category": category,
+                "trip_id": trip_id
             }
             
-            self.landmarks.append(new_landmark)
+            # Add to database
+            result = self.landmarks_db.add_landmark(landmark)
             
-            # Save to file
-            self._save_landmarks()
+            # Reload landmarks
+            if result:
+                self.load_landmarks()
             
-            return new_landmark
+            return result
         except Exception as e:
             logger.error(f"Error adding landmark: {str(e)}")
             return None
@@ -180,30 +100,38 @@ class LandmarkChecker:
     def remove_landmark(self, landmark_id):
         """Remove a landmark by ID"""
         try:
-            original_count = len(self.landmarks)
-            self.landmarks = [lm for lm in self.landmarks if lm.get('id') != landmark_id]
+            # Remove from database
+            result = self.landmarks_db.remove_landmark(landmark_id)
             
-            if len(self.landmarks) < original_count:
-                # Save changes
-                self._save_landmarks()
-                return True
-            return False
+            # Reload landmarks
+            if result:
+                self.load_landmarks()
+                
+            return result
         except Exception as e:
             logger.error(f"Error removing landmark: {str(e)}")
             return False
+    
+    def remove_trip_landmarks(self, trip_id):
+        """Remove all landmarks associated with a trip"""
+        try:
+            # Remove from database
+            count = self.landmarks_db.remove_trip_landmarks(trip_id)
+            
+            # Reload landmarks
+            if count > 0:
+                self.load_landmarks()
+                
+            return count
+        except Exception as e:
+            logger.error(f"Error removing trip landmarks: {str(e)}")
+            return 0
             
     def _save_landmarks(self):
-        """Save landmarks to file"""
+        """Save landmarks to JSON file (legacy function for backward compatibility)"""
         try:
-            # Use persistence manager to save the landmarks
-            if os.path.basename(self.landmarks_file) == 'landmarks.json' and os.path.dirname(self.landmarks_file) == self.persistence.data_dir:
-                # If it's directly in the data directory, use simple save
-                return self.persistence.save_json(self.landmarks, 'landmarks.json')
-            else:
-                # Otherwise, save to the specific path
-                with open(self.landmarks_file, 'w') as f:
-                    json.dump(self.landmarks, f, indent=2)
-                return True
+            # Export to JSON file
+            return self.landmarks_db.export_to_json(self.landmarks_file)
         except Exception as e:
             logger.error(f"Error saving landmarks: {str(e)}")
             return False
@@ -229,3 +157,28 @@ class LandmarkChecker:
         distance = R * c
         
         return distance
+
+    def get_recording_quality_for_position(self, lat, lon):
+        """
+        Determina qué calidad de grabación usar según la proximidad a landmarks importantes
+        
+        Args:
+            lat: latitud actual
+            lon: longitud actual
+            
+        Returns:
+            quality: "high" si estamos cerca de un landmark, "normal" en caso contrario
+        """
+        try:
+            # Buscar landmarks cercanos (dentro de 200 metros)
+            nearby = self.check_nearby(lat, lon, max_distance=200)
+            
+            if nearby:
+                # Si hay algún landmark cercano, usar calidad alta
+                logger.info(f"Cambiando calidad a ALTA por proximidad a landmark: {nearby['name']}")
+                return "high", nearby
+            
+            return "normal", None
+        except Exception as e:
+            logger.error(f"Error determinando calidad de grabación: {str(e)}")
+            return "normal", None

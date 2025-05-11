@@ -577,3 +577,25 @@ class DiskManager:
         except Exception as e:
             logger.error(f"Error updating settings: {str(e)}")
             return False
+
+    def cleanup(self):
+        """Clean up resources properly before shutdown"""
+        logger.info("Cleaning up DiskManager resources")
+        
+        # Save any pending settings
+        try:
+            self.save_settings()
+            logger.info("Settings saved successfully during cleanup")
+        except Exception as e:
+            logger.error(f"Error saving settings during cleanup: {str(e)}")
+        
+        # Check if we need to unmount the drive on shutdown
+        try:
+            disk_info = self.get_disk_info()
+            if disk_info["mounted"]:
+                logger.info("Unmounting drive during cleanup...")
+                self.unmount_drive()
+        except Exception as e:
+            logger.error(f"Error unmounting drive during cleanup: {str(e)}")
+            
+        logger.info("DiskManager cleanup completed")

@@ -327,3 +327,20 @@ class VideoMaker:
         except Exception as e:
             logger.error(f"Error extracting landmark clips: {str(e)}")
             return None
+
+    def cleanup(self):
+        """Clean up resources before shutdown"""
+        logger.info("Cleaning up VideoMaker resources")
+        
+        # Cancel any running asyncio tasks
+        try:
+            # Get all running tasks
+            for task in asyncio.all_tasks():
+                if not task.done() and task != asyncio.current_task():
+                    # Cancel the task
+                    task.cancel()
+                    logger.info("Cancelled running video processing task")
+        except Exception as e:
+            logger.error(f"Error cancelling video tasks: {str(e)}")
+            
+        logger.info("VideoMaker cleanup completed")

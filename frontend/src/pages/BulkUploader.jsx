@@ -271,7 +271,7 @@ function BulkUploader() {
               onChange={() => setUseFileDate(!useFileDate)}
               className="mr-2"
             />
-            <label htmlFor="useFileDate">
+            <label htmlFor="useFileDate" className="text-gray-800">
               Try to extract date from filenames (if possible)
             </label>
           </div>

@@ -381,7 +381,7 @@ function StorageManager() {
                     onChange={e => handleSettingChange('autoCleanEnabled', e.target.checked)}
                     className="mr-2"
                   />
-                  <label htmlFor="autoCleanEnabled" className="font-medium">
+                  <label htmlFor="autoCleanEnabled" className="font-medium text-gray-800">
                     Enable Automatic Cleanup
                   </label>
                 </div>

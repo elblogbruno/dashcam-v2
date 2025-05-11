@@ -102,8 +102,9 @@ function RealTimeMap() {
   const socketRef = useRef(null)
   const mapRef = useRef(null)
 
-  // Load active trip from localStorage if available
+  // Load active trip info and check if there's an active trip already running
   useEffect(() => {
+    // Load planned trip from localStorage if available
     const savedTrip = localStorage.getItem('activeTrip')
     if (savedTrip) {
       try {
@@ -113,6 +114,49 @@ function RealTimeMap() {
         console.error('Error parsing saved trip:', e)
       }
     }
+    
+    // Check if there's an active trip already running
+    const checkActiveTrip = async () => {
+      try {
+        const response = await fetch('/api/trips/active')
+        const data = await response.json()
+        
+        if (data.status === 'success' && data.active_trip) {
+          setIsRecording(true)
+          setTripId(data.active_trip.trip_id)
+          
+          if (data.active_trip.planned_trip_id) {
+            // If there's a planned trip ID, try to load that planned trip
+            try {
+              const tripResponse = await fetch(`/api/trip-planner/${data.active_trip.planned_trip_id}`)
+              const tripData = await tripResponse.json()
+              if (tripData) {
+                setActiveTrip(tripData)
+                localStorage.setItem('activeTrip', JSON.stringify(tripData))
+                
+                // Show a notification that there's an active trip
+                setTimeout(() => {
+                  alert(`¡Estás en un viaje activo: ${tripData.name}!\nLa grabación está en curso.`);
+                }, 500);
+              }
+            } catch (err) {
+              console.error('Error loading active planned trip:', err)
+            }
+          } else {
+            // If there's a trip without planned data
+            setTimeout(() => {
+              alert('¡Hay un viaje activo actualmente!\nLa grabación está en curso.');
+            }, 500);
+          }
+          
+          setStatusMessage('Viaje activo en curso')
+        }
+      } catch (err) {
+        console.error('Error checking for active trip:', err)
+      }
+    }
+    
+    checkActiveTrip()
   }, [])
   
   // Update navigation status when position changes
@@ -280,19 +324,29 @@ function RealTimeMap() {
   
   // Function to end current trip
   const endTrip = async () => {
+    // Confirmar con el usuario que realmente quiere finalizar el viaje
+    const tripName = activeTrip ? activeTrip.name : "actual";
+    if (!window.confirm(`¿Estás seguro de que quieres finalizar el viaje ${tripName}?\n\nSe detendrá la grabación y se guardarán todos los datos del viaje.`)) {
+      return;
+    }
+    
     try {
-      setStatusMessage('Ending trip...')
-      await axios.post('/api/trips/end', { trip_id: tripId })
+      setStatusMessage('Finalizando viaje...')
+      await axios.post('/api/trips/end')
       setIsRecording(false)
       setTripId(null)
-      setStatusMessage('Trip ended successfully')
+      setStatusMessage('Viaje finalizado correctamente')
       
       // Clear active trip
       localStorage.removeItem('activeTrip')
       setActiveTrip(null)
+      
+      // Mostrar un mensaje de confirmación
+      alert('El viaje ha sido finalizado correctamente');
     } catch (error) {
-      console.error('Error ending trip:', error)
-      setStatusMessage('Failed to end trip')
+      console.error('Error al finalizar el viaje:', error)
+      setStatusMessage('Error al finalizar el viaje')
+      alert('Error al finalizar el viaje: ' + error.message);
     }
   }
   
@@ -361,11 +415,7 @@ function RealTimeMap() {
 
   // Format distance for display
   const formatDistance = (meters) => {
-    if (meters < 1000) {
-      return `${Math.round(meters)}m`;
-    } else {
-      return `${(meters / 1000).toFixed(1)}km`;
-    }
+    return meters < 1000 ? `${Math.round(meters)}m` : `${(meters / 1000).toFixed(1)}km`;
   }
 
   // Generate planned route points for Polyline
@@ -407,10 +457,19 @@ function RealTimeMap() {
   return (
     <div className="flex flex-col h-full">
       {/* Status bar */}
-      <div className="bg-dashcam-800 text-white p-2 flex items-center justify-between">
+      <div className="bg-dashcam-800 text-white p-2 flex items-center justify-between fixed top-0 left-0 right-0 z-10">
         <div className="flex items-center space-x-2">
-          <div className={`w-3 h-3 rounded-full ${connectionStatus === 'connected' ? 'bg-green-500' : 'bg-red-500'}`}></div>
-          <span className="text-sm">{statusMessage}</span>
+          {isRecording ? (
+            <div className="flex items-center bg-green-700 text-white px-3 py-1 rounded-full">
+              <div className="w-3 h-3 rounded-full bg-red-500 animate-pulse mr-2"></div>
+              <span className="text-sm font-medium">Grabando</span>
+            </div>
+          ) : (
+            <>
+              <div className={`w-3 h-3 rounded-full ${connectionStatus === 'connected' ? 'bg-green-500' : 'bg-red-500'}`}></div>
+              <span className="text-sm">{statusMessage || 'Esperando'}</span>
+            </>
+          )}
         </div>
         
         <div className="flex items-center space-x-4">
@@ -665,46 +724,46 @@ function RealTimeMap() {
           <div className="z-10">
           {/* GPS warning message */}
           {!position && (
-            <div className="absolute top-4 left-0 right-0 flex justify-center pointer-events-none">
+            <div className="absolute top-16 left-0 right-0 flex justify-center pointer-events-none">
               <div className="bg-yellow-500 text-white py-2 px-4 rounded-lg flex items-center shadow-lg">
                 <FaExclamationTriangle className="mr-2" />
-                <span>Waiting for GPS signal...</span>
+                <span>Esperando señal GPS...</span>
               </div>
             </div>
           )}
           
           {/* Navigation notification */}
           {navigationStatus && navigationStatus.nextPoint && (
-            <div className="absolute top-4 left-0 right-0 flex justify-center pointer-events-none">
+            <div className="absolute top-16 left-0 right-0 flex justify-center pointer-events-none">
               <div className="bg-black bg-opacity-75 text-white py-2 px-4 rounded-lg flex items-center shadow-lg">
                 <FaArrowUp className="mr-2" />
                 <span>
                   {navigationStatus.distance < 100 ? 
-                    `Arriving at ${navigationStatus.nextPoint.name}` : 
-                    `${formatDistance(navigationStatus.distance)} to ${navigationStatus.nextPoint.name}`}
+                    `Llegando a ${navigationStatus.nextPoint.name}` : 
+                    `${formatDistance(navigationStatus.distance)} hasta ${navigationStatus.nextPoint.name}`}
                 </span>
               </div>
             </div>
           )}
           
           {/* Control panel (overlay) */}
-          <div className="absolute bottom-4 left-0 right-0 flex justify-center">
+          <div className="absolute bottom-16 left-0 right-0 flex justify-center">
             <div className="bg-white rounded-lg shadow-lg p-2 flex space-x-2">
               {!isRecording ? (
                 <button 
                   onClick={startTrip}
-                  className="bg-green-500 hover:bg-green-600 text-white p-2 rounded-full"
-                  title="Start Trip"
+                  className="bg-green-500 hover:bg-green-600 text-white px-3 py-2 rounded-md flex items-center"
+                  title="Iniciar viaje"
                 >
-                  <FaPlay />
+                  <FaPlay className="mr-1" /> <span className="text-xs sm:text-sm">Iniciar viaje</span>
                 </button>
               ) : (
                 <button 
                   onClick={endTrip}
-                  className="bg-red-500 hover:bg-red-600 text-white p-2 rounded-full"
-                  title="End Trip"
+                  className="bg-red-500 hover:bg-red-600 text-white px-3 py-2 rounded-md flex items-center"
+                  title="Finalizar viaje"
                 >
-                  <FaStop />
+                  <FaStop className="mr-1" /> <span className="text-xs sm:text-sm">Finalizar viaje</span>
                 </button>
               )}
               

@@ -51,6 +51,90 @@ if [ ! -d "frontend/node_modules" ]; then
   cd ..
 fi
 
+# Check for port conflicts before building frontend
+if netstat -tuln | grep LISTEN | grep -q ":8000 "; then
+  echo "Error: Puerto 8000 ya está en uso. Otro proceso podría estar bloqueándolo."
+  echo "Intenta: sudo lsof -i :8000 para identificar el proceso."
+  echo "O: sudo kill -9 \$(sudo lsof -t -i:8000) para forzar su cierre."
+  exit 1
+fi
+
+# Function to check if cameras are in use
+check_camera_usage() {
+  echo "Verificando si las cámaras están ocupadas..."
+  CAMERAS_IN_USE=false
+  
+  # Solo verificar video0 (cámara interior USB)
+  if [ -e "/dev/video0" ]; then
+    # Intentar abrir el dispositivo sin bloqueo
+    if ! timeout 1 cat "/dev/video0" > /dev/null 2>&1; then
+      echo "⚠️ /dev/video0 parece estar en uso"
+      USING_PROCESSES=$(sudo fuser -v "/dev/video0" 2>/dev/null)
+      if [ -n "$USING_PROCESSES" ]; then
+        echo "  Procesos usando /dev/video0:"
+        sudo fuser -v "/dev/video0" 2>/dev/null | awk '{print $2}' | while read PID; do
+          if [ -n "$PID" ] && [ "$PID" -eq "$PID" ] 2>/dev/null; then  # Verificar que es un número
+            CMD=$(ps -p "$PID" -o comm= 2>/dev/null)
+            echo "  - PID $PID ($CMD)"
+          fi
+        done
+      fi
+      CAMERAS_IN_USE=true
+    else
+      echo "✓ /dev/video0 está disponible"
+    fi
+  else
+    echo "⚠️ /dev/video0 no existe - cámara USB no detectada"
+  fi
+  
+  # Verificar si PiCamera (CSI) está en uso
+  if [ -e /dev/vchiq ]; then
+    if ! timeout 1 cat /dev/vchiq > /dev/null 2>&1; then
+      echo "⚠️ La cámara CSI (PiCamera) parece estar en uso"
+      CAMERAS_IN_USE=true
+    else
+      echo "✓ La cámara CSI (PiCamera) está disponible"
+    fi
+  else
+    echo "⚠️ /dev/vchiq no existe - PiCamera no detectada"
+  fi
+  
+  # Si hay cámaras ocupadas, ofrecer opciones
+  if [ "$CAMERAS_IN_USE" = true ]; then
+    echo ""
+    echo "⚠️ Algunas cámaras parecen estar siendo utilizadas por otros procesos."
+    echo "Esto podría causar problemas al iniciar la aplicación."
+    echo ""
+    echo "Opciones:"
+    echo "1) Intentar liberar las cámaras automáticamente"
+    echo "2) Continuar de todos modos"
+    echo "3) Salir"
+    echo ""
+    read -p "¿Qué deseas hacer? (1/2/3): " CAM_OPTION
+    
+    case "$CAM_OPTION" in
+      1)
+        echo "Intentando liberar cámaras..."
+        # Terminar procesos que usan dispositivos de video específicos
+        sudo fuser -k /dev/video0 2>/dev/null
+        # Reiniciar módulo USB para la cámara USB
+        sudo rmmod uvcvideo 2>/dev/null || true
+        sleep 1
+        sudo modprobe uvcvideo 2>/dev/null || true
+        sleep 2
+        echo "Reinicio de cámaras completado."
+        ;;
+      2)
+        echo "Continuando con cámaras ocupadas..."
+        ;;
+      3|*)
+        echo "Saliendo..."
+        exit 1
+        ;;
+    esac
+  fi
+}
+
 # Build frontend for production
 echo "Building frontend..."
 cd frontend
@@ -87,6 +171,12 @@ if [ -c /dev/vchiq ]; then
   fi
 fi
 
+# Verificar uso de cámaras antes de iniciar
+check_camera_usage
+
+# Add Python path to ensure modules are found
+export PYTHONPATH="$SCRIPT_DIR:$PYTHONPATH"
+
 # Start backend server with better error handling
 echo "Iniciando servidor backend..."
 # Eliminar logs anteriores
@@ -99,7 +189,7 @@ cd ..
 
 # Poll until backend is ready or failed
 echo "Esperando a que el servidor backend inicie..."
-MAX_WAIT=30 # 30 segundos
+MAX_WAIT=120  # Increased from 60 to 120 seconds
 START_TIME=$(date +%s)
 BACKEND_READY=false
 
@@ -118,9 +208,15 @@ while [ $(($(date +%s) - START_TIME)) -lt $MAX_WAIT ]; do
     BACKEND_READY=true
     break
   else
-    # Check logs for useful information
-    if grep -q "INICIANDO SERVIDOR FASTAPI DESDE SCRIPT INDEPENDIENTE" backend_log.txt; then
-      echo "El servidor Uvicorn ha iniciado, esperando a que esté listo..."
+    # Check for server startup progress in logs
+    if grep -q "Started server process" backend_log.txt; then
+      echo "El servidor ha iniciado el proceso, esperando a que esté listo..."
+    elif grep -q "Waiting for application startup" backend_log.txt; then
+      echo "Aplicación iniciando, casi lista..."
+    elif grep -q "Application startup complete" backend_log.txt; then
+      echo "Aplicación iniciada, esperando respuesta de API..."
+    elif grep -q "INICIANDO SERVIDOR FASTAPI" backend_log.txt; then
+      echo "FastAPI iniciándose..."
     elif grep -q "Error fatal al iniciar Uvicorn" backend_log.txt; then
       echo "Error: Falló el inicio de Uvicorn."
       echo "--- Últimas 20 líneas de backend_log.txt ---"
@@ -130,8 +226,9 @@ while [ $(($(date +%s) - START_TIME)) -lt $MAX_WAIT ]; do
     fi
   fi
   
+  # Show progress more frequently
   echo -n "."
-  sleep 1
+  sleep 0.5
 done
 
 if [ "$BACKEND_READY" = false ]; then

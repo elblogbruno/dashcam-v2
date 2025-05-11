@@ -185,3 +185,24 @@ class AudioNotifier:
     def test_audio(self):
         """Test the audio system by speaking a test message"""
         return self.announce("This is a test of the dashcam audio system")
+        
+    def cleanup(self):
+        """Properly clean up resources before shutdown"""
+        logger.info("Cleaning up AudioNotifier resources")
+        
+        # Clean up the pyttsx3 engine if it was initialized
+        if self.tts_engine == "pyttsx3" and hasattr(self, '_pyttsx3_engine'):
+            try:
+                # Stop any ongoing speech
+                if self.audio_thread and self.audio_thread.is_alive():
+                    self.audio_thread.join(timeout=1.0)
+                    
+                # Some engines need specific cleanup
+                if hasattr(self._pyttsx3_engine, 'stop'):
+                    self._pyttsx3_engine.stop()
+                    
+                logger.info("Closed pyttsx3 engine successfully")
+            except Exception as e:
+                logger.error(f"Error cleaning up pyttsx3 engine: {str(e)}")
+        
+        logger.info("AudioNotifier cleanup completed")

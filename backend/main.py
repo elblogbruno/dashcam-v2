@@ -39,6 +39,7 @@ try:
     from disk_manager import DiskManager
     from settings_manager import settings_manager  # Import the settings manager
     from data_persistence import get_persistence_manager  # Import our new persistence manager
+    from auto_trip_manager import auto_trip_manager  # Import our new auto trip manager
     logger.info("Módulos importados correctamente")
 except Exception as e:
     logger.error(f"Error importando módulos: {e}", exc_info=True)
@@ -112,6 +113,12 @@ connected_clients: Set[WebSocket] = set()
 landmark_announcements: Dict[str, int] = {}  # {landmark_id: announcement_count}
 last_announcement_time: Dict[str, float] = {}  # {landmark_id: timestamp}
 
+# Define a function to update the global recording state (used by auto_trip_manager)
+def set_global_recording_state(state: bool):
+    global is_recording
+    is_recording = state
+    logger.info(f"Global recording state set to: {state}")
+
 # Initialize route modules with the necessary components
 try:
     logger.info("Configurando módulos de rutas...")
@@ -123,6 +130,7 @@ try:
     import routes.videos as videos_routes
     import routes.trip_planner as trip_planner_routes
     import routes.settings as settings_routes
+    import routes.cameras as cameras_routes  # Importar el nuevo módulo de rutas de cámaras
     
     # Set up shared components in the route modules
     recording_routes.camera_manager = camera_manager
@@ -132,6 +140,7 @@ try:
     landmarks_routes.landmark_checker = landmark_checker
     
     trips_routes.trip_logger = trip_logger
+    trips_routes.auto_trip_manager = auto_trip_manager
     
     storage_routes.disk_manager = disk_manager
     
@@ -142,6 +151,17 @@ try:
     videos_routes.video_maker = video_maker
     videos_routes.config = config
     
+    # Configurar el módulo de rutas de cámaras
+    cameras_routes.camera_manager = camera_manager
+    
+    # Configurar el módulo de WebRTC
+    import routes.webrtc as webrtc_routes
+    webrtc_routes.camera_manager = camera_manager
+    
+    # Configurar el módulo de rutas de audio
+    import routes.audio as audio_routes
+    audio_routes.audio_notifier = audio_notifier
+    
     # Initialize trip planner routes
     trip_planner_routes.landmark_checker = landmark_checker
     trip_planner_routes.trip_logger = trip_logger
@@ -150,6 +170,17 @@ try:
     
     # Initialize settings routes
     settings_routes.config = config
+    
+    # Initialize the auto trip manager
+    auto_trip_manager.initialize(
+        trip_logger=trip_logger,
+        landmark_checker=landmark_checker,
+        camera_manager=camera_manager,
+        gps_reader=gps_reader,
+        audio_notifier=audio_notifier,
+        set_recording_state_callback=set_global_recording_state
+    )
+    
     logger.info("Rutas configuradas correctamente")
 except Exception as e:
     logger.error(f"Error configurando módulos de rutas: {e}", exc_info=True)
@@ -222,7 +253,42 @@ async def startup_event():
     logger.info("Iniciando monitor de apagado...")
     shutdown_monitor.start_monitoring()
     
+    # Check for planned trips that should start automatically
+    logger.info("Verificando viajes programados para hoy...")
+    asyncio.create_task(check_scheduled_trips())
+    
     logger.info("Evento de inicio completado")
+
+async def check_scheduled_trips():
+    """Check if there are any trips scheduled to start today and start them automatically"""
+    # Wait a bit for all components to be properly initialized
+    await asyncio.sleep(5)
+    
+    try:
+        # Get the list of planned trips from trip_planner_routes
+        trip_to_start = auto_trip_manager.check_for_trips_to_start(trip_planner_routes.planned_trips)
+        
+        if trip_to_start:
+            logger.info(f"Viaje programado para hoy encontrado: {trip_to_start.name} (ID: {trip_to_start.id})")
+            # Ask user for confirmation via notification
+            audio_notifier.announce(f"Viaje programado encontrado: {trip_to_start.name}. Iniciando en 10 segundos. Pulse el botón de apagado para cancelar.")
+            
+            # Wait 10 seconds to allow user to cancel if needed
+            await asyncio.sleep(10)
+            
+            # Start the trip
+            success = await auto_trip_manager.start_scheduled_trip(trip_to_start)
+            if success:
+                logger.info(f"Viaje programado iniciado automáticamente: {trip_to_start.name}")
+                audio_notifier.announce(f"Viaje {trip_to_start.name} iniciado automáticamente")
+            else:
+                logger.error("Error al iniciar el viaje programado automáticamente")
+                audio_notifier.announce("Error al iniciar el viaje programado")
+        else:
+            logger.info("No hay viajes programados para hoy")
+    except Exception as e:
+        logger.error(f"Error al verificar viajes programados: {str(e)}")
+        audio_notifier.announce("Error al verificar viajes programados")
 
 async def update_location_task():
     global current_location, active_landmark, is_recording, landmark_announcements, last_announcement_time
@@ -235,30 +301,31 @@ async def update_location_task():
             if location:
                 current_location = location
                 
-                # Check for nearby landmarks
-                nearby = landmark_checker.check_nearby(location["lat"], location["lon"])
-                if nearby:
-                    active_landmark = nearby
-                    landmark_id = str(nearby.get("id", nearby.get("name", "")))
-                    
-                    # Log the landmark encounter (this still happens every time)
-                    trip_logger.add_landmark_encounter(nearby)
-                    
-                    # Check if we need to announce this landmark
-                    current_time = time.time()
-                    announcement_count = landmark_announcements.get(landmark_id, 0)
-                    last_time = last_announcement_time.get(landmark_id, 0)
-                    
-                    # Only announce if we haven't announced twice yet
-                    # and at least 10 seconds have passed since the last announcement
-                    if announcement_count < 2 and (current_time - last_time) > 10:
-                        audio_notifier.announce(f"Approaching {nearby['name']}")
-                        landmark_announcements[landmark_id] = announcement_count + 1
-                        last_announcement_time[landmark_id] = current_time
-                else:
-                    # No nearby landmark - reset active landmark
-                    if active_landmark:
-                        active_landmark = None
+                # Check for nearby landmarks - usar latitude/longitude en lugar de lat/lon
+                if location.get("latitude") is not None and location.get("longitude") is not None:
+                    nearby = landmark_checker.check_nearby(location["latitude"], location["longitude"])
+                    if nearby:
+                        active_landmark = nearby
+                        landmark_id = str(nearby.get("id", nearby.get("name", "")))
+                        
+                        # Log the landmark encounter (this still happens every time)
+                        trip_logger.add_landmark_encounter(nearby)
+                        
+                        # Check if we need to announce this landmark
+                        current_time = time.time()
+                        announcement_count = landmark_announcements.get(landmark_id, 0)
+                        last_time = last_announcement_time.get(landmark_id, 0)
+                        
+                        # Only announce if we haven't announced twice yet
+                        # and at least 10 seconds have passed since the last announcement
+                        if announcement_count < 2 and (current_time - last_time) > 10:
+                            audio_notifier.announce(f"Approaching {nearby['name']}")
+                            landmark_announcements[landmark_id] = announcement_count + 1
+                            last_announcement_time[landmark_id] = current_time
+                    else:
+                        # No nearby landmark - reset active landmark
+                        if active_landmark:
+                            active_landmark = None
                 
                 # Include camera status in message
                 camera_status = {
@@ -266,6 +333,10 @@ async def update_location_task():
                     "interior_camera": camera_manager.interior_camera is not None,
                     "errors": getattr(camera_manager, "camera_errors", [])
                 }
+                
+                # Get system statistics
+                from routes.system import get_system_stats
+                system_stats = get_system_stats()
                     
                 # Broadcast updates to all connected clients
                 message = {
@@ -273,7 +344,8 @@ async def update_location_task():
                     "location": current_location,
                     "landmark": active_landmark,
                     "recording": is_recording,
-                    "camera_status": camera_status
+                    "camera_status": camera_status,
+                    "system_stats": system_stats
                 }
                 
                 for client in list(connected_clients):

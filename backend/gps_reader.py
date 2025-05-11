@@ -1,223 +1,395 @@
+import serial
 import time
+import pynmea2
 import threading
 import logging
-import json
-import math
+import queue
 from datetime import datetime
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 class GPSReader:
-    def __init__(self):
-        self.current_location = {"lat": 0.0, "lon": 0.0, "speed": 0, "timestamp": None}
-        self.gps_device = None
+    def __init__(self, serial_port='/dev/ttyACM0', baud_rate=9600, use_gpsd=True):
+        self.serial_port = serial_port
+        self.baud_rate = baud_rate
+        self.use_gpsd = use_gpsd
+        self.gps_data = {
+            'latitude': None,
+            'longitude': None,
+            'speed': None,
+            'altitude': None,
+            'timestamp': None,
+            'satellites': None,
+            'fix_quality': None,
+            'heading': None,
+            'last_update': None
+        }
         self.running = False
-        self.gps_thread = None
-        self.gps_history = []  # Store recent GPS points for path tracking
-        self.max_history_size = 100  # Keep last 100 points
+        self.connected = False
+        self.serial_device = None
+        self.gpsd_socket = None
+        self.update_thread = None
+        self.reconnect_attempts = 0
+        self.max_reconnect_attempts = 5
+        self.reconnect_delay = 5  # segundos
+        self.error_count = 0
+        self.max_error_count = 10  # número máximo de errores antes de intentar reconectar
+        self.error_reset_time = 60  # segundos para resetear contador de errores
+        self.last_error_time = None
+        self.read_timeout = 1.0  # timeout en segundos para lectura serial
+        self.data_queue = queue.Queue(maxsize=10)  # cola para procesar datos GPS en thread separado
         
-        # Try to initialize GPS
         self.initialize_gps()
-        
+
     def initialize_gps(self):
-        """Initialize GPS device using available libraries"""
+        """Inicializa el GPS con el método preferido (gpsd o serial directo)"""
+        if self.use_gpsd:
+            self._init_gpsd()
+        else:
+            self._init_serial()
+            
+        # Iniciar hilo de actualización
+        self.running = True
+        self.update_thread = threading.Thread(target=self._update_loop)
+        self.update_thread.daemon = True
+        self.update_thread.start()
+        
+        # Iniciar hilo procesador de datos
+        self.processor_thread = threading.Thread(target=self._process_data_loop)
+        self.processor_thread.daemon = True
+        self.processor_thread.start()
+
+    def _init_gpsd(self):
+        """Inicializa conexión usando gpsd"""
         try:
-            # Try to initialize with gpsd first
-            try:
-                import gps
-                self.gps_device = gps.gps(mode=gps.WATCH_ENABLE)
-                logger.info("Initialized GPS with gpsd")
-                # Start reading thread
-                self._start_gpsd_thread()
-                return
-            except (ImportError, ModuleNotFoundError):
-                logger.warning("gpsd not available, trying pyserial")
-                
-            # Try with pyserial
-            try:
-                import serial
-                # Common GPS device paths
-                device_paths = ['/dev/ttyUSB0', '/dev/ttyACM0', '/dev/ttyS0']
-                
-                for path in device_paths:
-                    try:
-                        self.gps_device = serial.Serial(path, 9600, timeout=1)
-                        logger.info(f"Initialized GPS with pyserial on {path}")
-                        # Start reading thread
-                        self._start_serial_thread()
-                        return
-                    except serial.SerialException:
-                        continue
-                        
-                logger.warning("No GPS device found. Using mock GPS data for testing.")
-                self._start_mock_gps_thread()
-                
-            except (ImportError, ModuleNotFoundError):
-                logger.warning("pyserial not available, using mock GPS data")
-                self._start_mock_gps_thread()
+            import gps
+            self.gpsd_socket = gps.gps(mode=gps.WATCH_ENABLE)
+            logger.info("Initialized GPS with gpsd")
+            self.connected = True
+            self.use_gpsd = True
+        except (ImportError, ConnectionRefusedError) as e:
+            logger.warning(f"gpsd not available, trying pyserial")
+            self.use_gpsd = False
+            self._init_serial()
+
+    def _init_serial(self):
+        """Inicializa conexión serial directa"""
+        try:
+            # Cerrar conexión anterior si existe
+            self._close_serial()
+            
+            # Abrir nueva conexión con timeout
+            self.serial_device = serial.Serial(
+                self.serial_port, 
+                self.baud_rate, 
+                timeout=self.read_timeout
+            )
+            
+            # Verificar si está abierto
+            if self.serial_device.is_open:
+                logger.info(f"Initialized GPS with pyserial on {self.serial_port}")
+                self.connected = True
+                # Pequeña pausa para estabilizar la conexión
+                time.sleep(0.5)
+                # Limpiar buffer de entrada
+                self.serial_device.reset_input_buffer()
+                self.reconnect_attempts = 0  # resetear contador de intentos
+            else:
+                logger.error(f"Failed to open {self.serial_port}")
+                self.connected = False
                 
         except Exception as e:
-            logger.error(f"GPS initialization error: {str(e)}")
-            self._start_mock_gps_thread()
+            logger.error(f"Error initializing GPS: {str(e)}")
+            self.connected = False
             
-    def _start_gpsd_thread(self):
-        """Start a thread to read GPS data using gpsd"""
-        self.running = True
-        self.gps_thread = threading.Thread(target=self._read_gpsd_data)
-        self.gps_thread.daemon = True
-        self.gps_thread.start()
-        
-    def _start_serial_thread(self):
-        """Start a thread to read GPS data from serial port"""
-        self.running = True
-        self.gps_thread = threading.Thread(target=self._read_serial_data)
-        self.gps_thread.daemon = True
-        self.gps_thread.start()
-        
-    def _start_mock_gps_thread(self):
-        """Start a thread to generate mock GPS data for testing"""
-        self.running = True
-        self.gps_thread = threading.Thread(target=self._generate_mock_data)
-        self.gps_thread.daemon = True
-        self.gps_thread.start()
-        
-    def _read_gpsd_data(self):
-        """Read data from gpsd in a loop"""
-        import gps
+            # Si ya hemos intentado el puerto principal, intentar puertos alternativos
+            if self.reconnect_attempts >= 2 and self.serial_port == '/dev/ttyACM0':
+                alternate_ports = ['/dev/ttyUSB0', '/dev/ttyS0', '/dev/ttyAMA0']
+                for port in alternate_ports:
+                    try:
+                        logger.info(f"Trying alternate GPS port: {port}")
+                        self.serial_port = port
+                        self.serial_device = serial.Serial(port, self.baud_rate, timeout=self.read_timeout)
+                        if self.serial_device.is_open:
+                            logger.info(f"Connected to GPS on alternate port {port}")
+                            self.connected = True
+                            time.sleep(0.5)
+                            self.serial_device.reset_input_buffer()
+                            break
+                    except Exception:
+                        continue
+
+    def _close_serial(self):
+        """Cierra la conexión serial si está abierta"""
+        if self.serial_device and hasattr(self.serial_device, 'is_open') and self.serial_device.is_open:
+            try:
+                self.serial_device.close()
+                logger.debug("Closed serial GPS connection")
+            except Exception as e:
+                logger.error(f"Error closing serial connection: {str(e)}")
+
+    def _update_loop(self):
+        """Hilo principal de actualización de datos GPS"""
         while self.running:
             try:
-                report = self.gps_device.next()
-                if report['class'] == 'TPV':
-                    # Got a Time-Position-Velocity report
-                    if hasattr(report, 'lat') and hasattr(report, 'lon'):
-                        self.current_location = {
-                            "lat": report.lat,
-                            "lon": report.lon,
-                            "speed": getattr(report, 'speed', 0) * 3.6,  # Convert m/s to km/h
-                            "timestamp": datetime.now().isoformat()
-                        }
-                        self._update_gps_history()
+                if not self.connected:
+                    self._attempt_reconnect()
+                    time.sleep(1)
+                    continue
+                    
+                if self.use_gpsd and self.gpsd_socket:
+                    self._read_gpsd()
+                elif self.serial_device:
+                    self._read_serial()
+                else:
+                    time.sleep(0.5)
+                    
             except Exception as e:
-                logger.error(f"Error reading from gpsd: {str(e)}")
+                logger.error(f"Error in GPS update loop: {str(e)}")
+                self._handle_error()
                 time.sleep(1)
-                
-    def _read_serial_data(self):
-        """Read NMEA sentences from serial port"""
-        while self.running and self.gps_device:
-            try:
-                line = self.gps_device.readline().decode('ascii', errors='replace').strip()
-                
-                # Process NMEA sentences
-                if line.startswith('$GPRMC'):
-                    # Recommended Minimum data
-                    parts = line.split(',')
-                    if len(parts) >= 10 and parts[2] == 'A':  # A = data valid
-                        # Parse latitude
-                        lat_deg = float(parts[3][:2])
-                        lat_min = float(parts[3][2:])
-                        lat = lat_deg + (lat_min / 60.0)
-                        if parts[4] == 'S':
-                            lat = -lat
-                            
-                        # Parse longitude
-                        lon_deg = float(parts[5][:3])
-                        lon_min = float(parts[5][3:])
-                        lon = lon_deg + (lon_min / 60.0)
-                        if parts[6] == 'W':
-                            lon = -lon
-                            
-                        # Parse speed (in knots, convert to km/h)
-                        speed = float(parts[7]) * 1.852 if parts[7] else 0
-                        
-                        self.current_location = {
-                            "lat": lat,
-                            "lon": lon,
-                            "speed": speed,
-                            "timestamp": datetime.now().isoformat()
-                        }
-                        self._update_gps_history()
-                        
-            except Exception as e:
-                logger.error(f"Error reading from serial GPS: {str(e)}")
-                time.sleep(1)
-                
-    def _generate_mock_data(self):
-        """Generate mock GPS data for testing"""
-        # Starting point (near Grand Canyon)
-        lat = 36.1
-        lon = -112.1
-        speed = 60.0  # km/h
-        
-        # Movement deltas
-        delta_lat = 0.0001  # Approximately 11 meters North-South
-        delta_lon = 0.0001  # Varies based on latitude
-        
+
+    def _process_data_loop(self):
+        """Hilo separado para procesar datos GPS"""
         while self.running:
-            # Add small random movement
-            import random
-            lat += delta_lat * (random.random() - 0.5)
-            lon += delta_lon * (random.random() - 0.5)
-            speed = max(0, min(120, speed + (random.random() - 0.5) * 5))  # Random speed changes
+            try:
+                # Consumir de la cola con timeout para no bloquear
+                try:
+                    data = self.data_queue.get(timeout=1.0)
+                    self._parse_nmea(data)
+                    self.data_queue.task_done()
+                except queue.Empty:
+                    # No hay datos a procesar, continuar
+                    pass
+            except Exception as e:
+                logger.error(f"Error in GPS data processing: {str(e)}")
+                time.sleep(0.5)
+
+    def _read_gpsd(self):
+        """Lee datos desde gpsd"""
+        try:
+            self.gpsd_socket.next()
+            if hasattr(self.gpsd_socket, 'fix') and hasattr(self.gpsd_socket.fix, 'mode') and self.gpsd_socket.fix.mode > 1:
+                # Tenemos un fix GPS
+                self.gps_data['latitude'] = self.gpsd_socket.fix.latitude
+                self.gps_data['longitude'] = self.gpsd_socket.fix.longitude
+                self.gps_data['altitude'] = self.gpsd_socket.fix.altitude
+                self.gps_data['speed'] = self.gpsd_socket.fix.speed * 3.6  # m/s a km/h
+                self.gps_data['heading'] = self.gpsd_socket.fix.track
+                self.gps_data['timestamp'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                self.gps_data['last_update'] = time.time()
+                
+                if hasattr(self.gpsd_socket, 'satellites') and self.gpsd_socket.satellites:
+                    # Contar satélites usados
+                    self.gps_data['satellites'] = sum(1 for sat in self.gpsd_socket.satellites if sat.used)
+                
+                self.gps_data['fix_quality'] = self.gpsd_socket.fix.mode
             
-            self.current_location = {
-                "lat": lat,
-                "lon": lon,
-                "speed": speed,
-                "timestamp": datetime.now().isoformat()
-            }
+            # Pequeña pausa para no saturar CPU
+            time.sleep(0.1)
             
-            self._update_gps_history()
-            time.sleep(1)  # Update once per second
+        except Exception as e:
+            logger.error(f"Error reading from GPSD: {str(e)}")
+            self._handle_error()
+
+    def _read_serial(self):
+        """Lee datos seriales directamente con manejo de errores mejorado"""
+        if not self.serial_device or not hasattr(self.serial_device, 'is_open') or not self.serial_device.is_open:
+            logger.debug("Serial device not available for reading")
+            self.connected = False
+            return
             
-    def _update_gps_history(self):
-        """Add current location to history and trim if needed"""
-        self.gps_history.append(self.current_location.copy())
+        try:
+            # Leer una línea con timeout
+            line = self.serial_device.readline().decode('ascii', errors='replace').strip()
+            
+            # Verificar si recibimos datos
+            if line:
+                # Recibimos datos, resetear contador de errores
+                self.error_count = 0
+                self.last_error_time = None
+                
+                # Poner en la cola para procesamiento en otro hilo
+                try:
+                    self.data_queue.put_nowait(line)
+                except queue.Full:
+                    # La cola está llena, descartar datos más antiguos
+                    try:
+                        _ = self.data_queue.get_nowait()
+                        self.data_queue.put_nowait(line)
+                    except:
+                        pass
+            else:
+                # Si no hay datos disponibles, usar manejo de errores silencioso
+                self._handle_no_data_error()
+                
+        except serial.SerialException as e:
+            # Error serio con el puerto serial, necesita reconexión
+            error_msg = str(e)
+            if "device reports readiness" in error_msg:
+                self._handle_no_data_error()
+            else:
+                logger.error(f"Error reading from serial GPS: {error_msg}")
+                self._handle_error()
+                time.sleep(0.5)
+        except Exception as e:
+            logger.error(f"Unexpected error reading from serial GPS: {str(e)}")
+            self._handle_error()
+            time.sleep(0.5)
+    
+    def _handle_no_data_error(self):
+        """Maneja errores específicos de 'no data available' para reducir spam en logs"""
+        now = time.time()
         
-        # Keep history limited to max size
-        if len(self.gps_history) > self.max_history_size:
-            self.gps_history = self.gps_history[-self.max_history_size:]
+        # Incrementar contador de errores
+        self.error_count += 1
+        
+        # Limitar los mensajes a uno cada 60 segundos para no llenar los logs
+        if self.last_error_time is None or now - self.last_error_time > 60:
+            logger.warning(f"No data received from GPS (count: {self.error_count})")
+            self.last_error_time = now
             
+        # Si hay demasiados errores, intentar reconectar
+        if self.error_count >= self.max_error_count:
+            logger.warning(f"Too many GPS read errors ({self.error_count}), attempting reconnection")
+            self.connected = False
+            self.error_count = 0
+            self._close_serial()  # Cerrar correctamente antes de reconectar
+
+    def _parse_nmea(self, nmea_str):
+        """Procesa sentencias NMEA"""
+        if not nmea_str.startswith('$'):
+            return
+            
+        try:
+            # Parse NMEA sentence
+            msg = pynmea2.parse(nmea_str)
+            
+            # GGA - Posición y fix
+            if isinstance(msg, pynmea2.GGA):
+                if msg.latitude and msg.longitude:
+                    self.gps_data['latitude'] = msg.latitude
+                    self.gps_data['longitude'] = msg.longitude
+                    self.gps_data['altitude'] = msg.altitude
+                    self.gps_data['fix_quality'] = msg.gps_qual
+                    self.gps_data['satellites'] = msg.num_sats
+                    self.gps_data['timestamp'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    self.gps_data['last_update'] = time.time()
+                    
+            # RMC - Velocidad y rumbo
+            elif isinstance(msg, pynmea2.RMC):
+                if msg.status == 'A':  # A = active
+                    if msg.latitude and msg.longitude:
+                        self.gps_data['latitude'] = msg.latitude
+                        self.gps_data['longitude'] = msg.longitude
+                    self.gps_data['speed'] = msg.spd_over_grnd * 1.852  # knots a km/h
+                    self.gps_data['heading'] = msg.true_course
+                    self.gps_data['timestamp'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    self.gps_data['last_update'] = time.time()
+                    
+            # VTG - Velocidad y rumbo alternativo
+            elif isinstance(msg, pynmea2.VTG):
+                if msg.spd_over_grnd_kmph:
+                    self.gps_data['speed'] = msg.spd_over_grnd_kmph
+                if msg.true_track:
+                    self.gps_data['heading'] = msg.true_track
+                
+            # GSA - Satélites y precisión
+            elif isinstance(msg, pynmea2.GSA):
+                if msg.mode_fix_type:
+                    self.gps_data['fix_quality'] = msg.mode_fix_type
+                    
+        except pynmea2.ParseError:
+            # Ignora sentencias NMEA malformadas
+            pass
+        except Exception as e:
+            logger.debug(f"Error parsing NMEA: {str(e)}")
+
+    def _handle_error(self, is_critical=False):
+        """Maneja los errores incrementando contadores y registrando eventos"""
+        if self.last_error_time is None or time.time() - self.last_error_time > 30:
+            # Registrar errores con un límite de frecuencia para no saturar los logs
+            if is_critical:
+                logger.error(f"GPS error crítico. Intentando reconectar...")
+            self.last_error_time = time.time()
+            
+        self.error_count += 1
+        
+        # Si hay demasiados errores consecutivos, intentar reiniciar
+        if self.error_count > 15:
+            logger.warning(f"Detectados {self.error_count} errores consecutivos de GPS. Reiniciando conexión...")
+            self.error_count = 0  # Reiniciar contador
+            self._close_serial()
+            time.sleep(2)
+            self._init_serial()
+
+    def _attempt_reconnect(self):
+        """Intenta reconectar al GPS"""
+        if self.reconnect_attempts >= self.max_reconnect_attempts:
+            if self.reconnect_attempts == self.max_reconnect_attempts:
+                logger.error(f"Failed to reconnect to GPS after {self.reconnect_attempts} attempts.")
+                self.reconnect_attempts += 1  # incrementar para no mostrar este mensaje repetidamente
+            # Esperar antes de intentar nuevamente
+            time.sleep(self.reconnect_delay)
+            return
+            
+        logger.info(f"Attempting to reconnect to GPS (attempt {self.reconnect_attempts + 1}/{self.max_reconnect_attempts})")
+        self.reconnect_attempts += 1
+        
+        # Reintentar con el método actual
+        if self.use_gpsd:
+            self._init_gpsd()
+        else:
+            self._init_serial()
+            
+        # Esperar antes de verificar si fue exitoso
+        time.sleep(self.reconnect_delay)
+
     def get_location(self):
-        """Get current GPS location"""
-        return self.current_location
-        
-    def get_path_history(self):
-        """Get recent path history for tracking"""
-        return self.gps_history
-        
-    def calculate_distance(self, lat1, lon1, lat2, lon2):
-        """Calculate distance between two coordinates in meters using Haversine formula"""
-        # Earth radius in meters
-        R = 6371000
-        
-        # Convert coordinates to radians
-        lat1_rad = math.radians(lat1)
-        lon1_rad = math.radians(lon1)
-        lat2_rad = math.radians(lat2)
-        lon2_rad = math.radians(lon2)
-        
-        # Differences
-        dlat = lat2_rad - lat1_rad
-        dlon = lon2_rad - lon1_rad
-        
-        # Haversine formula
-        a = math.sin(dlat/2)**2 + math.cos(lat1_rad) * math.cos(lat2_rad) * math.sin(dlon/2)**2
-        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
-        distance = R * c
-        
-        return distance
-        
-    def save_gps_data(self, output_file):
-        """Save current GPS history to a file"""
-        with open(output_file, 'w') as f:
-            json.dump(self.gps_history, f)
-            
-    def __del__(self):
-        """Clean up resources"""
+        """Devuelve los datos actuales de localización"""
+        # Verificar si los datos son recientes (< 10 segundos)
+        if self.gps_data['last_update'] and time.time() - self.gps_data['last_update'] < 10:
+            return {
+                'latitude': self.gps_data['latitude'],
+                'longitude': self.gps_data['longitude'],
+                'altitude': self.gps_data['altitude'],
+                'speed': self.gps_data['speed'],
+                'heading': self.gps_data['heading'],
+                'satellites': self.gps_data['satellites'],
+                'fix_quality': self.gps_data['fix_quality'],
+                'timestamp': self.gps_data['timestamp'],
+                'status': 'active' if self.connected else 'inactive'
+            }
+        else:
+            # Datos no actualizados, posiblemente GPS sin señal
+            return {
+                'latitude': self.gps_data['latitude'],
+                'longitude': self.gps_data['longitude'],
+                'altitude': self.gps_data['altitude'],
+                'speed': self.gps_data['speed'],
+                'heading': self.gps_data['heading'],
+                'satellites': self.gps_data['satellites'],
+                'fix_quality': self.gps_data['fix_quality'],
+                'timestamp': self.gps_data['timestamp'],
+                'status': 'stale' if self.connected else 'inactive'
+            }
+
+    def shutdown(self):
+        """Detener y limpiar recursos"""
         self.running = False
         
-        # Close serial device if using pyserial
-        if self.gps_device and hasattr(self.gps_device, 'close'):
-            self.gps_device.close()
+        # Esperar a que los hilos terminen
+        if self.update_thread and self.update_thread.is_alive():
+            self.update_thread.join(timeout=2.0)
+            
+        if self.processor_thread and self.processor_thread.is_alive():
+            self.processor_thread.join(timeout=2.0)
+            
+        # Cerrar conexión serial
+        self._close_serial()
+        
+        # Cerrar conexión gpsd
+        if self.gpsd_socket:
+            self.gpsd_socket = None
+        
+        logger.info("GPS reader shutdown completed")

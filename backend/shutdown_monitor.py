@@ -186,3 +186,8 @@ class ShutdownMonitor:
                 self.GPIO.cleanup()
             except:
                 pass
+
+    def stop(self):
+        """Alias for stop_monitoring for API consistency"""
+        logger.info("Stopping ShutdownMonitor")
+        return self.stop_monitoring()

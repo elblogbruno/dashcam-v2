@@ -8,6 +8,7 @@ router = APIRouter()
 
 # Will be initialized from main.py
 trip_logger = None
+auto_trip_manager = None
 
 # Route to get all trips
 @router.get("")
@@ -84,24 +85,39 @@ async def get_trips_by_month(year: int, month: int):
 
 # Route to start a trip manually
 @router.post("/start")
-async def start_trip():
+async def start_trip(planned_trip_id: Optional[str] = None):
     try:
-        trip_id = trip_logger.start_trip()
-        return {"status": "success", "trip_id": trip_id}
+        # Use the auto_trip_manager to start the trip
+        trip_id = auto_trip_manager.start_trip_manually(planned_trip_id)
+        if trip_id:
+            return {"status": "success", "trip_id": trip_id}
+        else:
+            raise HTTPException(status_code=400, detail="Failed to start trip - another trip may be in progress")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to start trip: {str(e)}")
 
 # Route to end a trip manually
 @router.post("/end")
-async def end_trip(trip_id: Optional[str] = None):
+async def end_trip():
     try:
-        success = trip_logger.end_trip(trip_id=trip_id)
+        # Use the auto_trip_manager to end the trip
+        success = auto_trip_manager.end_trip()
         if success:
             return {"status": "success", "message": "Trip ended successfully"}
         else:
             raise HTTPException(status_code=404, detail="No active trip found")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to end trip: {str(e)}")
+
+# Route to get active trip information
+@router.get("/active")
+async def get_active_trip():
+    """Get information about the currently active trip"""
+    active_trip = auto_trip_manager.get_active_trip_info()
+    if active_trip:
+        return {"status": "success", "active_trip": active_trip}
+    else:
+        return {"status": "success", "active_trip": None}
 
 # Route to get trip statistics for dashboard
 @router.get("/stats")

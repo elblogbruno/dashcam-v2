@@ -137,18 +137,24 @@ function CalendarView() {
   }
 
   return (
-    <div className="p-4">
-      <h1 className="text-2xl font-bold mb-4 text-dashcam-800 flex items-center">
-        <FaCalendarDay className="mr-2" /> Recording Calendar
+    <div className="p-4 bg-gray-50 min-h-screen">
+      <h1 className="text-3xl font-bold mb-6 text-dashcam-800 flex items-center">
+        <FaCalendarDay className="mr-3" /> Calendario de Grabaciones
       </h1>
       
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Calendar Card */}
-        <div className="card lg:col-span-1 p-0 overflow-hidden shadow-lg rounded-xl border border-gray-200 bg-white">
-          <div className="bg-dashcam-800 text-white p-3 font-semibold">
-            Recording Calendar
+        <div className="card lg:col-span-1 p-0 overflow-hidden shadow-xl rounded-xl border border-gray-200 bg-white hover:shadow-2xl transition-shadow duration-300">
+          <div className="bg-gradient-to-r from-dashcam-800 to-dashcam-600 text-white p-4 font-semibold text-lg">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center">
+                <FaCalendarDay className="mr-2" /> 
+                <span>Calendario</span>
+              </div>
+              <span className="text-sm opacity-80">{format(date, 'MMMM yyyy')}</span>
+            </div>
           </div>
-          <div className="p-3">
+          <div className="p-4">
             <Calendar 
               onChange={setDate} 
               value={date}
@@ -158,19 +164,22 @@ function CalendarView() {
                 const dateStr = format(date, 'yyyy-MM-dd')
                 const dayData = calendarData[dateStr]
                 if (dayData && (dayData.trips > 0 || dayData.external_videos > 0)) {
-                  return 'has-events'; // Use this class for custom styling
+                  return 'has-events bg-dashcam-50'; // Custom styling with background color
                 }
                 return null;
               }}
             />
-            <div className="mt-4 text-xs text-gray-600 flex items-center justify-center space-x-6 bg-gray-50 p-2 rounded-lg">
-              <div className="flex items-center">
-                <div className="w-3 h-3 rounded-full bg-dashcam-500 mr-2"></div>
-                <span>Dashcam Trips</span>
-              </div>
-              <div className="flex items-center">
-                <div className="w-3 h-3 rounded-full bg-green-500 mr-2"></div>
-                <span>External Videos</span>
+            <div className="mt-6 flex flex-col items-center justify-center bg-gray-50 p-4 rounded-xl border border-gray-200">
+              <div className="text-sm text-gray-700 font-medium mb-2">Leyenda</div>
+              <div className="flex items-center justify-center space-x-6">
+                <div className="flex items-center">
+                  <div className="w-4 h-4 rounded-full bg-dashcam-500 mr-2 shadow-sm"></div>
+                  <span className="text-sm">Viajes de Dashcam</span>
+                </div>
+                <div className="flex items-center">
+                  <div className="w-4 h-4 rounded-full bg-green-500 mr-2 shadow-sm"></div>
+                  <span className="text-sm">Videos Externos</span>
+                </div>
               </div>
             </div>
           </div>
@@ -179,19 +188,19 @@ function CalendarView() {
         {/* Selected Day Content */}
         <div className="lg:col-span-2">
           {/* Selected day info */}
-          <div className="card mb-6 p-0 overflow-hidden shadow-lg rounded-xl border border-gray-200 bg-white">
-            <div className="bg-dashcam-700 text-white p-3 flex justify-between items-center">
-              <h2 className="text-lg font-semibold flex items-center">
+          <div className="card mb-6 p-0 overflow-hidden shadow-xl rounded-xl border border-gray-200 bg-white hover:shadow-2xl transition-shadow duration-300">
+            <div className="bg-gradient-to-r from-dashcam-700 to-dashcam-600 text-white p-4 flex justify-between items-center">
+              <h2 className="text-xl font-semibold flex items-center">
                 <FaClock className="mr-2" />
                 {format(date, 'MMMM d, yyyy')}
               </h2>
               {(selectedDayTrips.length > 0) && (
                 <button 
-                  className="px-3 py-1 bg-dashcam-500 hover:bg-dashcam-600 text-white rounded-lg transition-colors duration-200 flex items-center text-sm font-medium"
+                  className="px-4 py-2 bg-dashcam-500 hover:bg-dashcam-600 text-white rounded-lg transition-all duration-200 flex items-center text-sm font-medium shadow-md hover:shadow-lg transform hover:translate-y-[-1px]"
                   onClick={() => generateSummary(format(date, 'yyyy-MM-dd'))}
                   disabled={isLoading}
                 >
-                  {isLoading ? 'Processing...' : 'Generate Summary'}
+                  {isLoading ? 'Procesando...' : 'Generar Resumen'}
                 </button>
               )}
             </div>
@@ -216,24 +225,24 @@ function CalendarView() {
                     <div>
                       {/* Trip recordings */}
                       {selectedDayTrips.length > 0 && (
-                        <div className="mb-6">
-                          <h3 className="text-md font-semibold mb-3 text-dashcam-700 flex items-center border-b pb-2">
+                        <div className="mb-8">
+                          <h3 className="text-lg font-semibold mb-4 text-dashcam-700 flex items-center border-b pb-3">
                             <FaCarSide className="mr-2" />
-                            Dashcam Trips ({selectedDayTrips.length})
+                            Viajes ({selectedDayTrips.length})
                           </h3>
                           <div className="grid grid-cols-1 gap-4">
                             {selectedDayTrips.map((trip) => (
-                              <div key={trip.id} className="border border-gray-200 rounded-xl p-0 overflow-hidden hover:shadow-md transition-shadow duration-200 bg-white">
-                                <div className="bg-gray-50 p-3 flex justify-between items-center border-b">
+                              <div key={trip.id} className="border border-gray-200 rounded-xl p-0 overflow-hidden hover:shadow-lg transition-all duration-300 bg-white transform hover:translate-y-[-2px]">
+                                <div className="bg-gradient-to-r from-gray-50 to-white p-4 flex justify-between items-center border-b">
                                   <div className="font-semibold text-dashcam-800 flex items-center">
                                     <FaClock className="mr-2 text-dashcam-600" />
                                     {format(new Date(trip.start_time), 'h:mm a')}
                                     {trip.end_time && ` - ${format(new Date(trip.end_time), 'h:mm a')}`}
                                   </div>
                                   {trip.distance_km && (
-                                    <div className="text-sm text-gray-600 flex items-center">
-                                      <FaRoad className="mr-1" />
-                                      {trip.distance_km.toFixed(1)} km
+                                    <div className="text-sm bg-dashcam-50 text-dashcam-800 flex items-center py-1 px-3 rounded-full">
+                                      <FaRoad className="mr-2 text-dashcam-600" />
+                                      {trip.distance_km !== undefined ? trip.distance_km.toFixed(1) : '0.0'} km
                                     </div>
                                   )}
                                 </div>
@@ -248,13 +257,15 @@ function CalendarView() {
                                     )}
                                   </div>
                                   <div className="flex space-x-3">
-                                    {trip.video_files && trip.video_files.length > 0 && (
+                                    {(trip.video_files && Array.isArray(trip.video_files) && trip.video_files.length > 0) ? (
                                       <button 
                                         className="text-dashcam-600 hover:text-dashcam-800 flex items-center text-sm bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded-lg transition-colors duration-200"
                                         onClick={() => playVideo(`/api/videos/${trip.video_files[0]}`)}
                                       >
                                         <FaVideo className="mr-1" /> Raw Video
                                       </button>
+                                    ) : (
+                                      <span className="text-xs text-gray-500">No se encontraron archivos de video</span>
                                     )}
                                     {trip.summary_file && (
                                       <button 
@@ -357,15 +368,45 @@ function CalendarView() {
           border: none;
           font-family: inherit;
           width: 100%;
+          border-radius: 0.5rem;
+          box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+        
+        .react-calendar__navigation {
+          background-color: #f9fafb;
+          border-bottom: 1px solid #e5e7eb;
+          height: 48px;
+          margin-bottom: 0;
+        }
+        
+        .react-calendar__navigation button {
+          min-width: 44px;
+          font-weight: 600;
+          font-size: 1rem;
+          color: #4b5563;
+        }
+        
+        .react-calendar__navigation button:enabled:hover,
+        .react-calendar__navigation button:enabled:focus {
+          background-color: #f3f4f6;
+        }
+        
+        .react-calendar__month-view__weekdays {
+          border-bottom: 1px solid #e5e7eb;
+          padding: 0.5rem 0;
+          font-weight: 600;
+          color: #4b5563;
         }
         
         .react-calendar__tile--active {
           background-color: #3c75ad !important;
           color: white;
+          font-weight: 600;
+          box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
         }
         
         .react-calendar__tile--active:hover {
-          background-color: #286090 !important;
+          background-color: #2563eb !important;
         }
         
         .react-calendar__tile:hover {
@@ -373,32 +414,43 @@ function CalendarView() {
         }
         
         .react-calendar__month-view__days__day--weekend {
-          color: #e53e3e;
+          color: #ef4444;
         }
         
         .react-calendar__tile {
           position: relative;
-          height: 50px;
+          height: 60px;
           display: flex;
           flex-direction: column;
           justify-content: flex-start;
           align-items: center;
-          padding-top: 5px;
+          padding-top: 8px;
+          font-size: 1rem;
+          border-radius: 0.25rem;
+          margin: 2px;
+          transition: all 0.2s ease;
+        }
+        
+        .react-calendar__tile:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
         }
         
         .has-events {
           background-color: #edf2f7;
-          font-weight: 500;
+          font-weight: 600;
+          border-bottom: 2px solid #3c75ad;
         }
         
         .loader {
           border: 3px solid #f3f3f3;
           border-top: 3px solid #3c75ad;
           border-radius: 50%;
-          width: 30px;
-          height: 30px;
+          width: 36px;
+          height: 36px;
           animation: spin 1s linear infinite;
           margin: 0 auto;
+          box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
         }
         
         @keyframes spin {
