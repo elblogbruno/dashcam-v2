@@ -1,0 +1,77 @@
+/* Clases CSS adicionales para mejorar la responsividad */
+
+/* Scrollbar hide para navegación horizontal en móviles */
+.scrollbar-hide {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;  /* Chrome, Safari, Opera */
+}
+
+/* Mejoras para textos largos en móviles */
+.break-words {
+  word-wrap: break-word;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+/* Mejoras para modales en móviles */
+@media (max-width: 640px) {
+  .modal-box {
+    margin: 0.5rem;
+    max-height: calc(100vh - 1rem);
+    width: calc(100vw - 1rem);
+  }
+}
+
+/* Ajustes para botones en móviles */
+@media (max-width: 640px) {
+  .btn-sm {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+    min-height: 2.5rem;
+  }
+}
+
+/* Mejoras para grids responsivos */
+@media (max-width: 640px) {
+  .grid-responsive {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+}
+
+@media (min-width: 640px) {
+  .grid-responsive {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .grid-responsive {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+  }
+}
+
+/* Mejoras para inputs en móviles */
+@media (max-width: 640px) {
+  .input {
+    font-size: 16px; /* Previene zoom en iOS */
+  }
+}
+
+/* Espaciado mejorado para móviles */
+.space-mobile {
+  gap: 0.75rem;
+}
+
+@media (min-width: 640px) {
+  .space-mobile {
+    gap: 1.5rem;
+  }
+}

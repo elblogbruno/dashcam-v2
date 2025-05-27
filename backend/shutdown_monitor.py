@@ -10,7 +10,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 class ShutdownMonitor:
-    def __init__(self, gpio_pin=27):
+    def __init__(self, gpio_pin=17):
         self.gpio_pin = gpio_pin  # Default GPIO pin for power monitoring
         self.running = False
         self.monitor_thread = None

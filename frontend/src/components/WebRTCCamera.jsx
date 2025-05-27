@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import PropTypes from 'prop-types';
+import PerformanceStats from './PerformanceStats';
 
 /**
  * Componente para mostrar una cámara utilizando WebRTC
@@ -7,13 +8,21 @@ import PropTypes from 'prop-types';
  * Este componente establece una conexión WebRTC con el servidor para recibir
  * streams de video de baja latencia desde las cámaras del dashcam.
  */
-function WebRTCCamera({ cameraType, width = '100%', height = '100%', className = '', onError }) {
+function WebRTCCamera({ cameraType, width = '100%', height = '100%', className = '', onError, showStats = false }) {
   const [connectionState, setConnectionState] = useState('disconnected');
   const [errorMessage, setErrorMessage] = useState('');
   const [videoReceived, setVideoReceived] = useState(false);
   const [reconnectAttempt, setReconnectAttempt] = useState(0);
   const [aspectRatio, setAspectRatio] = useState(16/9); // Valor predeterminado: 16:9
   const [orientation, setOrientation] = useState(window.innerWidth > window.innerHeight ? 'landscape' : 'portrait');
+  const [videoQuality, setVideoQuality] = useState('good'); // 'good', 'poor', 'stalled'
+  
+  // Estados para estadísticas de rendimiento
+  const [fps, setFps] = useState(0);
+  const [bitrate, setBitrate] = useState(0);
+  const [latency, setLatency] = useState(0);
+  const [resolution, setResolution] = useState('');
+  const [packetsLost, setPacketsLost] = useState(0);
   
   // Referencias para los elementos y objetos WebRTC
   const videoRef = useRef(null);
@@ -23,6 +32,13 @@ function WebRTCCamera({ cameraType, width = '100%', height = '100%', className =
   const reconnectTimerRef = useRef(null);
   const lastFrameTimeRef = useRef(null);
   const blackFrameDetectionRef = useRef(null);
+  const statsIntervalRef = useRef(null);
+  const lastBytesReceived = useRef(0);
+  const lastStatsTime = useRef(0);
+  const latencyHistoryRef = useRef([]);
+  const lastFramesDecoded = useRef(0);
+  const connectionIdRef = useRef(null);
+  const heartbeatIntervalRef = useRef(null);
   
   // Función para crear una oferta SDP
   const createOffer = async (peerConnection) => {
@@ -128,12 +144,21 @@ function WebRTCCamera({ cameraType, width = '100%', height = '100%', className =
       }
     }
     
-    // Verificar si ha pasado demasiado tiempo desde el último frame (5 segundos)
-    if (lastFrameTimeRef.current && Date.now() - lastFrameTimeRef.current > 5000) {
-      console.warn(`No frames received for ${cameraType} camera in 5 seconds`);
-      // Restablecer el tiempo para no disparar múltiples advertencias
-      lastFrameTimeRef.current = null;
-      return false;
+    // Verificar si ha pasado demasiado tiempo desde el último frame (3 segundos)
+    // Reducido de 5 a 3 segundos para ser más rápidos en detectar problemas
+    if (lastFrameTimeRef.current && Date.now() - lastFrameTimeRef.current > 3000) {
+      console.warn(`No frames received for ${cameraType} camera in 3 seconds`);
+      setVideoQuality('poor');
+      
+      // Si pasan más de 6 segundos sin frames, marcar como desconectado
+      if (Date.now() - lastFrameTimeRef.current > 6000) {
+        console.warn(`No frames received for ${cameraType} camera in 6 seconds - marking as disconnected`);
+        // Restablecer el tiempo para no disparar múltiples advertencias
+        lastFrameTimeRef.current = null;
+        setVideoReceived(false);
+        setConnectionState('stalled');
+        return false;
+      }
     }
     
     return false;
@@ -151,6 +176,7 @@ function WebRTCCamera({ cameraType, width = '100%', height = '100%', className =
     let lastImageData = null;
     let unchangedFrameCount = 0;
     
+    // Reducir la frecuencia de comprobación para mejorar el rendimiento (2000ms en lugar de quizás uno más rápido)
     blackFrameDetectionRef.current = setInterval(() => {
       if (video.paused || video.ended || !videoReceived) return;
       
@@ -161,44 +187,59 @@ function WebRTCCamera({ cameraType, width = '100%', height = '100%', className =
         
         if (width === 0 || height === 0) return;
         
-        canvas.width = width;
-        canvas.height = height;
+        // Reducir el tamaño de muestreo para mejorar el rendimiento
+        const sampleWidth = Math.floor(width / 4);
+        const sampleHeight = Math.floor(height / 4);
         
-        // Dibujar el frame actual del video en el canvas
-        ctx.drawImage(video, 0, 0, width, height);
+        canvas.width = sampleWidth;
+        canvas.height = sampleHeight;
+        
+        // Dibujar el frame actual del video en el canvas, reduciendo la resolución
+        ctx.drawImage(video, 0, 0, sampleWidth, sampleHeight);
         
         // Obtener los datos de imagen del canvas
-        const imageData = ctx.getImageData(0, 0, width, height).data;
+        const imageData = ctx.getImageData(0, 0, sampleWidth, sampleHeight).data;
         
-        // Calcular el brillo promedio (simplificado)
+        // Calcular el brillo promedio (optimizado)
         let totalBrightness = 0;
-        for (let i = 0; i < imageData.length; i += 16) {  // Muestrear cada 16 píxeles para rendimiento
+        // Muestrear cada 32 píxeles para aumentar aún más el rendimiento
+        for (let i = 0; i < imageData.length; i += 32) {  
           totalBrightness += (imageData[i] + imageData[i+1] + imageData[i+2]) / 3;
         }
-        const avgBrightness = totalBrightness / (imageData.length / 16);
+        const avgBrightness = totalBrightness / (imageData.length / 32);
         
         // Detectar frames negros (brillo muy bajo)
         if (avgBrightness < 5) {  // Umbral de brillo para considerar un frame como negro
           console.warn(`Black frame detected on ${cameraType} camera`);
           unchangedFrameCount++;
+          
+          // Actualizar UI para indicar calidad de señal pobre
+          setVideoQuality('poor');
         } 
         // Detectar frames congelados comparando con el frame anterior
         else if (lastImageData) {
           let diff = 0;
-          for (let i = 0; i < imageData.length; i += 64) {  // Muestrear cada 64 píxeles para rendimiento
+          // Muestrear cada 128 píxeles para aumentar aún más el rendimiento
+          for (let i = 0; i < imageData.length; i += 128) {  
             diff += Math.abs(imageData[i] - lastImageData[i]);
           }
           
           // Si la diferencia es muy pequeña, consideramos que el frame está congelado
           if (diff < 100) {
             unchangedFrameCount++;
+            // Después de 3 frames congelados, actualizar el estado
+            if (unchangedFrameCount > 3) {
+              setVideoQuality('poor');
+            }
           } else {
             unchangedFrameCount = 0;
+            // Si detectamos movimiento normal, restablecer la calidad
+            setVideoQuality('good');
           }
         }
         
         // Si detectamos demasiados frames congelados o negros consecutivos, reiniciar la conexión
-        if (unchangedFrameCount > 10) {
+        if (unchangedFrameCount > 7) { // Reducido de 10 a 7 para reconectar más rápido en caso de problemas
           console.warn(`Multiple frozen/black frames detected on ${cameraType} camera, reconnecting...`);
           unchangedFrameCount = 0;
           
@@ -224,7 +265,7 @@ function WebRTCCamera({ cameraType, width = '100%', height = '100%', className =
       } catch (e) {
         console.error('Error in black frame detection:', e);
       }
-    }, 1000);  // Comprobar cada segundo
+    }, 2000);  // Comprobar cada 2 segundos en lugar de cada segundo (reducir carga)
   };
 
   // Configuración de la conexión WebRTC
@@ -294,6 +335,13 @@ function WebRTCCamera({ cameraType, width = '100%', height = '100%', className =
         if (peerConnection.connectionState === 'connected') {
           // Reiniciar el contador de intentos cuando la conexión es exitosa
           setReconnectAttempt(0);
+          
+          // Verificar soporte de estadísticas cuando la conexión se establece
+          if (showStats) {
+            setTimeout(() => {
+              checkWebRTCStatsSupport();
+            }, 1000);
+          }
           
           // Cuando la conexión se establece, iniciar un timer para verificar si realmente recibimos video
           videoCheckTimerRef.current = setInterval(() => {
@@ -462,7 +510,26 @@ function WebRTCCamera({ cameraType, width = '100%', height = '100%', className =
             message = JSON.parse(event.data);
           }
           
-          if (message.type === 'answer') {
+          // Capturar ID de conexión para poder enviar heartbeats
+          if (message.type === 'connection-id' && message.id) {
+            connectionIdRef.current = message.id;
+            console.log(`ID de conexión WebRTC recibido: ${message.id} para ${cameraType}`);
+          }
+          
+          // Manejar ID de conexión enviado por el servidor
+          if (message.type === 'connection-id') {
+            console.log(`Recibido ID de conexión para ${cameraType} cámara: ${message.id}`);
+            connectionIdRef.current = message.id;
+            
+            // Iniciar envío de heartbeats al servidor
+            if (heartbeatIntervalRef.current) {
+              clearInterval(heartbeatIntervalRef.current);
+            }
+            heartbeatIntervalRef.current = setInterval(() => {
+              sendHeartbeat();
+            }, 5000); // Enviar heartbeat cada 5 segundos
+          }
+          else if (message.type === 'answer') {
             // Corregir el SDP antes de crear la descripción de sesión
             let sdp = message.sdp;
             let sdpModified = false;
@@ -726,6 +793,16 @@ function WebRTCCamera({ cameraType, width = '100%', height = '100%', className =
       blackFrameDetectionRef.current = null;
     }
     
+    if (statsIntervalRef.current) {
+      clearInterval(statsIntervalRef.current);
+      statsIntervalRef.current = null;
+    }
+    
+    if (heartbeatIntervalRef.current) {
+      clearInterval(heartbeatIntervalRef.current);
+      heartbeatIntervalRef.current = null;
+    }
+    
     // Limpiar el stream de video
     if (videoRef.current && videoRef.current.srcObject) {
       const tracks = videoRef.current.srcObject.getTracks();
@@ -765,18 +842,95 @@ function WebRTCCamera({ cameraType, width = '100%', height = '100%', className =
   
   // Efecto para configurar la conexión WebRTC cuando el componente se monta
   useEffect(() => {
+    console.log('Inicializando WebRTCCamera para', cameraType);
+    
     // Iniciar con un retraso aleatorio para evitar que múltiples cámaras inicien simultáneamente
     const startupDelay = Math.random() * 500; // Retraso aleatorio de hasta 500ms
     const timeoutId = setTimeout(() => {
       setupWebRTC();
     }, startupDelay);
     
-    // Función de limpieza al desmontar
+    // Función de limpieza
     return () => {
       clearTimeout(timeoutId);
-      cleanupConnections();
     };
   }, [cameraType]); // Reconectar si cambia el tipo de cámara
+  
+  // Efecto para manejar la limpieza de recursos al desmontar
+  useEffect(() => {
+    return () => {
+      console.log('Limpiando recursos WebRTC para', cameraType);
+      
+      // Enviar señal de desconexión explícita al desmontar
+      if (connectionIdRef.current) {
+        try {
+          // Obtener la ruta base para las solicitudes API
+          let apiBase = window.location.port === '5173' 
+            ? `http://${window.location.hostname}:8000/api` 
+            : '/api';
+          
+          // Enviar solicitud de desconexión explícita como petición síncrona para asegurar que se envía
+          const xhr = new XMLHttpRequest();
+          xhr.open('POST', `${apiBase}/webrtc/heartbeat/${connectionIdRef.current}?disconnect=true`, false);
+          xhr.send();
+          console.log(`Desconexión explícita enviada para WebRTC ${cameraType} (ID: ${connectionIdRef.current})`);
+        } catch (e) {
+          console.error(`Error enviando desconexión para WebRTC ${cameraType}:`, e);
+        }
+      }
+      
+      // Limpiar intervalos y timers
+      if (statsIntervalRef.current) {
+        clearInterval(statsIntervalRef.current);
+        statsIntervalRef.current = null;
+      }
+      
+      if (heartbeatIntervalRef.current) {
+        clearInterval(heartbeatIntervalRef.current);
+        heartbeatIntervalRef.current = null;
+      }
+      
+      cleanupConnections();
+    };
+  }, []);
+  
+  // Manejar cambios en la visibilidad de la página
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        console.log(`Página oculta, pausando stream WebRTC para ${cameraType}`);
+        
+        // Si tenemos un ID de conexión, enviar una señal de desconexión al servidor
+        if (connectionIdRef.current) {
+          try {
+            const apiBase = window.location.port === '5173' 
+              ? `http://${window.location.hostname}:8000/api` 
+              : '/api';
+            
+            // Enviar señal de desconexión explícita
+            fetch(`${apiBase}/webrtc/heartbeat/${connectionIdRef.current}?disconnect=true`, {
+              method: 'POST',
+            }).catch(e => console.error("Error enviando desconexión WebRTC:", e));
+          } catch (e) {
+            console.error("Error en manejo de desconexión WebRTC:", e);
+          }
+        }
+        
+        // Limpiar conexiones y recursos
+        cleanupConnections();
+      } else {
+        console.log(`Página visible, reactivando stream WebRTC para ${cameraType}`);
+        // Intentar reconectar cuando la página vuelve a ser visible
+        setupWebRTC();
+      }
+    };
+    
+    // Registrar y limpiar el event listener
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [cameraType, setupWebRTC, cleanupConnections]);
   
   // Detectar cambios en la orientación del dispositivo
   useEffect(() => {
@@ -797,11 +951,403 @@ function WebRTCCamera({ cameraType, width = '100%', height = '100%', className =
     }
   }, [orientation, videoReceived]);
   
+  // Verificar si hay soporte para estadísticas WebRTC
+  const checkWebRTCStatsSupport = () => {
+    console.log('Verificando soporte de estadísticas WebRTC para', cameraType);
+    if (peerConnectionRef.current) {
+      peerConnectionRef.current.getStats()
+        .then(stats => {
+          console.log('WebRTC getStats soportado para', cameraType);
+          let hasVideoStats = false;
+          stats.forEach(report => {
+            if (report.type === 'inbound-rtp' && report.kind === 'video') {
+              hasVideoStats = true;
+              console.log('Estadísticas iniciales WebRTC para', cameraType, report);
+            }
+          });
+          
+          if (!hasVideoStats) {
+            console.warn('No se encontraron estadísticas de video en WebRTCCamera', cameraType);
+          }
+        })
+        .catch(err => {
+          console.error('Error al obtener estadísticas WebRTC', cameraType, err);
+        });
+    } else {
+      console.warn('No hay PeerConnection disponible para comprobar estadísticas', cameraType);
+    }
+  };
+  
   // Función para intentar reconexión manual
   const handleReconnect = () => {
     cleanupConnections();
     setupWebRTC();
   };
+  
+  // Recopilar estadísticas WebRTC
+  const collectWebRTCStats = async () => {
+    // Verificar si tenemos una RTCPeerConnection válida
+    if (!peerConnectionRef.current) {
+      console.warn('No hay PeerConnection válida para obtener estadísticas en WebRTCCamera', cameraType);
+      return;
+    }
+    
+    if (connectionState !== 'connected') {
+      console.warn('WebRTCCamera no está conectada, no se pueden obtener estadísticas', cameraType, connectionState);
+      return;
+    }
+    
+    try {
+      const stats = await peerConnectionRef.current.getStats();
+      const now = Date.now();
+      
+      // Inicializar lastStatsTime si es la primera vez
+      if (!lastStatsTime.current) {
+        lastStatsTime.current = now;
+        return; // Esperar a la próxima llamada para tener datos comparativos
+      }
+      
+      stats.forEach(report => {
+        if (report.type === 'inbound-rtp' && report.kind === 'video') {
+          // Calcular FPS basado en los frames decodificados
+          if (report.framesDecoded) {
+            // El mejor método - usar framesPerSecond directamente si está disponible
+            if (report.framesPerSecond !== undefined) {
+              setFps(Math.round(report.framesPerSecond));
+              console.log(`FPS para ${cameraType} (directo del API):`, Math.round(report.framesPerSecond));
+            } 
+            // Método alternativo - calcular por diferencia de frames decodificados
+            else {
+              const timeDiffInSeconds = (now - lastStatsTime.current) / 1000;
+              
+              // Protección para evitar divisiones por cero o valores muy pequeños
+              if (timeDiffInSeconds >= 0.1) {
+                const framesDiff = report.framesDecoded - (lastFramesDecoded.current || 0);
+                const calculatedFps = framesDiff / timeDiffInSeconds;
+                
+                console.log(`FPS para ${cameraType} (calculado):`, {
+                  framesDecoded: report.framesDecoded,
+                  lastFramesDecoded: lastFramesDecoded.current,
+                  framesDiff,
+                  timeDiffInSeconds,
+                  calculatedFps: Math.round(calculatedFps)
+                });
+                
+                // Actualizar FPS solo si el valor es razonable
+                if (calculatedFps >= 0 && calculatedFps < 100) {
+                  setFps(Math.round(calculatedFps));
+                }
+              }
+            }
+            
+            // Actualizar contador para la próxima iteración
+            lastFramesDecoded.current = report.framesDecoded;
+          }
+          
+          // Calcular bitrate
+          if (report.bytesReceived && lastBytesReceived.current && lastStatsTime.current) {
+            const timeDiffSeconds = (now - lastStatsTime.current) / 1000;
+            if (timeDiffSeconds > 0) {
+              const bytesDiff = report.bytesReceived - lastBytesReceived.current;
+              const bitrate = (8 * bytesDiff) / timeDiffSeconds; // bits por segundo
+              setBitrate(Math.round(bitrate / 1000)); // Convertir a kbps
+            }
+          }
+          
+          lastBytesReceived.current = report.bytesReceived;
+          
+          // Obtener paquetes perdidos
+          if (report.packetsLost !== undefined) {
+            setPacketsLost(report.packetsLost);
+          }
+          
+          // Obtener latencia si está disponible
+          if (report.jitter) {
+            // Actualizar historial de latencia para calcular promedios
+            const jitterMs = Math.round(report.jitter * 1000); // Convertir a ms
+            latencyHistoryRef.current.push(jitterMs);
+            
+            // Mantener solo los últimos 10 valores para el promedio
+            if (latencyHistoryRef.current.length > 10) {
+              latencyHistoryRef.current.shift();
+            }
+            
+            // Calcular el promedio de latencia
+            const avgLatency = Math.round(
+              latencyHistoryRef.current.reduce((sum, val) => sum + val, 0) / 
+              latencyHistoryRef.current.length
+            );
+            
+            setLatency(avgLatency);
+          }
+        }
+        
+        // Obtener resolución
+        if (report.type === 'track' && report.kind === 'video') {
+          if (report.frameWidth && report.frameHeight) {
+            setResolution(`${report.frameWidth}x${report.frameHeight}`);
+          }
+        }
+      });
+      
+      lastStatsTime.current = now;
+    } catch (error) {
+      console.error('Error collecting WebRTC stats:', error);
+    }
+  };
+  
+  // Efecto para obtener estadísticas de rendimiento periódicamente
+  useEffect(() => {
+    if (showStats && connectionState === 'connected') {
+      console.log('Iniciando recolección de estadísticas WebRTC para', cameraType);
+      
+      // Limpiar intervalo anterior si existe
+      if (statsIntervalRef.current) {
+        clearInterval(statsIntervalRef.current);
+        statsIntervalRef.current = null;
+      }
+      
+      // Inicializar valores de estadísticas
+      lastBytesReceived.current = 0;
+      lastStatsTime.current = Date.now();
+      lastFramesDecoded.current = 0;
+      latencyHistoryRef.current = [];
+      
+      statsIntervalRef.current = setInterval(() => {
+        collectWebRTCStats();
+      }, 1000); // Actualizar cada segundo para mejor precisión
+      
+      // Llamar inmediatamente para inicializar
+      collectWebRTCStats();
+      
+      return () => {
+        if (statsIntervalRef.current) {
+          clearInterval(statsIntervalRef.current);
+          statsIntervalRef.current = null;
+        }
+      };
+    } else if (!showStats && statsIntervalRef.current) {
+      console.log('Deteniendo recolección de estadísticas WebRTC para', cameraType);
+      clearInterval(statsIntervalRef.current);
+      statsIntervalRef.current = null;
+    }
+  }, [showStats, connectionState]);
+  
+  // Configurar intervalos de heartbeat para mantener la conexión activa
+  useEffect(() => {
+    // Iniciar heartbeat cuando la conexión está establecida
+    if (connectionState === 'connected' && connectionIdRef.current) {
+      console.log(`Iniciando heartbeats para WebRTC ${cameraType}`);
+      
+      // Limpiar intervalo anterior si existe
+      if (heartbeatIntervalRef.current) {
+        clearInterval(heartbeatIntervalRef.current);
+      }
+      
+      // Enviar heartbeat inmediato
+      sendHeartbeat();
+      
+      // Configurar heartbeat periódico
+      heartbeatIntervalRef.current = setInterval(() => {
+        if (document.visibilityState === 'visible') {
+          sendHeartbeat();
+        }
+      }, 5000); // Cada 5 segundos
+    }
+    
+    return () => {
+      if (heartbeatIntervalRef.current) {
+        clearInterval(heartbeatIntervalRef.current);
+        heartbeatIntervalRef.current = null;
+      }
+    };
+  }, [connectionState, connectionIdRef.current]);
+  
+  // Función para enviar heartbeats al servidor para mantener la conexión activa
+  const sendHeartbeat = async () => {
+    if (!connectionIdRef.current || document.visibilityState !== 'visible') return;
+    
+    try {
+      // Obtener la ruta base para las solicitudes API
+      let apiBase;
+      if (window.location.port === '5173') {
+        // Desarrollo
+        apiBase = `http://${window.location.hostname}:8000/api`;
+      } else {
+        // Producción
+        apiBase = `/api`;
+      }
+      
+      // Enviar solicitud de heartbeat
+      const response = await fetch(`${apiBase}/webrtc/heartbeat/${connectionIdRef.current}`, {
+        method: 'POST',
+      });
+      
+      const data = await response.json();
+      
+      if (data.status !== 'ok') {
+        console.warn(`Heartbeat fallido para WebRTC ${cameraType}:`, data);
+      }
+    } catch (error) {
+      console.error(`Error enviando heartbeat para WebRTC ${cameraType}:`, error);
+    }
+  };
+  
+  // Configurar intervalos de heartbeat
+  useEffect(() => {
+    if (connectionState === 'connected') {
+      // Enviar un heartbeat cada 15 segundos
+      heartbeatIntervalRef.current = setInterval(() => {
+        sendHeartbeat();
+      }, 15000);
+      
+      return () => {
+        if (heartbeatIntervalRef.current) {
+          clearInterval(heartbeatIntervalRef.current);
+          heartbeatIntervalRef.current = null;
+        }
+      };
+    }
+  }, [connectionState]);
+  
+  // Función para manejar el cambio de visibilidad de la página
+  const handleVisibilityChange = () => {
+    if (document.hidden) {
+      console.log(`Página oculta, cerrando conexión WebRTC para cámara ${cameraType}`);
+      
+      // Si la página está oculta, pausar los heartbeats para que el servidor cierre la conexión
+      if (heartbeatIntervalRef.current) {
+        clearInterval(heartbeatIntervalRef.current);
+        heartbeatIntervalRef.current = null;
+      }
+      
+      // Informar al servidor que nos desconectamos explícitamente
+      if (connectionIdRef.current) {
+        // Enviar una señal de desconexión explícita
+        try {
+          let apiBase = window.location.port === '5173' ? 
+            `http://${window.location.hostname}:8000/api` : '/api';
+            
+          fetch(`${apiBase}/heartbeat/${connectionIdRef.current}?disconnect=true`, {
+            method: 'POST',
+          }).catch(err => console.log('Error enviando señal de desconexión:', err));
+        } catch (e) {
+          console.error('Error enviando señal de desconexión:', e);
+        }
+      }
+      
+      // Cerrar activamente la conexión WebRTC para liberar recursos del servidor
+      if (peerConnectionRef.current) {
+        // Guardar el estado para saber que necesitamos reconectar cuando volvamos
+        peerConnectionRef.current._wasConnected = true;
+        
+        try {
+          // Detener tracks antes de cerrar la conexión
+          if (videoRef.current && videoRef.current.srcObject) {
+            const tracks = videoRef.current.srcObject.getTracks();
+            tracks.forEach(track => track.stop());
+            videoRef.current.srcObject = null;
+          }
+          
+          // Cerrar la conexión RTCPeerConnection
+          peerConnectionRef.current.close();
+        } catch (e) {
+          console.error(`Error cerrando conexión WebRTC para ${cameraType}:`, e);
+        }
+      }
+      
+      // También cerrar el WebSocket
+      if (webSocketRef.current) {
+        try {
+          webSocketRef.current.close();
+        } catch (e) {
+          console.error(`Error cerrando WebSocket para ${cameraType}:`, e);
+        }
+      }
+    } else {
+      console.log(`Página visible, reactivando streaming para cámara ${cameraType}`);
+      
+      // Comprobar si necesitamos reconectar
+      const needsReconnect = peerConnectionRef.current?._wasConnected || 
+                           !peerConnectionRef.current || 
+                           peerConnectionRef.current.connectionState === 'closed';
+      
+      if (needsReconnect) {
+        console.log(`Reconectando WebRTC para cámara ${cameraType} después de cambio de visibilidad`);
+        // Limpiar conexiones existentes y reconectar
+        cleanupConnections();
+        // Pequeño retraso para asegurar que todo se limpia correctamente
+        setTimeout(() => {
+          if (document.visibilityState === 'visible') {
+            setupWebRTC();
+          }
+        }, 200);
+      } else if (connectionIdRef.current && !heartbeatIntervalRef.current && videoReceived) {
+        // Si aún tenemos una conexión activa, solo reiniciar heartbeats
+        heartbeatIntervalRef.current = setInterval(() => {
+          sendHeartbeat();
+        }, 5000);
+        
+        // Reanudar la reproducción del video si está pausado
+        if (videoRef.current && videoRef.current.srcObject && videoRef.current.paused) {
+          videoRef.current.play().catch(e => console.error('Error reactivando video:', e));
+        }
+      }
+    }
+  };
+  
+  // Efecto para gestionar los cambios de visibilidad de la página
+  useEffect(() => {
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [connectionState, videoReceived]);
+  
+  // Efecto para cerrar conexiones cuando el usuario sale de la página
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      // Intentar enviar un mensaje de cierre
+      if (webSocketRef.current && webSocketRef.current.readyState === WebSocket.OPEN) {
+        try {
+          webSocketRef.current.send(JSON.stringify({
+            type: 'close'
+          }));
+        } catch (e) {
+          console.error(`Error enviando mensaje de cierre para ${cameraType} cámara:`, e);
+        }
+      }
+
+      // Intentar cerrar la conexión RTCPeerConnection
+      if (peerConnectionRef.current) {
+        try {
+          peerConnectionRef.current.close();
+        } catch (e) {
+          console.error(`Error cerrando RTCPeerConnection para ${cameraType} cámara:`, e);
+        }
+      }
+
+      // Limpiar streams de video
+      if (videoRef.current && videoRef.current.srcObject) {
+        const tracks = videoRef.current.srcObject.getTracks();
+        tracks.forEach(track => {
+          try {
+            track.stop();
+          } catch (e) {
+            console.error(`Error deteniendo track para ${cameraType} cámara:`, e);
+          }
+        });
+        videoRef.current.srcObject = null;
+      }
+    };
+    
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, []);
   
   // Renderizar el componente
   return (
@@ -813,7 +1359,8 @@ function WebRTCCamera({ cameraType, width = '100%', height = '100%', className =
         overflow: 'hidden',
         display: 'flex',
         justifyContent: 'center', 
-        alignItems: 'center'
+        alignItems: 'center',
+        backgroundColor: 'black' // Añadimos fondo negro para evitar espacios en blanco
       }}
     >
       <video 
@@ -824,7 +1371,7 @@ function WebRTCCamera({ cameraType, width = '100%', height = '100%', className =
         style={{ 
           width: '100%', 
           height: '100%', 
-          objectFit: orientation === 'portrait' ? 'contain' : 'cover',
+          objectFit: 'contain', // Usar 'contain' para preservar la relación de aspecto
           display: 'block' // Siempre mostrar el video, incluso si no hay señal
         }}
         onLoadedMetadata={(e) => {
@@ -844,12 +1391,23 @@ function WebRTCCamera({ cameraType, width = '100%', height = '100%', className =
           console.log(`Video started playing for ${cameraType} camera`);
           setVideoReceived(true);
           lastFrameTimeRef.current = Date.now();
+          // Restablece cualquier mensaje de error cuando el video comienza a reproducirse correctamente
+          setErrorMessage('');
+          setConnectionState('connected');
         }}
         onStalled={() => {
           console.warn(`Video stalled for ${cameraType} camera`);
+          // Mostrar mensaje en consola pero no interrumpir la experiencia de usuario
+          setConnectionState('stalled');
         }}
         onError={(e) => {
           console.error(`Video error for ${cameraType} camera:`, e);
+          setConnectionState('error');
+          setErrorMessage(`Error en la cámara: ${e.target?.error?.message || 'Error desconocido'}`);
+          // Notificar al componente padre sobre el error
+          if (onError) {
+            onError(e);
+          }
         }}
       />
       
@@ -862,15 +1420,20 @@ function WebRTCCamera({ cameraType, width = '100%', height = '100%', className =
             {connectionState === 'connecting' || connectionState === 'connected' ? (
               <>
                 <div className="animate-spin h-8 w-8 border-4 border-t-transparent border-white rounded-full mx-auto mb-2"></div>
-                <p className="text-sm sm:text-base">Conectando a cámara {cameraType}...</p>
+                <p className="text-sm sm:text-base">Conectando a cámara {cameraType === 'road' ? 'frontal' : cameraType === 'interior' ? 'interior' : cameraType}...</p>
               </>
             ) : (
               <>
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 mx-auto mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                 </svg>
-                <p className="text-base sm:text-lg font-medium">Cámara desconectada</p>
+                <p className="text-base sm:text-lg font-medium">
+                  {connectionState === 'stalled' ? 'Cámara congelada' : 'Cámara desconectada'}
+                </p>
                 {errorMessage && <p className="text-red-400 text-xs sm:text-sm mt-2">{errorMessage}</p>}
+                {connectionState === 'stalled' && <p className="text-yellow-400 text-xs sm:text-sm mt-2">
+                  Se detectaron demasiados frames en caché. El servidor podría estar sobrecargado.
+                </p>}
                 <button 
                   className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-white text-sm sm:text-base"
                   onClick={handleReconnect}
@@ -883,6 +1446,47 @@ function WebRTCCamera({ cameraType, width = '100%', height = '100%', className =
           </div>
         </div>
       )}
+      
+      {/* Indicador de calidad de video */}
+      {videoReceived && videoQuality === 'poor' && (
+        <div 
+          className="absolute bottom-2 right-2 bg-yellow-600 bg-opacity-75 text-white text-xs px-2 py-1 rounded-md z-10 flex items-center animate-pulse"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          </svg>
+          Señal débil - frames en caché
+        </div>
+      )}
+      
+      {/* Botón de reconexión siempre disponible en modo estancado para ofrecer control al usuario */}
+      {videoReceived && connectionState === 'stalled' && (
+        <div 
+          className="absolute bottom-2 left-2 z-10"
+        >
+          <button 
+            className="px-2 py-1 bg-blue-600 hover:bg-blue-700 rounded text-white text-xs"
+            onClick={handleReconnect}
+          >
+            Reconectar
+          </button>
+        </div>
+      )}
+      
+      {/* Mostrar estadísticas de rendimiento si está habilitado */}
+      {showStats && videoReceived && (
+        <PerformanceStats 
+          videoRef={videoRef}
+          stats={{
+            fps,
+            bitrate,
+            latency,
+            resolution,
+            packetsLost
+          }}
+          cameraType={cameraType}
+        />
+      )}
     </div>
   );
 }
@@ -892,7 +1496,8 @@ WebRTCCamera.propTypes = {
   width: PropTypes.string,
   height: PropTypes.string,
   className: PropTypes.string,
-  onError: PropTypes.func
+  onError: PropTypes.func,
+  showStats: PropTypes.bool // Nueva prop para controlar la visualización de estadísticas
 };
 
 export default WebRTCCamera;

@@ -1,6 +1,9 @@
 import time
 import logging
 import numpy as np
+import cv2
+import os
+import subprocess
 from .base_camera import BaseCamera
 
 logger = logging.getLogger(__name__)
@@ -37,9 +40,17 @@ class RoadCamera(BaseCamera):
             try:
                 # Usar una configuración más estable para grabación
                 config = self.camera.create_video_configuration(
-                    main={"size": (1280, 720), "format": "XBGR8888"},
+                    main={"size": (1280, 720), "format": "RGB888"},
                     buffer_count=4,  # Más buffers para estabilidad
-                    controls={"FrameRate": 30.0}
+                    controls={
+                        "FrameRate": 30.0,
+                        "AwbMode": 0,  # Auto (0 es el modo automático)
+                        "AwbEnable": 1,  # Habilitar balance de blancos automático
+                        "Brightness": 0.0,  # Valor neutral
+                        "Contrast": 1.0,   # Valor neutral
+                        "Saturation": 1.0, # Valor neutral
+                        "Sharpness": 1.0   # Valor neutral
+                    }
                 )
                 self.camera.configure(config)
                 time.sleep(0.5)  # Dar tiempo para que la cámara se estabilice
@@ -129,8 +140,24 @@ class RoadCamera(BaseCamera):
             
             # Process frame
             if isinstance(frame, np.ndarray) and frame.size > 0:
+                # Corregir el manejo del espacio de color
+                # La PiCamera captura en RGB888, pero ya que trabajamos con OpenCV (que usa BGR),
+                # NO debemos convertir de RGB a BGR porque esto invierte los canales incorrectamente
+                # y causa el tinte azul en las imágenes
+                
+                # Verificar si necesitamos convertir el formato de color
+                if len(frame.shape) == 3 and frame.shape[2] == 3:
+                    # Si la imagen ya está en formato BGR, no hacemos nada
+                    # Si está en RGB, la dejamos así para el streaming MJPEG (que espera RGB)
+                    # Los navegadores esperan RGB para mostrar correctamente
+                    pass
+                
                 # Resize if needed
                 frame = cv2.resize(frame, (640, 480))
+                
+                # Debug para detectar problemas de color
+                logger.debug(f"Frame format: shape={frame.shape}, dtype={frame.dtype}")
+                
                 return frame
             else:
                 logger.warning(f"PiCamera2 frame is not a valid array: {type(frame)}")
@@ -169,8 +196,7 @@ class RoadCamera(BaseCamera):
             encoder = H264Encoder(
                 bitrate=bitrate,
                 repeat=False,
-                iperiod=30,  # Un keyframe cada segundo a 30fps
-                inline_headers=True  # Agrega headers completos para mejor compatibilidad
+                iperiod=30  # Un keyframe cada segundo a 30fps
             )
             
             # Configure output con opciones adicionales para mejor compatibilidad
@@ -227,4 +253,59 @@ class RoadCamera(BaseCamera):
             except Exception as reinit_error:
                 logger.error(f"Error reinitializing camera: {reinit_error}")
                 
+            return False
+    
+    def _start_mjpeg_internal(self, quality=None):
+        """Start native MJPEG streaming using PiCamera2's MJPEGEncoder"""
+        if not self.is_initialized or self.camera is None:
+            logger.warning("PiCamera2 not initialized for MJPEG streaming")
+            return False
+            
+        try:
+            from picamera2.encoders import MJPEGEncoder, Quality
+            from picamera2.outputs import FileOutput
+            
+            # Stop any existing recording
+            try:
+                if hasattr(self.camera, 'stop_recording'):
+                    self.camera.stop_recording()
+            except Exception as e:
+                logger.debug(f"No active recording to stop: {e}")
+            
+            # Determine quality settings
+            if quality == "high":
+                mjpeg_quality = Quality.VERY_HIGH
+            elif quality == "medium":  
+                mjpeg_quality = Quality.MEDIUM
+            elif quality == "low":
+                mjpeg_quality = Quality.LOW
+            else:
+                mjpeg_quality = Quality.HIGH  # Default
+            
+            # Start MJPEG recording to streaming output
+            self.camera.start_recording(
+                MJPEGEncoder(), 
+                FileOutput(self.streaming_output), 
+                mjpeg_quality
+            )
+            
+            logger.info(f"PiCamera2 MJPEG streaming started with quality: {mjpeg_quality}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error starting PiCamera2 MJPEG streaming: {e}")
+            return False
+    
+    def _stop_mjpeg_internal(self):
+        """Stop native MJPEG streaming"""
+        if not self.is_initialized or self.camera is None:
+            return True
+            
+        try:
+            if hasattr(self.camera, 'stop_recording'):
+                self.camera.stop_recording()
+            logger.info("PiCamera2 MJPEG streaming stopped")
+            return True
+        except Exception as e:
+            logger.error(f"Error stopping PiCamera2 MJPEG streaming: {e}")
             return False

@@ -1,11 +1,37 @@
-from fastapi import APIRouter, HTTPException
-from typing import Dict, Any, Optional
+from fastapi import APIRouter, HTTPException, BackgroundTasks
+from typing import Dict, Any, Optional, List
+from pydantic import BaseModel
 import os
+import pwd
+import grp
+import stat
 
 router = APIRouter()
 
-# Will be initialized from main.py
+# Referencias a módulos que serán inicializados desde main.py
 disk_manager = None
+hdd_copy_module = None  # Agregado para manejo de HDD Copy
+
+# Modelos Pydantic para los parámetros de entrada
+class DriveSettings(BaseModel):
+    autoDetectDrives: Optional[bool] = None
+    mainDrive: Optional[str] = None
+    mountPoint: Optional[str] = None
+    autoCleanEnabled: Optional[bool] = None
+    autoCleanThreshold: Optional[int] = None
+    autoCleanDays: Optional[int] = None
+
+class MountDriveRequest(BaseModel):
+    device: Optional[str] = None
+
+class CleanupRequest(BaseModel):
+    days: int = 30
+
+class HDDCopyRequest(BaseModel):
+    destination: Optional[str] = None
+
+class DeviceEjectRequest(BaseModel):
+    device_path: str
 
 # Storage management endpoints
 @router.get("/status")
@@ -13,7 +39,7 @@ async def get_storage_status():
     """Get current storage status and disk information"""
     disk_info = disk_manager.get_disk_info()
     video_stats = disk_manager.get_video_stats()
-    settings = disk_manager.get_storage_settings()
+    settings = disk_manager.settings
     
     return {
         "disk": disk_info,
@@ -33,21 +59,29 @@ async def get_video_stats():
     video_stats = disk_manager.get_video_stats()
     return video_stats
 
+@router.get("/settings")
+async def get_storage_settings():
+    """Get storage settings"""
+    return disk_manager.settings
+
 @router.post("/settings")
-async def update_storage_settings(settings: Dict[str, Any]):
+async def update_storage_settings(settings: DriveSettings):
     """Update storage management settings"""
-    success = disk_manager.update_storage_settings(settings)
+    # Convert Pydantic model to dict, excluding None values
+    settings_dict = {k: v for k, v in settings.dict().items() if v is not None}
+    success = disk_manager.apply_settings(settings_dict)
+    
     if success:
-        return {"status": "success", "message": "Settings updated"}
+        return {"success": True, "message": "Settings updated successfully"}
     else:
         raise HTTPException(status_code=500, detail="Failed to update settings")
 
 @router.post("/clean")
-async def clean_old_videos(days: int = 30):
+async def clean_old_videos(request: CleanupRequest):
     """Clean up videos older than specified days"""
-    result = disk_manager.clean_old_videos(days)
+    result = disk_manager.clean_old_videos(request.days)
     return {
-        "status": "success", 
+        "success": True, 
         "deleted": result["deleted"],
         "freedSpace": result["freedSpace"]
     }
@@ -60,7 +94,7 @@ async def backup_videos(destination: str):
         
     result = disk_manager.backup_videos(destination)
     return {
-        "status": "success", 
+        "success": True, 
         "copied": result["copied"],
         "totalSize": result["totalSize"],
         "location": result.get("backupLocation", "")
@@ -74,17 +108,21 @@ async def archive_videos(archive_type: str = "standard"):
         
     result = disk_manager.archive_videos(archive_type)
     return {
-        "status": "success", 
+        "success": True, 
         "archived": result["archived"],
         "savedSpace": result["savedSpace"]
     }
 
 @router.post("/mount")
-async def mount_storage_drive():
-    """Mount the configured storage drive"""
-    success = disk_manager.mount_drive()
+async def mount_storage_drive(request: Optional[MountDriveRequest] = None):
+    """Mount the configured storage drive or a specific device"""
+    device = None
+    if request and request.device:
+        device = request.device
+        
+    success = disk_manager.mount_drive(device)
     if success:
-        return {"status": "success", "message": "Drive mounted successfully"}
+        return {"success": True, "message": "Drive mounted successfully"}
     else:
         raise HTTPException(status_code=500, detail="Failed to mount drive")
 
@@ -93,9 +131,58 @@ async def unmount_storage_drive():
     """Safely unmount the storage drive"""
     success = disk_manager.unmount_drive()
     if success:
-        return {"status": "success", "message": "Drive unmounted successfully"}
+        return {"success": True, "message": "Drive unmounted successfully"}
     else:
         raise HTTPException(status_code=500, detail="Failed to unmount drive")
+
+@router.get("/detect-drives")
+async def detect_usb_drives():
+    """Detect all connected USB drives"""
+    drives = disk_manager.detect_usb_drives()
+    return {"drives": drives}
+
+@router.get("/disks")
+async def get_disks():
+    """Get information about all connected disks including USB drives"""
+    try:
+        usb_drives = disk_manager.detect_usb_drives()
+        # Formatear los datos para que coincidan con lo que espera el frontend
+        formatted_drives = []
+        
+        for drive in usb_drives:
+            formatted_drive = {
+                "name": drive.get("name", ""),
+                "model": drive.get("model", "Dispositivo USB"),
+                "size": drive.get("size", ""),
+                "type": "usb",  # Marcar como USB
+                "mounted": drive.get("mounted", False),
+                "mountpoint": drive.get("mountpoint"),
+                "partitions": drive.get("partitions", [])
+            }
+            formatted_drives.append(formatted_drive)
+        
+        return {"disks": formatted_drives}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error detecting disks: {str(e)}")
+
+@router.get("/disk-details/{device_path:path}")
+async def get_disk_details(device_path: str):
+    """Get detailed information about a specific disk"""
+    # Asegurarse de que el path comienza con /dev/
+    if not device_path.startswith('/dev/'):
+        device_path = f'/dev/{device_path}'
+        
+    details = disk_manager.get_disk_details(device_path)
+    return details
+
+@router.post("/eject/{device_path}")
+async def eject_drive(device_path: str):
+    """Safely eject a drive"""
+    result = disk_manager.safely_eject_drive(device_path)
+    if result["success"]:
+        return result
+    else:
+        raise HTTPException(status_code=500, detail=result["message"])
 
 @router.get("/check")
 async def check_storage_status():
@@ -191,3 +278,53 @@ async def repair_mount_permissions():
             "status": "info", 
             "message": f"Mount point already exists at {mount_point}. To fix permissions, run: sudo chown $USER:$USER {mount_point}"
         }
+
+# HDD Backup endpoints - Integrados desde hdd_backup.py
+@router.post("/hdd-backup/start-copy")
+async def start_copy_to_hdd(request: HDDCopyRequest = None):
+    """Iniciar copia de videos a un disco duro externo"""
+    if not hdd_copy_module:
+        raise HTTPException(status_code=500, detail="Módulo de copia a HDD no inicializado")
+    
+    destination = request.destination if request and request.destination else None
+    result = hdd_copy_module.start_copy_to_hdd(destination)
+    
+    if result["success"]:
+        return result
+    else:
+        raise HTTPException(status_code=400, detail=result["message"])
+
+@router.post("/hdd-backup/cancel-copy")
+async def cancel_copy_operation():
+    """Cancelar operación de copia en progreso"""
+    if not hdd_copy_module:
+        raise HTTPException(status_code=500, detail="Módulo de copia a HDD no inicializado")
+    
+    result = hdd_copy_module.cancel_copy_operation()
+    
+    if result["success"]:
+        return result
+    else:
+        raise HTTPException(status_code=400, detail=result["message"])
+
+@router.get("/hdd-backup/copy-status")
+async def get_copy_status():
+    """Obtener estado de la operación de copia"""
+    if not hdd_copy_module:
+        raise HTTPException(status_code=500, detail="Módulo de copia a HDD no inicializado")
+    
+    return hdd_copy_module.get_copy_status()
+
+@router.post("/hdd-backup/eject-after-copy")
+async def safely_eject_after_copy(request: DeviceEjectRequest = None):
+    """Expulsar disco de forma segura después de la copia"""
+    if not hdd_copy_module:
+        raise HTTPException(status_code=500, detail="Módulo de copia a HDD no inicializado")
+    
+    device_path = request.device_path if request and hasattr(request, 'device_path') else None
+    result = hdd_copy_module.safely_eject_after_copy(device_path)
+    
+    if result["success"]:
+        return result
+    else:
+        raise HTTPException(status_code=400, detail=result["message"])

@@ -1,20 +1,38 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import axios from 'axios'
 import { format } from 'date-fns'
-import { FaUpload, FaFileVideo, FaCheckCircle, FaTimesCircle, FaFolderOpen, FaCalendarAlt } from 'react-icons/fa'
+import { FaAngleUp, FaAngleDown } from 'react-icons/fa'
+
+// Componentes
+import DragDropZone from '../components/BulkUploader/DragDropZone'
+import UploadOptions from '../components/BulkUploader/UploadOptions'
+import FileList from '../components/BulkUploader/FileList'
+import UploadResults from '../components/BulkUploader/UploadResults'
+
+// Servicios
+import { processFiles, uploadVideoFile } from '../components/BulkUploader/uploadService'
 
 function BulkUploader() {
+  // Estado de archivos y carga
   const [files, setFiles] = useState([])
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState({})
+  const [uploadResults, setUploadResults] = useState([])
+  const [dragActive, setDragActive] = useState(false)
+  
+  // Estado de opciones de carga
+  const [useFileDate, setUseFileDate] = useState(true)
   const [uploadDate, setUploadDate] = useState(format(new Date(), 'yyyy-MM-dd'))
   const [uploadLocation, setUploadLocation] = useState({ lat: '', lon: '' })
-  const [dragActive, setDragActive] = useState(false)
-  const [uploadResults, setUploadResults] = useState([])
-  const [useFileDate, setUseFileDate] = useState(true)
+  const [videoSource, setVideoSource] = useState('external')
+  const [tags, setTags] = useState('')
+  const [isGettingLocation, setIsGettingLocation] = useState(false)
   
+  // Referencias
   const fileInputRef = useRef(null)
   const folderInputRef = useRef(null)
+  
+  // Formatos soportados
+  const supportedFormats = ['MP4', 'AVI', 'MOV', 'INSV', 'MTS', 'M2TS']
 
   // Set up drag and drop event handlers
   const handleDrag = useCallback((e) => {
@@ -35,46 +53,20 @@ function BulkUploader() {
     setDragActive(false)
     
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      handleFiles(e.dataTransfer.files)
+      handleFilesSelection(e.dataTransfer.files)
     }
   }, [])
 
   // Process selected files
-  const handleFiles = (fileList) => {
-    const newFiles = Array.from(fileList).filter(file => 
-      file.type.startsWith('video/') || 
-      file.name.endsWith('.mp4') || 
-      file.name.endsWith('.avi') || 
-      file.name.endsWith('.mov') ||
-      file.name.endsWith('.insv') // Insta360 files
-    )
+  const handleFilesSelection = async (fileList) => {
+    const newFiles = await processFiles(fileList)
     
     if (newFiles.length === 0) {
-      alert('No video files found. Supported formats: MP4, AVI, MOV, INSV')
+      alert(`No se encontraron archivos de video. Formatos soportados: ${supportedFormats.join(', ')}`)
       return
     }
     
-    // Create file entries with metadata
-    const filesWithMeta = newFiles.map(file => {
-      // Try to extract date from filename (common format for cameras: yyyymmdd_hhmmss)
-      let fileDate = null
-      const dateMatch = file.name.match(/(\d{4})(\d{2})(\d{2})/)
-      if (dateMatch) {
-        const [_, year, month, day] = dateMatch
-        fileDate = `${year}-${month}-${day}`
-      }
-      
-      return {
-        file,
-        name: file.name,
-        size: file.size,
-        type: file.type,
-        fileDate,
-        status: 'pending' // pending, uploading, success, error
-      }
-    })
-    
-    setFiles(prev => [...prev, ...filesWithMeta])
+    setFiles(prev => [...prev, ...newFiles])
   }
 
   // Handle file selection via button
@@ -90,14 +82,14 @@ function BulkUploader() {
   // Handle file input change
   const onFileInputChange = (e) => {
     if (e.target.files && e.target.files.length > 0) {
-      handleFiles(e.target.files)
+      handleFilesSelection(e.target.files)
     }
   }
 
   // Handle folder input change (gets all files in the folder)
   const onFolderInputChange = (e) => {
     if (e.target.files && e.target.files.length > 0) {
-      handleFiles(e.target.files)
+      handleFilesSelection(e.target.files)
     }
   }
 
@@ -113,10 +105,36 @@ function BulkUploader() {
     setUploadResults([])
   }
 
+  // Get current location
+  const getCurrentLocation = () => {
+    if (navigator.geolocation) {
+      setIsGettingLocation(true)
+      
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setUploadLocation({
+            lat: position.coords.latitude.toFixed(6),
+            lon: position.coords.longitude.toFixed(6)
+          })
+          setIsGettingLocation(false)
+        },
+        (error) => {
+          console.error('Error getting location:', error)
+          alert('No se pudo obtener la ubicación. Por favor verifica los permisos de ubicación.')
+          setIsGettingLocation(false)
+        },
+        { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+      )
+    } else {
+      alert('Tu navegador no soporta geolocalización')
+    }
+  }
+
   // Upload all files
   const uploadFiles = async () => {
     if (files.length === 0) return
     
+    console.log(`[BULK_UPLOAD] Iniciando carga de ${files.length} archivos`);
     setUploading(true)
     setUploadResults([])
     const results = []
@@ -125,7 +143,12 @@ function BulkUploader() {
       const fileObj = files[i]
       
       // Skip files that have already been processed
-      if (fileObj.status === 'success') continue
+      if (fileObj.status === 'success') {
+        console.log(`[BULK_UPLOAD] Archivo #${i+1} (${fileObj.name}) ya fue procesado con éxito, omitiendo`);
+        continue;
+      }
+      
+      console.log(`[BULK_UPLOAD] Procesando archivo #${i+1}/${files.length}: ${fileObj.name} (${(fileObj.size / 1024 / 1024).toFixed(2)} MB)`);
       
       // Update status to uploading
       setFiles(prev => {
@@ -136,46 +159,95 @@ function BulkUploader() {
       
       // Determine which date to use for this file
       const fileUploadDate = useFileDate && fileObj.fileDate ? fileObj.fileDate : uploadDate
+      console.log(`[BULK_UPLOAD] Fecha seleccionada: ${fileUploadDate}, Fuente: ${useFileDate && fileObj.fileDate ? 'archivo' : 'manual'}`);
       
       try {
-        const formData = new FormData()
-        formData.append('file', fileObj.file)
-        formData.append('date', fileUploadDate)
+        // Inicializar el progreso a 0 para este archivo
+        setUploadProgress(prev => ({
+          ...prev,
+          [i]: 0
+        }))
         
-        if (uploadLocation.lat && uploadLocation.lon) {
-          formData.append('lat', uploadLocation.lat)
-          formData.append('lon', uploadLocation.lon)
+        // Preparar metadatos para la carga
+        const metadata = {
+          date: fileUploadDate,
+          lat: uploadLocation.lat || null,
+          lon: uploadLocation.lon || null,
+          source: videoSource,
+          tags: tags || null
         }
+        console.log(`[BULK_UPLOAD] Metadata preparada:`, metadata);
         
-        // Track upload progress
-        const config = {
-          onUploadProgress: (progressEvent) => {
-            const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total)
+        // Realizar la carga con un timeout general
+        let uploadTimeout;
+        console.log(`[BULK_UPLOAD] Configurando timeout de 2 minutos para el archivo`);
+        const timeoutPromise = new Promise((_, reject) => {
+          uploadTimeout = setTimeout(() => {
+            console.error(`[BULK_UPLOAD] Timeout alcanzado después de 2 minutos para el archivo ${fileObj.name}`);
+            reject(new Error("La carga ha excedido el tiempo máximo"));
+          }, 120000); // 2 minutos por archivo como máximo
+        });
+        
+        console.log(`[BULK_UPLOAD] Iniciando la carga real del archivo ${fileObj.name}`);
+        const uploadPromise = uploadVideoFile(
+          fileObj.file, 
+          metadata, 
+          (progress) => {
             setUploadProgress(prev => ({
               ...prev,
-              [i]: percentCompleted
+              [i]: progress
             }))
           }
+        );
+        
+        // Usar Promise.race para implementar el timeout
+        console.log(`[BULK_UPLOAD] Esperando a que termine la carga o el timeout`);
+        const response = await Promise.race([uploadPromise, timeoutPromise]);
+        clearTimeout(uploadTimeout);
+        
+        if (response.success) {
+          console.log(`[BULK_UPLOAD] Archivo #${i+1} cargado con éxito en ${response.uploadTime}s`);
+          
+          // Update file status to success
+          setFiles(prev => {
+            const updated = [...prev]
+            updated[i] = { ...updated[i], status: 'success', response: response.data }
+            return updated
+          })
+          
+          // Asegurar que se muestre progreso completo
+          setUploadProgress(prev => ({
+            ...prev,
+            [i]: 100
+          }))
+          
+          results.push({
+            file: fileObj.name,
+            success: true,
+            message: 'Subido exitosamente',
+            date: fileUploadDate,
+            processingTime: response.uploadTime
+          })
+        } else {
+          console.error(`[BULK_UPLOAD] Error en archivo #${i+1}: ${response.error}`);
+          
+          // Update file status to error
+          setFiles(prev => {
+            const updated = [...prev]
+            updated[i] = { ...updated[i], status: 'error', error: response.error }
+            return updated
+          })
+          
+          results.push({
+            file: fileObj.name,
+            success: false,
+            message: response.error,
+            date: fileUploadDate,
+            processingTime: response.uploadTime
+          })
         }
-        
-        const response = await axios.post('/api/videos/upload', formData, config)
-        
-        // Update file status to success
-        setFiles(prev => {
-          const updated = [...prev]
-          updated[i] = { ...updated[i], status: 'success', response: response.data }
-          return updated
-        })
-        
-        results.push({
-          file: fileObj.name,
-          success: true,
-          message: 'Uploaded successfully',
-          date: fileUploadDate
-        })
-        
       } catch (error) {
-        console.error(`Error uploading file ${fileObj.name}:`, error)
+        console.error(`[BULK_UPLOAD] Error excepcional en archivo #${i+1} (${fileObj.name}):`, error);
         
         // Update file status to error
         setFiles(prev => {
@@ -183,7 +255,7 @@ function BulkUploader() {
           updated[i] = { 
             ...updated[i], 
             status: 'error', 
-            error: error.response?.data?.detail || error.message 
+            error: error.message || "Error desconocido durante la carga" 
           }
           return updated
         })
@@ -191,237 +263,125 @@ function BulkUploader() {
         results.push({
           file: fileObj.name,
           success: false,
-          message: error.response?.data?.detail || error.message,
+          message: error.message || "Error desconocido durante la carga",
           date: fileUploadDate
         })
       }
     }
     
+    console.log(`[BULK_UPLOAD] Proceso de carga finalizado. Resultados:`, results);
     setUploadResults(results)
     setUploading(false)
   }
 
+  // Estado para controlar la visibilidad de opciones en dispositivos móviles
+  const [showOptions, setShowOptions] = useState(false);
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+
+  // Detector de cambio de tamaño para adaptar la UI
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+    };
+  }, []);
+
   return (
-    <div className="p-4">
-      <h1 className="text-xl font-medium mb-4">Bulk Video Uploader</h1>
+    <div className="p-3 sm:p-4 mx-auto bg-gray-50 min-h-screen overflow-hidden has-floating-button">
+      <h1 className="text-xl sm:text-2xl font-medium mb-4 sm:mb-6 text-dashcam-800 px-1">Carga Masiva de Videos</h1>
       
-      {/* Drag & Drop Area */}
-      <div 
-        className={`border-2 border-dashed rounded-lg p-8 text-center mb-4 
-          ${dragActive ? 'border-dashcam-500 bg-dashcam-50' : 'border-gray-300'}`}
-        onDragEnter={handleDrag}
-        onDragOver={handleDrag}
-        onDragLeave={handleDrag}
-        onDrop={handleDrop}
-      >
-        <FaUpload className="mx-auto text-3xl text-gray-400 mb-3" />
-        <p className="mb-2">
-          Drag and drop video files here
-        </p>
-        <p className="text-sm text-gray-500 mb-4">
-          Supported formats: MP4, AVI, MOV, INSV (Insta360)
-        </p>
-        <div className="flex justify-center space-x-4">
-          <button 
-            onClick={onSelectFilesClick}
-            className="btn btn-primary flex items-center"
-          >
-            <FaFileVideo className="mr-2" />
-            Select Files
-          </button>
-          <button 
-            onClick={onSelectFolderClick}
-            className="btn btn-secondary flex items-center"
-          >
-            <FaFolderOpen className="mr-2" />
-            Select Folder
-          </button>
-        </div>
-        
-        {/* Hidden file inputs */}
-        <input 
-          ref={fileInputRef}
-          type="file" 
-          multiple 
-          accept="video/*,.insv"
-          className="hidden"
-          onChange={onFileInputChange}
-        />
-        <input 
-          ref={folderInputRef}
-          type="file" 
-          webkitdirectory="true"
-          directory="true"
-          multiple
-          className="hidden"
-          onChange={onFolderInputChange}
-        />
-      </div>
-      
-      {/* Upload Options */}
-      <div className="card p-4 mb-4">
-        <h2 className="text-lg font-medium mb-3">Upload Options</h2>
-        
-        <div className="space-y-3">
-          <div className="flex items-center">
-            <input 
-              id="useFileDate" 
-              type="checkbox" 
-              checked={useFileDate} 
-              onChange={() => setUseFileDate(!useFileDate)}
-              className="mr-2"
-            />
-            <label htmlFor="useFileDate" className="text-gray-800">
-              Try to extract date from filenames (if possible)
-            </label>
-          </div>
-          
-          <div>
-            <label className="block mb-1 text-sm">Default Date (for files without embedded date)</label>
-            <div className="flex items-center">
-              <FaCalendarAlt className="text-gray-500 mr-2" />
-              <input 
-                type="date" 
-                value={uploadDate} 
-                onChange={(e) => setUploadDate(e.target.value)}
-                className="input flex-grow"
-                disabled={uploading}
-              />
-            </div>
-          </div>
-          
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="block mb-1 text-sm">Latitude (optional)</label>
-              <input 
-                type="text" 
-                value={uploadLocation.lat} 
-                onChange={(e) => setUploadLocation({...uploadLocation, lat: e.target.value})}
-                className="input w-full"
-                placeholder="36.1699"
-                disabled={uploading}
-              />
-            </div>
-            
-            <div>
-              <label className="block mb-1 text-sm">Longitude (optional)</label>
-              <input 
-                type="text" 
-                value={uploadLocation.lon} 
-                onChange={(e) => setUploadLocation({...uploadLocation, lon: e.target.value})}
-                className="input w-full"
-                placeholder="-115.1398"
-                disabled={uploading}
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-      
-      {/* File List */}
-      {files.length > 0 && (
-        <div className="card p-4 mb-4">
-          <div className="flex justify-between items-center mb-3">
-            <h2 className="text-lg font-medium">{files.length} File{files.length !== 1 ? 's' : ''} Selected</h2>
-            <div>
-              <button 
-                onClick={clearFiles}
-                className="btn btn-secondary text-sm mr-2"
-                disabled={uploading}
-              >
-                Clear All
-              </button>
-              <button 
-                onClick={uploadFiles}
-                className="btn btn-primary text-sm"
-                disabled={uploading}
-              >
-                {uploading ? 'Uploading...' : 'Upload All'}
-              </button>
-            </div>
-          </div>
-          
-          <div className="space-y-2 max-h-96 overflow-y-auto">
-            {files.map((file, index) => (
-              <div 
-                key={index} 
-                className={`border rounded-md p-3 ${
-                  file.status === 'success' ? 'bg-green-50 border-green-200' : 
-                  file.status === 'error' ? 'bg-red-50 border-red-200' : 
-                  file.status === 'uploading' ? 'bg-blue-50 border-blue-200' : 
-                  'bg-white border-gray-200'
-                }`}
-              >
-                <div className="flex justify-between items-start">
-                  <div className="flex-grow">
-                    <div className="flex items-center">
-                      <FaFileVideo className="text-gray-500 mr-2" />
-                      <span className="font-medium truncate">{file.name}</span>
-                    </div>
-                    <div className="text-sm text-gray-500 mt-1">
-                      {(file.size / 1024 / 1024).toFixed(2)} MB
-                      {file.fileDate && (
-                        <span className="ml-2">
-                          • Detected date: {file.fileDate}
-                        </span>
-                      )}
-                    </div>
-                    
-                    {file.status === 'error' && (
-                      <div className="text-sm text-red-600 mt-1">
-                        Error: {file.error || 'Upload failed'}
-                      </div>
-                    )}
-                  </div>
-                  
-                  <div className="flex items-center">
-                    {file.status === 'success' && (
-                      <FaCheckCircle className="text-green-500 mr-2" />
-                    )}
-                    {file.status === 'error' && (
-                      <FaTimesCircle className="text-red-500 mr-2" />
-                    )}
-                    {!uploading && file.status !== 'uploading' && (
-                      <button 
-                        onClick={() => removeFile(index)}
-                        className="text-gray-500 hover:text-red-500"
-                      >
-                        ✕
-                      </button>
-                    )}
-                  </div>
-                </div>
-                
-                {/* Progress bar */}
-                {(file.status === 'uploading' || uploadProgress[index]) && (
-                  <div className="w-full bg-gray-200 rounded-full h-2.5 my-2">
-                    <div 
-                      className="bg-dashcam-600 h-2.5 rounded-full" 
-                      style={{ width: `${uploadProgress[index] || 0}%` }}
-                    ></div>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
+      {/* En móvil, mostrar/ocultar opciones con un botón */}
+      {isMobile && (
+        <button 
+          onClick={() => setShowOptions(!showOptions)}
+          className="w-full bg-white border border-gray-300 rounded-lg p-3 mb-4 flex items-center justify-between shadow-sm"
+        >
+          <span className="font-medium text-dashcam-700">Opciones de Carga</span>
+          {showOptions ? <FaAngleUp /> : <FaAngleDown />}
+        </button>
       )}
       
-      {/* Upload Results Summary */}
-      {uploadResults.length > 0 && (
-        <div className="card p-4">
-          <h2 className="text-lg font-medium mb-3">Upload Results</h2>
-          
-          <div className="space-y-2">
-            <div className="flex justify-between text-sm mb-2">
-              <span>Successfully uploaded: {uploadResults.filter(r => r.success).length}</span>
-              <span>Failed: {uploadResults.filter(r => !r.success).length}</span>
-            </div>
-            
-            <p className="text-center py-2 bg-green-100 text-green-800 rounded">
-              Videos will appear in your Calendar view
-            </p>
+      <div className={`flex flex-col md:flex-row gap-4 ${isMobile && !showOptions ? 'mb-0' : 'mb-4'}`}>
+        {/* Sidebar con opciones de carga - en móvil solo se muestra cuando showOptions es true */}
+        <div className={`w-full md:w-80 lg:w-96 flex-shrink-0 transition-all duration-300 ease-in-out ${isMobile ? (showOptions ? 'max-h-[1000px] opacity-100 mb-4' : 'max-h-0 opacity-0 overflow-hidden') : ''}`}>
+          <div className="sticky top-4">
+            <UploadOptions 
+              useFileDate={useFileDate}
+              setUseFileDate={setUseFileDate}
+              uploadDate={uploadDate}
+              setUploadDate={setUploadDate}
+              videoSource={videoSource}
+              setVideoSource={setVideoSource}
+              uploadLocation={uploadLocation}
+              setUploadLocation={setUploadLocation}
+              isGettingLocation={isGettingLocation}
+              getCurrentLocation={getCurrentLocation}
+              tags={tags}
+              setTags={setTags}
+              uploading={uploading}
+              files={files}
+              uploadFiles={uploadFiles}
+              isMobile={isMobile}
+            />
           </div>
+        </div>
+        
+        {/* Contenido principal */}
+        <div className="flex-1 px-1">
+          {/* Drag & Drop Area */}
+          <DragDropZone 
+            dragActive={dragActive}
+            handleDrag={handleDrag}
+            handleDrop={handleDrop}
+            onSelectFilesClick={onSelectFilesClick}
+            onSelectFolderClick={onSelectFolderClick}
+            fileInputRef={fileInputRef}
+            folderInputRef={folderInputRef}
+            onFileInputChange={onFileInputChange}
+            onFolderInputChange={onFolderInputChange}
+            supportedFormats={supportedFormats}
+            isMobile={isMobile}
+          />
+          
+          {/* File List */}
+          <FileList 
+            files={files}
+            uploadProgress={uploadProgress}
+            removeFile={removeFile}
+            clearFiles={clearFiles}
+            uploadFiles={uploadFiles}
+            uploading={uploading}
+            isMobile={isMobile}
+          />
+          
+          {/* Upload Results */}
+          <UploadResults 
+            uploadResults={uploadResults}
+            isMobile={isMobile}
+          />
+        </div>
+      </div>
+
+      {/* Botón flotante de carga en móvil cuando hay archivos y no hay opciones visibles */}
+      {isMobile && !showOptions && files.length > 0 && (
+        <div className="fixed bottom-20 right-6 z-10">
+          <button 
+            onClick={uploadFiles}
+            disabled={uploading}
+            className="bg-dashcam-600 hover:bg-dashcam-700 text-white rounded-full h-16 w-16 flex items-center justify-center shadow-lg transition-all transform hover:scale-105"
+          >
+            {uploading ? (
+              <div className="loader-sm"></div>
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+              </svg>
+            )}
+          </button>
         </div>
       )}
     </div>

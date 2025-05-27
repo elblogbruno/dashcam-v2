@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { 
   FaCar, FaCalendarAlt, FaCog, FaCloudUploadAlt, 
-  FaHdd, FaMap, FaRoute, FaBars, FaTimes, FaEllipsisH
+  FaHdd, FaMap, FaRoute, FaBars, FaTimes, FaEllipsisH,
+  FaBell, FaMicrophone, FaCopy
 } from 'react-icons/fa';
 import useRaspberryPiDetection from '../hooks/useRaspberryPiDetection';
 
@@ -12,6 +13,39 @@ const Navigation = () => {
   const [showNavbar, setShowNavbar] = useState(!isRaspberryPi);
   // Estado para controlar la visibilidad del menú adicional
   const [showMoreMenu, setShowMoreMenu] = useState(false);
+  
+  // Hooks de navegación
+  const location = useLocation();
+  const navigate = useNavigate();
+  
+  // Estado para detectar móvil
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  
+  // Añadir useEffect para actualizar el padding del body cuando cambia la visibilidad del navbar
+  useEffect(() => {
+    const updateBodyPadding = () => {
+      const navbarHeight = document.getElementById('main-navbar')?.offsetHeight || 0;
+      document.body.style.paddingBottom = showNavbar ? `${navbarHeight}px` : '0';
+    };
+    
+    updateBodyPadding();
+    
+    // Actualizar el padding cuando cambia el tamaño de la ventana
+    window.addEventListener('resize', updateBodyPadding);
+    return () => window.removeEventListener('resize', updateBodyPadding);
+  }, [showNavbar]);
+
+  // Detector de cambio de tamaño para adaptar la UI
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+    };
+  }, []);
 
   const toggleNavbar = () => {
     setShowNavbar(!showNavbar);
@@ -20,6 +54,12 @@ const Navigation = () => {
 
   const toggleMoreMenu = () => {
     setShowMoreMenu(!showMoreMenu);
+  };
+  
+  // Función para manejar la navegación desde el menú desplegable
+  const handleNavigation = (path) => {
+    navigate(path);
+    setShowMoreMenu(false);
   };
 
   // Definición de los elementos principales y secundarios de navegación
@@ -36,8 +76,14 @@ const Navigation = () => {
     { path: '/settings', icon: <FaCog className="text-xl mb-1" />, label: 'Settings', exact: false },
   ];
 
+  // Helper para verificar si un item está activo
+  const isItemActive = (path) => {
+    return location.pathname === path || 
+           (path !== '/' && location.pathname.startsWith(path));
+  };
+
   return (
-    <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-40">
+    <div id="main-navbar" className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-40 w-full">
       {/* Botón hamburguesa para mostrar/ocultar la navegación solo en modo Raspberry Pi */}
       {isRaspberryPi && (
         <button 
@@ -51,7 +97,7 @@ const Navigation = () => {
       
       {/* Barra de navegación - visible por defecto en PC, oculta por defecto en Raspberry Pi */}
       {showNavbar && (
-        <nav className="flex justify-center overflow-x-auto relative">
+        <nav className="flex justify-center overflow-x-auto relative w-full">
           <div className="flex min-w-fit md:min-w-0 items-center">
             {/* Elementos de navegación principales - siempre visibles */}
             {primaryNavItems.map((item) => (
@@ -69,56 +115,57 @@ const Navigation = () => {
             ))}
             
             {/* Botón para mostrar más opciones (solo visible en móvil) */}
-            <div className="md:hidden relative">
-              <button
-                type="button"
-                className="flex flex-col items-center py-2 px-3 sm:px-4 text-gray-500 hover:text-dashcam-500"
-                onClick={toggleMoreMenu}
-                aria-label={showMoreMenu ? "Ocultar opciones adicionales" : "Mostrar más opciones"}
-              >
-                <FaEllipsisH className="text-xl mb-1" />
-                <span className="text-xs">Más</span>
-              </button>
-            </div>
+            {isMobile && (
+              <div className="relative">
+                <button
+                  type="button"
+                  className="flex flex-col items-center py-2 px-3 sm:px-4 text-gray-500 hover:text-dashcam-500"
+                  onClick={toggleMoreMenu}
+                  aria-label={showMoreMenu ? "Ocultar opciones adicionales" : "Mostrar más opciones"}
+                >
+                  <FaEllipsisH className="text-xl mb-1" />
+                  <span className="text-xs">Más</span>
+                </button>
+              </div>
+            )}
             
             {/* Elementos de navegación secundarios - siempre visibles en desktop, ocultos en móvil */}
-            {secondaryNavItems.map((item) => (
-              <div key={item.path} className="hidden md:block">
-                <NavLink 
-                  to={item.path} 
-                  className={({ isActive }) => 
-                    `flex flex-col items-center py-2 px-3 sm:px-4 ${isActive ? 'text-dashcam-600' : 'text-gray-500 hover:text-dashcam-500'}`
-                  }
-                  end={item.exact}
-                >
-                  {item.icon}
-                  <span className="text-xs">{item.label}</span>
-                </NavLink>
-              </div>
+            {!isMobile && secondaryNavItems.map((item) => (
+              <NavLink 
+                key={item.path}
+                to={item.path} 
+                className={({ isActive }) => 
+                  `flex flex-col items-center py-2 px-3 sm:px-4 ${isActive ? 'text-dashcam-600' : 'text-gray-500 hover:text-dashcam-500'}`
+                }
+                end={item.exact}
+              >
+                {item.icon}
+                <span className="text-xs">{item.label}</span>
+              </NavLink>
             ))}
           </div>
         </nav>
       )}
       
       {/* Menú desplegable flotante para opciones adicionales en móvil */}
-      {showMoreMenu && (
+      {isMobile && showMoreMenu && (
         <div 
-          className="absolute bottom-full right-4 mb-2 bg-white border border-gray-200 shadow-xl rounded-lg z-50 w-48"
-          style={{ maxHeight: '70vh', overflowY: 'auto' }}
+          className="fixed bottom-16 right-4 mb-2 bg-white border border-gray-200 shadow-xl rounded-lg z-50 w-48"
+          style={{ maxHeight: '60vh', overflowY: 'auto' }}
         >
           {secondaryNavItems.map((item) => (
-            <NavLink 
+            <button 
               key={item.path}
-              to={item.path} 
-              className={({ isActive }) => 
-                `flex items-center py-3 px-4 ${isActive ? 'text-dashcam-600' : 'text-gray-700 hover:text-dashcam-500 hover:bg-gray-50'}`
-              }
-              end={item.exact}
-              onClick={() => setShowMoreMenu(false)}
+              onClick={() => handleNavigation(item.path)}
+              className={`w-full text-left flex items-center py-3 px-4 ${
+                isItemActive(item.path) 
+                  ? 'text-dashcam-600 bg-gray-50' 
+                  : 'text-gray-700 hover:text-dashcam-500 hover:bg-gray-50'
+              }`}
             >
               <span className="mr-3">{item.icon}</span>
               {item.label}
-            </NavLink>
+            </button>
           ))}
         </div>
       )}

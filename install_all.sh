@@ -27,7 +27,7 @@ fi
 cd "$(dirname "$0")"
 echo "[2/4] Creando entorno virtual de Python..."
 if [ ! -d "venv" ]; then
-    python3 -m venv venv
+    python3 -m venv --system-site-packages venv 
 fi
 source venv/bin/activate
 
@@ -53,3 +53,12 @@ else
 fi
 
 echo "\n¡Instalación completa! Usa 'source venv/bin/activate' para activar el entorno Python."
+
+# 5. Instalar picamera si es necesario
+echo "[5/5] Verificando e instalando picamera..."
+if python3 -c "import picamera" &> /dev/null; then
+    echo "picamera ya está instalado."
+else
+    echo "Instalando picamera..."
+    sudo apt install python3-picamera2 --no-install-recommends 
+fi

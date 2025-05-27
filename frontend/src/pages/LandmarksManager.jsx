@@ -1,9 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { toast, Toaster } from 'react-hot-toast';
 import { FaMapMarkerAlt, FaSearch, FaPlus, FaTrash, FaRoute, FaDownload, FaArrowLeft, FaSpinner } from 'react-icons/fa';
-import { MapContainer, TileLayer, Marker, Popup, Circle, useMap } from 'react-leaflet';
+import { MapContainer, Marker, Popup, Circle, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
+
+import OfflineTileLayer from '../components/Maps/OfflineTileLayer';
+import LandmarkMarker from '../components/Maps/LandmarkMarker';
+import offlineMapManager from '../services/offlineMapService';
+import landmarkImageManager from '../services/landmarkImageService';
 
 import { fetchAllLandmarks, searchLandmarks, addLandmark, deleteLandmark } from '../services/landmarkService';
 import { fetchTrips } from '../services/tripService';
@@ -384,6 +389,47 @@ const LandmarksManager = () => {
     setFilteredLandmarks(landmarks);
   };
 
+  // Función para descargar mapas y recursos offline
+  const downloadOfflineResources = async (trip) => {
+    if (!trip || !trip.id) {
+      toast.error('No hay un viaje seleccionado para descargar recursos offline');
+      return;
+    }
+
+    // Mostrar toast de progreso
+    const toastId = toast.loading(`Descargando recursos offline para ${trip.name}...`, {
+      position: 'top-center',
+    });
+    
+    try {
+      // Progress tracker para mostrar el estado de la descarga
+      const onProgress = (progress, message) => {
+        toast.loading(`${message} (${Math.round(progress)}%)`, { id: toastId });
+      };
+      
+      // 1. Descargar mapas offline
+      await offlineMapManager.downloadMapTilesForTrip(trip, onProgress);
+      
+      // 2. Obtener los landmarks de este viaje
+      const response = await fetch(`/api/landmarks/by-trip/${trip.id}`);
+      if (!response.ok) {
+        throw new Error('No se pudieron obtener los landmarks del viaje');
+      }
+      
+      const tripLandmarks = await response.json();
+      
+      // 3. Descargar imágenes para los landmarks
+      await landmarkImageManager.downloadLandmarkImages(trip.id, tripLandmarks, onProgress);
+      
+      // Mostrar mensaje de éxito
+      toast.success(`Recursos offline descargados exitosamente para ${trip.name}`, { id: toastId });
+      
+    } catch (error) {
+      console.error('Error descargando recursos offline:', error);
+      toast.error(`Error descargando recursos: ${error.message}`, { id: toastId });
+    }
+  };
+
   return (
     <div className="container mx-auto px-2 sm:px-4 py-3 sm:py-6">
       <Toaster position="top-right" />
@@ -441,10 +487,26 @@ const LandmarksManager = () => {
                             ? 'bg-dashcam-500 text-white' 
                             : 'bg-gray-100 hover:bg-gray-200 text-gray-800'
                         }`}
-                        onClick={() => handleTripFilterChange(trip)}
                       >
-                        <FaRoute className="inline-block mr-1 sm:mr-2" />
-                        <span className="truncate">{trip.name}</span>
+                        <div className="flex justify-between items-center">
+                          <div
+                            className="flex items-center flex-grow"
+                            onClick={() => handleTripFilterChange(trip)}
+                          >
+                            <FaRoute className="inline-block mr-1 sm:mr-2" />
+                            <span className="truncate">{trip.name}</span>
+                          </div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              downloadOfflineResources(trip);
+                            }}
+                            className="ml-2 p-1 text-gray-600 hover:text-dashcam-500 hover:bg-gray-100 rounded-full"
+                            title="Descargar recursos offline"
+                          >
+                            <FaDownload size={12} />
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -665,9 +727,10 @@ const LandmarksManager = () => {
             style={{ height: '100%', width: '100%' }}
             zoomControl={window.innerWidth > 640} // Ocultar controles de zoom en móviles
           >
-            <TileLayer
+            <OfflineTileLayer
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              tripId={selectedTrip?.id}
             />
             
             {/* Controller to update map view */}
@@ -685,30 +748,18 @@ const LandmarksManager = () => {
                     fillOpacity: 0.2 
                   }}
                 />
-                <Marker 
-                  position={[landmark.lat, landmark.lon]} 
+                <LandmarkMarker
+                  landmark={landmark}
                   icon={createColoredIcon(getLandmarkColor(landmark.category))}
                 >
-                  <Popup>
-                    <div className="text-center">
-                      <h3 className="font-bold text-sm sm:text-base">{landmark.name}</h3>
-                      <p className="text-xs text-gray-500 capitalize">
-                        {landmark.category || 'Unknown'} • {landmark.radius_m || 100}m radius
-                      </p>
-                      {landmark.description && (
-                        <p className="text-xs sm:text-sm mt-1">{landmark.description}</p>
-                      )}
-                      <div className="flex justify-center mt-1 sm:mt-2">
-                        <button
-                          className="text-red-500 hover:text-red-700 px-1 sm:px-2 py-0.5 sm:py-1 text-xs sm:text-sm"
-                          onClick={() => handleDeleteLandmark(landmark.id)}
-                        >
-                          <FaTrash className="inline-block mr-1" /> Delete
-                        </button>
-                      </div>
-                    </div>
-                  </Popup>
-                </Marker>
+                  <div className="flex justify-center mt-1 sm:mt-2">
+                    <button
+                      className="text-red-500 hover:text-red-700 px-1 sm:px-2 py-0.5 sm:py-1 text-xs sm:text-sm"
+                      onClick={() => handleDeleteLandmark(landmark.id)}
+                    >                      <FaTrash className="inline-block mr-1" /> Delete
+                    </button>
+                  </div>
+                </LandmarkMarker>
               </React.Fragment>
             ))}
           </MapContainer>

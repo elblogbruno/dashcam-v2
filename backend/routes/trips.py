@@ -17,7 +17,47 @@ async def get_trips(date_str: Optional[str] = None):
         try:
             selected_date = datetime.strptime(date_str, "%Y-%m-%d").date()
             trips = trip_logger.get_trips_by_date(selected_date)
-            return {"trips": trips}
+            
+            # Buscar clips de video para este día
+            try:
+                conn = sqlite3.connect(trip_logger.db_path)
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                
+                # Obtener clips para este día
+                cursor.execute('''
+                SELECT vc.id, vc.trip_id, vc.start_time, vc.end_time, 
+                       vc.sequence_num, vc.quality, vc.road_video_file, 
+                       vc.interior_video_file, t.start_time as trip_start_time
+                FROM video_clips vc
+                LEFT JOIN trips t ON vc.trip_id = t.id
+                WHERE date(vc.start_time) = ?
+                ORDER BY vc.start_time
+                ''', (selected_date.isoformat(),))
+                
+                video_clips = [dict(row) for row in cursor.fetchall()]
+                
+                # Obtener videos externos
+                cursor.execute('''
+                SELECT * FROM external_videos
+                WHERE date = ?
+                ''', (selected_date.isoformat(),))
+                
+                external_videos = [dict(row) for row in cursor.fetchall()]
+                
+                conn.close()
+                
+                # Incorporar los clips de video al resultado
+                return {
+                    "trips": trips, 
+                    "video_clips": video_clips,
+                    "external_videos": external_videos
+                }
+                
+            except Exception as e:
+                print(f"Error obteniendo clips de video: {e}")
+                # Si hay un error, devolvemos solo los viajes
+                return {"trips": trips}
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
     else:
@@ -39,45 +79,48 @@ async def get_trips_range(start_date: str, end_date: str):
 @router.get("/calendar")
 async def get_trips_by_month(year: int, month: int):
     try:
-        # Get all trips for the specified month
-        first_day = date(year, month, 1)
-        if month == 12:
-            next_month = date(year + 1, 1, 1)
-        else:
-            next_month = date(year, month + 1, 1)
-            
-        # Get trips for the month
-        trips = trip_logger.get_trips_by_date_range(first_day, next_month)
+        # Usar el método get_calendar_data que ya existe en trip_logger
+        # Este método devuelve datos en formato compatible con el calendario de frontend
+        calendar_data = trip_logger.get_calendar_data(year, month)
         
-        # Format for calendar: group by day of month
-        calendar_data = {}
-        for trip in trips:
-            # Handle different possible formats of trip data
-            if isinstance(trip, dict):
-                # Try to get start_time or start_date depending on what's available
-                if "start_time" in trip:
-                    date_str = trip["start_time"]
-                elif "start_date" in trip:
-                    # If only start_date is available, append a default time
-                    date_str = f"{trip['start_date']} 00:00:00"
-                else:
-                    # Skip this trip if neither field is present
-                    continue
+        # Verificar si también hay datos de clips de video
+        try:
+            # Verificar cuántos clips de video hay por día en el mes
+            conn = sqlite3.connect(trip_logger.db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            
+            # Primer día del mes
+            start_date = date(year, month, 1)
+            # Último día del mes
+            if month == 12:
+                end_date = date(year + 1, 1, 1)
             else:
-                # If trip is not a dictionary, skip it
-                continue
+                end_date = date(year, month + 1, 1)
+            end_date = end_date - timedelta(days=1)
+            
+            # Contar clips por día
+            cursor.execute('''
+            SELECT date(start_time) as day, COUNT(*) as clip_count
+            FROM video_clips
+            WHERE date(start_time) >= ? AND date(start_time) <= ?
+            GROUP BY day
+            ''', (start_date.isoformat(), end_date.isoformat()))
+            
+            video_clips_by_day = {row['day']: row['clip_count'] for row in cursor.fetchall()}
+            conn.close()
+            
+            # Incorporar datos de clips al resultado del calendario
+            for date_str, day_data in calendar_data.items():
+                # Añadir información sobre los clips de video a cada día
+                day_data['video_clips'] = video_clips_by_day.get(date_str, 0)
                 
-            try:
-                trip_date = datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S").date()
-                day = trip_date.day
+                # Si no hay viajes pero hay clips, asegurarse de marcarlo como día con contenido
+                if day_data['trips'] == 0 and video_clips_by_day.get(date_str, 0) > 0:
+                    day_data['trips'] = 1
                 
-                if day not in calendar_data:
-                    calendar_data[day] = []
-                    
-                calendar_data[day].append(trip)
-            except (ValueError, TypeError):
-                # Skip entries that can't be parsed
-                continue
+        except Exception as e:
+            print(f"Error obteniendo datos de clips para el calendario: {e}")
             
         return calendar_data
     except ValueError as e:

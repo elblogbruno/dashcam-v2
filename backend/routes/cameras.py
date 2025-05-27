@@ -24,10 +24,14 @@ def capture_frames():
     """Captura frames en un hilo separado para no bloquear el servidor"""
     global is_capturing
     
-    fps_target = 10  # Frames por segundo objetivo
+    fps_target = 15  # Frames por segundo objetivo (aumentado para mejor fluidez)
     frame_time = 1.0 / fps_target
     error_count = 0
     max_errors = 10  # Número máximo de errores consecutivos antes de detener el hilo
+    
+    # Variables para control de rendimiento
+    last_fps_log = time.time()
+    frames_captured = 0
     
     try:
         while is_capturing:
@@ -39,55 +43,87 @@ def capture_frames():
                     frame = camera_manager.get_preview_frame(camera_type="road")
                     if frame is not None:
                         # Reducir resolución para mejorar rendimiento
-                        scale_factor = 0.5
+                        scale_factor = 0.5  # 50% del tamaño original
                         width = int(frame.shape[1] * scale_factor)
                         height = int(frame.shape[0] * scale_factor)
                         frame = cv2.resize(frame, (width, height))
                         
-                        # Usar menor calidad JPEG
-                        encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 70]
+                        # Optimizar calidad JPEG para mejor rendimiento
+                        # Usamos 75 para un buen balance entre calidad y rendimiento
+                        encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 75]
                         success, buffer = cv2.imencode('.jpg', frame, encode_param)
                         if success:
                             # Actualizar el frame en la cola (elimina cualquier frame antiguo)
                             try:
-                                if not road_frame_queue.empty():
+                                # Vaciar la cola sin bloquear
+                                while not road_frame_queue.empty():
                                     road_frame_queue.get_nowait()
-                                road_frame_queue.put(buffer.tobytes())
-                                # Si llegamos aquí sin error, reiniciamos el contador
-                                error_count = 0
+                                # Añadir el nuevo frame
+                                road_frame_queue.put(buffer.tobytes(), block=False)
+                                frames_captured += 1
+                                error_count = 0  # Reiniciar contador de errores si todo va bien
                             except queue.Full:
-                                # Si la cola está llena, continuamos sin error
+                                # La cola está llena pero no es un error
                                 pass
+                            except Exception as e:
+                                print(f"Error al actualizar cola de frames para cámara frontal: {str(e)}")
                 
                 # Obtener frame de la cámara interior
                 if camera_manager and camera_manager.interior_camera:
                     frame = camera_manager.get_preview_frame(camera_type="interior")
                     if frame is not None:
                         # Reducir resolución para mejorar rendimiento
-                        scale_factor = 0.5
+                        scale_factor = 0.5  # 50% del tamaño original
                         width = int(frame.shape[1] * scale_factor)
                         height = int(frame.shape[0] * scale_factor)
                         frame = cv2.resize(frame, (width, height))
                         
-                        # Usar menor calidad JPEG
-                        encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 70]
+                        # Optimizar calidad JPEG para mejor rendimiento
+                        encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 75]
                         success, buffer = cv2.imencode('.jpg', frame, encode_param)
                         if success:
                             # Actualizar el frame en la cola (elimina cualquier frame antiguo)
                             try:
-                                if not interior_frame_queue.empty():
+                                # Vaciar la cola sin bloquear
+                                while not interior_frame_queue.empty():
                                     interior_frame_queue.get_nowait()
-                                interior_frame_queue.put(buffer.tobytes())
-                                # Si llegamos aquí sin error, reiniciamos el contador
-                                error_count = 0
+                                # Añadir el nuevo frame
+                                interior_frame_queue.put(buffer.tobytes(), block=False)
+                                frames_captured += 1
+                                error_count = 0  # Reiniciar contador de errores si todo va bien
                             except queue.Full:
-                                # Si la cola está llena, continuamos sin error
+                                # La cola está llena pero no es un error
                                 pass
+                            except Exception as e:
+                                print(f"Error al actualizar cola de frames para cámara interior: {str(e)}")
+                
+                # Registrar FPS efectivo cada 10 segundos para monitoreo
+                now = time.time()
+                if now - last_fps_log > 10:
+                    elapsed = now - last_fps_log
+                    if elapsed > 0:
+                        effective_fps = frames_captured / elapsed
+                        print(f"[Info] FPS efectivo del servidor: {effective_fps:.2f} frames/s")
+                        frames_captured = 0
+                        last_fps_log = now
                 
                 # Mantener la velocidad de captura deseada
                 elapsed = time.time() - start_time
                 sleep_time = max(0, frame_time - elapsed)
-                time.sleep(sleep_time)
+                
+                # Registrar FPS efectivo cada 10 segundos para monitoreo
+                now = time.time()
+                if now - last_fps_log > 10:
+                    elapsed_log = now - last_fps_log
+                    if elapsed_log > 0 and frames_captured > 0:
+                        effective_fps = frames_captured / elapsed_log
+                        print(f"[Info] FPS efectivo del servidor: {effective_fps:.2f} frames/s")
+                        frames_captured = 0
+                        last_fps_log = now
+                
+                # Solo dormimos si es necesario para mantener el FPS objetivo
+                if sleep_time > 0.001:  # Ignorar tiempos muy pequeños
+                    time.sleep(sleep_time)
                 
             except Exception as e:
                 # Incrementar contador de errores y pausar brevemente
@@ -132,15 +168,30 @@ def get_frames(camera_type: str):
     # Variables para manejar timeout en caso de no recibir frames
     last_valid_frame_time = time.time()
     timeout_seconds = 5  # Segundos sin frames antes de considerar error
+    connection_id = f"{camera_type}_{int(time.time())}"
+    
+    # Registrar nueva conexión para diagnóstico
+    print(f"Nueva conexión MJPEG iniciada para cámara {camera_type} - ID: {connection_id}")
+    
+    # Para evitar procesamiento excesivo en caso de múltiples clientes
+    frame_throttle = 0.03  # 30ms mínimo entre frames para mejor rendimiento
+    last_frame_sent = 0
     
     try:
         while True:
             current_time = time.time()
             frame_bytes = None
             
+            # Control de frecuencia de envío para no saturar la red
+            since_last_frame = current_time - last_frame_sent
+            if since_last_frame < frame_throttle:
+                # Esperar menos tiempo para ser más responsivo
+                time.sleep(frame_throttle / 3)
+                continue
+            
             # Verificar si ha pasado demasiado tiempo sin frames válidos
             if current_time - last_valid_frame_time > timeout_seconds:
-                print(f"Timeout esperando frames de la cámara {camera_type}")
+                print(f"Timeout esperando frames de la cámara {camera_type} - ID: {connection_id}")
                 # Enviar un mensaje de error como imagen
                 error_message = f"Camera timeout: No frames received for {timeout_seconds} seconds"
                 error_frame = create_error_frame(error_message)
@@ -148,6 +199,7 @@ def get_frames(camera_type: str):
                     yield error_frame
                     # Reiniciar temporizador para no enviar errores constantemente
                     last_valid_frame_time = current_time
+                    last_frame_sent = current_time
                     continue
             
             # Intentar obtener un frame de la cola sin bloquear
@@ -159,11 +211,11 @@ def get_frames(camera_type: str):
                         last_valid_frame_time = current_time
             except queue.Empty:
                 # Cola vacía, esperamos un poco
-                time.sleep(0.05)
+                time.sleep(frame_throttle)
                 continue
             except Exception as e:
                 print(f"Error obteniendo frame de la cola: {str(e)}")
-                time.sleep(0.05)
+                time.sleep(frame_throttle)
                 continue
             
             # Si tenemos un frame válido, lo enviamos
@@ -173,19 +225,18 @@ def get_frames(camera_type: str):
                            b'Content-Type: image/jpeg\r\n'
                            b'Content-Length: ' + f"{len(frame_bytes)}".encode() + b'\r\n'
                            b'\r\n' + frame_bytes + b'\r\n')
+                    last_frame_sent = current_time
                 except Exception as e:
                     print(f"Error enviando frame: {str(e)}")
             else:
                 # Sin frame, pequeña pausa para no saturar la CPU
-                time.sleep(0.05)
-            
-            # Breve pausa para controlar la tasa de frames enviados
-            time.sleep(0.05)
+                # Usar un tiempo de espera menor para ser más responsivo
+                time.sleep(frame_throttle / 2)
     except Exception as e:
-        print(f"Error en generador de frames para {camera_type}: {str(e)}")
+        print(f"Error en generador de frames para {camera_type} (ID: {connection_id}): {str(e)}")
     finally:
         # No detenemos el hilo de captura aquí, ya que puede haber múltiples clientes
-        print(f"Stream de {camera_type} finalizado")
+        print(f"Stream de {camera_type} finalizado - ID: {connection_id}")
 
 def create_error_frame(message: str):
     """Crea un frame con un mensaje de error para mostrar al cliente"""
@@ -270,15 +321,18 @@ async def get_road_camera_stream():
                     
             return StreamingResponse(
                 error_stream(),
-                media_type="multipart/x-mixed-replace; boundary=frame"
+                media_type="multipart/x-mixed-replace; boundary=frame",
+                headers={"X-Stream-ID": f"road_error_{int(time.time())}"}
             )
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error creating error stream: {str(e)}")
     
     try:
+        # Añadir un encabezado con ID único para ayudar a diagnosticar conexiones
         return StreamingResponse(
             get_frames(camera_type="road"),
-            media_type="multipart/x-mixed-replace; boundary=frame"
+            media_type="multipart/x-mixed-replace; boundary=frame",
+            headers={"X-Stream-ID": f"road_{int(time.time())}"}
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Camera error: {str(e)}")
@@ -312,15 +366,18 @@ async def get_interior_camera_stream():
                     
             return StreamingResponse(
                 error_stream(),
-                media_type="multipart/x-mixed-replace; boundary=frame"
+                media_type="multipart/x-mixed-replace; boundary=frame",
+                headers={"X-Stream-ID": f"interior_error_{int(time.time())}"}
             )
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error creating error stream: {str(e)}")
     
     try:
+        # Añadir un encabezado con ID único para ayudar a diagnosticar conexiones
         return StreamingResponse(
             get_frames(camera_type="interior"),
-            media_type="multipart/x-mixed-replace; boundary=frame"
+            media_type="multipart/x-mixed-replace; boundary=frame",
+            headers={"X-Stream-ID": f"interior_{int(time.time())}"}
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Camera error: {str(e)}")
@@ -526,5 +583,7 @@ def create_error_image(message: str):
         print(f"Error creating error image: {str(e)}")
         return b""
 
-# Al iniciar
-start_capture_thread()
+# DESHABILITADO: Worker de captura duplicado que causa saturación de FPS
+# Al usar múltiples workers (MJPEG + WebRTC + este), se crean frames a ~25 FPS
+# en lugar del objetivo de 15 FPS, saturando las colas de clientes
+# start_capture_thread()

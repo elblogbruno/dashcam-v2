@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { toast } from 'react-hot-toast';
-import { FaCog, FaSave, FaSpinner } from 'react-icons/fa';
+import { FaCog, FaSave, FaSpinner, FaDatabase } from 'react-icons/fa';
 import { getLandmarkSettings, updateLandmarkSettings } from '../../services/landmarkService';
+import OfflineResourcesManager from '../Settings/OfflineResourcesManager';
 
 const LandmarkSettings = () => {
   const [settings, setSettings] = useState({
@@ -20,6 +21,7 @@ const LandmarkSettings = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState('settings'); // 'settings' or 'resources'
 
   // Available categories for landmarks
   const availableCategories = [
@@ -138,130 +140,162 @@ const LandmarkSettings = () => {
             </div>
             
             <div className="p-4 space-y-4">
-              {/* Auto-download toggle */}
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="font-medium">Auto-download landmarks</h3>
-                  <p className="text-sm text-gray-600">Automatically download landmarks when creating/updating trips</p>
-                </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input 
-                    type="checkbox"
-                    name="auto_download_enabled"
-                    checked={settings.auto_download_enabled}
-                    onChange={handleCheckboxChange}
-                    className="sr-only peer"
-                  />
-                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-dashcam-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-dashcam-600"></div>
-                </label>
-              </div>
-              
-              {/* Download radius */}
-              <div>
-                <h3 className="font-medium">Download radius (km)</h3>
-                <p className="text-sm text-gray-600 mb-1">Distance around each location to search for landmarks</p>
-                <input
-                  type="range"
-                  name="download_radius_km"
-                  min="1"
-                  max="25"
-                  value={settings.download_radius_km}
-                  onChange={handleInputChange}
-                  className="w-full accent-dashcam-500"
-                />
-                <div className="flex justify-between text-xs text-gray-500">
-                  <span>1km</span>
-                  <span>{settings.download_radius_km}km</span>
-                  <span>25km</span>
-                </div>
-              </div>
-              
-              {/* Max landmarks */}
-              <div>
-                <h3 className="font-medium">Max landmarks per location</h3>
-                <p className="text-sm text-gray-600 mb-1">Limit landmarks to prevent performance issues</p>
-                <select
-                  name="max_landmarks_per_location"
-                  value={settings.max_landmarks_per_location}
-                  onChange={handleInputChange}
-                  className="w-full border rounded p-2"
+              {/* Tabs */}
+              <div className="flex space-x-2">
+                <button
+                  onClick={() => setActiveTab('settings')}
+                  className={`flex-1 px-4 py-2 rounded-lg font-medium transition-all ${
+                    activeTab === 'settings' ? 'bg-dashcam-600 text-white' : 'bg-gray-100 text-gray-700'
+                  }`}
                 >
-                  <option value="5">5 (Minimal)</option>
-                  <option value="10">10 (Low)</option>
-                  <option value="15">15 (Medium - Recommended)</option>
-                  <option value="25">25 (High)</option>
-                  <option value="50">50 (Very High - May cause performance issues)</option>
-                  <option value="0">No limit (Not recommended)</option>
-                </select>
+                  Settings
+                </button>
+                <button
+                  onClick={() => setActiveTab('offline_resources')}
+                  className={`flex-1 px-4 py-2 rounded-lg font-medium transition-all ${
+                    activeTab === 'offline_resources' ? 'bg-dashcam-600 text-white' : 'bg-gray-100 text-gray-700'
+                  }`}
+                >
+                  Offline Resources
+                </button>
               </div>
               
-              {/* Categories */}
-              <div>
-                <h3 className="font-medium">Point of interest categories</h3>
-                <p className="text-sm text-gray-600 mb-2">Select which types of landmarks to download</p>
-                <div className="grid grid-cols-2 gap-2">
-                  {availableCategories.map(category => (
-                    <label key={category.id} className="flex items-center space-x-2 p-2 border rounded hover:bg-gray-50 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={settings.point_categories.includes(category.id)}
-                        onChange={() => handleCategoryChange(category.id)}
-                        className="rounded text-dashcam-600 focus:ring-dashcam-500"
-                      />
-                      <span className="text-gray-800">{category.name}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-              
-              {/* Auto cleanup */}
-              <div className="flex items-center justify-between">
+              {/* Settings tab content */}
+              {activeTab === 'settings' && (
                 <div>
-                  <h3 className="font-medium">Auto-cleanup old landmarks</h3>
-                  <p className="text-sm text-gray-600">Automatically remove landmarks from past trips</p>
-                </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input 
-                    type="checkbox"
-                    name="auto_cleanup"
-                    checked={settings.auto_cleanup}
-                    onChange={handleCheckboxChange}
-                    className="sr-only peer"
-                  />
-                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-dashcam-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-dashcam-600"></div>
-                </label>
-              </div>
-              
-              {/* Cleanup settings */}
-              {settings.auto_cleanup && (
-                <div className="pl-4 border-l-2 border-dashcam-300 space-y-3">
-                  <div>
-                    <h4 className="text-sm font-medium">Landmark age (days)</h4>
-                    <p className="text-xs text-gray-600">Remove landmarks older than this many days</p>
-                    <input
-                      type="number"
-                      name="max_landmark_age_days"
-                      value={settings.max_landmark_age_days}
-                      onChange={handleInputChange}
-                      min="1"
-                      max="365"
-                      className="w-full border rounded p-2"
-                    />
+                  {/* Auto-download toggle */}
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="font-medium">Auto-download landmarks</h3>
+                      <p className="text-sm text-gray-600">Automatically download landmarks when creating/updating trips</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input 
+                        type="checkbox"
+                        name="auto_download_enabled"
+                        checked={settings.auto_download_enabled}
+                        onChange={handleCheckboxChange}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-dashcam-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-dashcam-600"></div>
+                    </label>
                   </div>
                   
+                  {/* Download radius */}
                   <div>
-                    <h4 className="text-sm font-medium">Cleanup radius (km)</h4>
-                    <p className="text-xs text-gray-600">Keep landmarks within this distance of upcoming trips</p>
+                    <h3 className="font-medium">Download radius (km)</h3>
+                    <p className="text-sm text-gray-600 mb-1">Distance around each location to search for landmarks</p>
                     <input
-                      type="number"
-                      name="cleanup_radius_km"
-                      value={settings.cleanup_radius_km}
+                      type="range"
+                      name="download_radius_km"
+                      min="1"
+                      max="25"
+                      value={settings.download_radius_km}
                       onChange={handleInputChange}
-                      min="0"
-                      max="500"
-                      className="w-full border rounded p-2"
+                      className="w-full accent-dashcam-500"
                     />
+                    <div className="flex justify-between text-xs text-gray-500">
+                      <span>1km</span>
+                      <span>{settings.download_radius_km}km</span>
+                      <span>25km</span>
+                    </div>
                   </div>
+                  
+                  {/* Max landmarks */}
+                  <div>
+                    <h3 className="font-medium">Max landmarks per location</h3>
+                    <p className="text-sm text-gray-600 mb-1">Limit landmarks to prevent performance issues</p>
+                    <select
+                      name="max_landmarks_per_location"
+                      value={settings.max_landmarks_per_location}
+                      onChange={handleInputChange}
+                      className="w-full border rounded p-2"
+                    >
+                      <option value="5">5 (Minimal)</option>
+                      <option value="10">10 (Low)</option>
+                      <option value="15">15 (Medium - Recommended)</option>
+                      <option value="25">25 (High)</option>
+                      <option value="50">50 (Very High - May cause performance issues)</option>
+                      <option value="0">No limit (Not recommended)</option>
+                    </select>
+                  </div>
+                  
+                  {/* Categories */}
+                  <div>
+                    <h3 className="font-medium">Point of interest categories</h3>
+                    <p className="text-sm text-gray-600 mb-2">Select which types of landmarks to download</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {availableCategories.map(category => (
+                        <label key={category.id} className="flex items-center space-x-2 p-2 border rounded hover:bg-gray-50 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={settings.point_categories.includes(category.id)}
+                            onChange={() => handleCategoryChange(category.id)}
+                            className="rounded text-dashcam-600 focus:ring-dashcam-500"
+                          />
+                          <span className="text-gray-800">{category.name}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                  
+                  {/* Auto cleanup */}
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="font-medium">Auto-cleanup old landmarks</h3>
+                      <p className="text-sm text-gray-600">Automatically remove landmarks from past trips</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input 
+                        type="checkbox"
+                        name="auto_cleanup"
+                        checked={settings.auto_cleanup}
+                        onChange={handleCheckboxChange}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-dashcam-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-dashcam-600"></div>
+                    </label>
+                  </div>
+                  
+                  {/* Cleanup settings */}
+                  {settings.auto_cleanup && (
+                    <div className="pl-4 border-l-2 border-dashcam-300 space-y-3">
+                      <div>
+                        <h4 className="text-sm font-medium">Landmark age (days)</h4>
+                        <p className="text-xs text-gray-600">Remove landmarks older than this many days</p>
+                        <input
+                          type="number"
+                          name="max_landmark_age_days"
+                          value={settings.max_landmark_age_days}
+                          onChange={handleInputChange}
+                          min="1"
+                          max="365"
+                          className="w-full border rounded p-2"
+                        />
+                      </div>
+                      
+                      <div>
+                        <h4 className="text-sm font-medium">Cleanup radius (km)</h4>
+                        <p className="text-xs text-gray-600">Keep landmarks within this distance of upcoming trips</p>
+                        <input
+                          type="number"
+                          name="cleanup_radius_km"
+                          value={settings.cleanup_radius_km}
+                          onChange={handleInputChange}
+                          min="0"
+                          max="500"
+                          className="w-full border rounded p-2"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              {/* Offline Resources tab content */}
+              {activeTab === 'offline_resources' && (
+                <div>
+                  <OfflineResourcesManager />
                 </div>
               )}
             </div>

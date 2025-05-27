@@ -8,7 +8,7 @@ import time
 from datetime import datetime, timedelta
 import subprocess
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional
 
 # Configure logging
 logging.basicConfig(
@@ -52,11 +52,16 @@ class DiskManager:
                 "autoCleanThreshold": 90,
                 "autoCleanDays": 30,
                 "mainDrive": "/dev/sda1",
-                "mountPoint": "/mnt/dashcam_storage"
+                "mountPoint": "/mnt/dashcam_storage",
+                "autoDetectDrives": True  # Auto-detect drives by default
             }
             self.save_settings()
         else:
             self.load_settings()
+            # Ensure new settings exist
+            if "autoDetectDrives" not in self.settings:
+                self.settings["autoDetectDrives"] = True
+                self.save_settings()
             
     def load_settings(self):
         """Load storage settings from file"""
@@ -71,7 +76,8 @@ class DiskManager:
                 "autoCleanThreshold": 90,
                 "autoCleanDays": 30,
                 "mainDrive": "/dev/sda1",
-                "mountPoint": "/mnt/dashcam_storage"
+                "mountPoint": "/mnt/dashcam_storage",
+                "autoDetectDrives": True
             }
             
     def save_settings(self):
@@ -113,6 +119,12 @@ class DiskManager:
                 self.settings["autoCleanDays"] = settings["autoCleanDays"]
                 settings_changed = True
                 logger.info(f"Auto-clean days set to {settings['autoCleanDays']} days")
+                
+            # Update auto-detect drives if provided
+            if "autoDetectDrives" in settings and settings["autoDetectDrives"] != self.settings.get("autoDetectDrives"):
+                self.settings["autoDetectDrives"] = settings["autoDetectDrives"]
+                settings_changed = True
+                logger.info(f"Auto-detect drives set to {settings['autoDetectDrives']}")
                 
             # Update main drive if provided
             if "mainDrive" in settings and settings["mainDrive"] != self.settings.get("mainDrive"):
@@ -156,9 +168,83 @@ class DiskManager:
     def get_disk_info(self):
         """Get information about the storage disk"""
         mount_point = self.settings.get("mountPoint", "/mnt/dashcam_storage")
+        main_drive = self.settings.get("mainDrive", "/dev/sda1")
+        auto_detect = self.settings.get("autoDetectDrives", True)
         
         try:
-            # Check if disk is mounted
+            # Check if auto-detection is enabled
+            if auto_detect:
+                # Try to find connected USB drives first
+                usb_drives = self.detect_usb_drives()
+                
+                if usb_drives:
+                    # Find the first mounted USB drive or the one matching mainDrive setting
+                    selected_drive = None
+                    
+                    # First check if configured main drive is in the list
+                    for drive in usb_drives:
+                        if drive["name"] == main_drive:
+                            selected_drive = drive
+                            break
+                            
+                        # Also check partitions
+                        if not selected_drive:
+                            for partition in drive.get("partitions", []):
+                                if partition["name"] == main_drive:
+                                    selected_drive = drive
+                                    break
+                    
+                    # If not found by name, use the first USB drive
+                    if not selected_drive and usb_drives:
+                        selected_drive = usb_drives[0]
+                    
+                    # If a drive was found
+                    if selected_drive:
+                        # Check if it has mounted partitions
+                        mounted_partition = None
+                        for partition in selected_drive.get("partitions", []):
+                            if partition["mounted"]:
+                                mounted_partition = partition
+                                break
+                        
+                        # If a partition is mounted, use its info
+                        if mounted_partition:
+                            # Get detailed info about the partition
+                            details = self.get_disk_details(mounted_partition["name"])
+                            
+                            if details["mounted"]:
+                                return {
+                                    "mounted": True,
+                                    "total": details.get("used", 0) + details.get("free", 0),
+                                    "used": details.get("used", 0),
+                                    "free": details.get("free", 0),
+                                    "percent": details.get("percent", 0),
+                                    "device": details["device"],
+                                    "path": details["mountpoint"],
+                                    "model": details.get("model", "USB Storage"),
+                                    "filesystem": details.get("filesystem", "Unknown"),
+                                    "label": details.get("label", ""),
+                                    "isUsb": True,
+                                    "canEject": True
+                                }
+                        
+                        # If drive exists but isn't mounted
+                        return {
+                            "mounted": False,
+                            "total": 0,
+                            "used": 0,
+                            "free": 0,
+                            "percent": 0,
+                            "device": selected_drive["name"],
+                            "model": selected_drive.get("model", "USB Storage"),
+                            "path": mount_point,
+                            "isUsb": True,
+                            "canEject": False,
+                            "needsMount": True,
+                            "availablePartitions": [p["name"] for p in selected_drive.get("partitions", [])]
+                        }
+            
+            # Fall back to configured mount point checks if auto-detect is disabled or no USB found
             mounted = os.path.ismount(mount_point)
             
             if not mounted:
@@ -169,7 +255,9 @@ class DiskManager:
                     "free": 0,
                     "percent": 0,
                     "device": self.settings.get("mainDrive", ""),
-                    "path": mount_point
+                    "path": mount_point,
+                    "isUsb": False,
+                    "canEject": False
                 }
             
             # Get disk usage information
@@ -186,6 +274,21 @@ class DiskManager:
             except:
                 device = self.settings.get("mainDrive", "")
             
+            # Check if the device is a USB drive
+            is_usb = False
+            try:
+                # Get device name without /dev/
+                dev_name = device.replace("/dev/", "")
+                # Check if it's a USB device using sysfs
+                if os.path.exists(f"/sys/block/{dev_name}"):
+                    removable_path = f"/sys/block/{dev_name}/removable"
+                    if os.path.exists(removable_path):
+                        with open(removable_path, 'r') as f:
+                            if f.read().strip() == '1':
+                                is_usb = True
+            except:
+                pass
+            
             return {
                 "mounted": True,
                 "total": disk_usage.total,
@@ -193,7 +296,9 @@ class DiskManager:
                 "free": disk_usage.free,
                 "percent": int(disk_usage.used * 100 / disk_usage.total),
                 "device": device,
-                "path": mount_point
+                "path": mount_point,
+                "isUsb": is_usb,
+                "canEject": is_usb
             }
         except Exception as e:
             logger.error(f"Error getting disk info: {str(e)}")
@@ -208,11 +313,20 @@ class DiskManager:
                 "error": str(e)
             }
             
-    def mount_drive(self):
-        """Attempt to mount the storage drive"""
+    def mount_drive(self, specific_drive=None):
+        """
+        Attempt to mount the storage drive
+        
+        Args:
+            specific_drive: Optional specific drive to mount (overrides settings)
+            
+        Returns:
+            bool: True if mounted successfully, False otherwise
+        """
         try:
-            drive = self.settings.get("mainDrive")
+            drive = specific_drive or self.settings.get("mainDrive")
             mount_point = self.settings.get("mountPoint")
+            auto_detect = self.settings.get("autoDetectDrives", True)
             
             # Check if the mount point exists, if not try to create it
             if not os.path.exists(mount_point):
@@ -224,13 +338,56 @@ class DiskManager:
             
             # Check if already mounted
             if os.path.ismount(mount_point):
-                logger.info(f"Drive {drive} is already mounted at {mount_point}")
+                logger.info(f"A drive is already mounted at {mount_point}")
                 return True
+            
+            # If auto-detection is enabled and no specific drive was requested
+            if auto_detect and not specific_drive:
+                # Try to find an available USB drive
+                usb_drives = self.detect_usb_drives()
                 
+                if usb_drives:
+                    # Find first unmounted drive or partition
+                    for usb_drive in usb_drives:
+                        if not usb_drive["mounted"]:
+                            # Check if it has partitions
+                            if usb_drive["partitions"]:
+                                # Try to mount the first partition
+                                for partition in usb_drive["partitions"]:
+                                    if not partition["mounted"]:
+                                        drive = partition["name"]
+                                        logger.info(f"Auto-detected USB partition: {drive}")
+                                        break
+                            else:
+                                # Try to mount the whole drive
+                                drive = usb_drive["name"]
+                                logger.info(f"Auto-detected USB drive: {drive}")
+                            
+                            break
+            
             # First try mounting without sudo
             try:
+                # Try to determine filesystem type for better mounting
+                fs_type = None
+                try:
+                    result = subprocess.run(
+                        ["blkid", "-o", "value", "-s", "TYPE", drive],
+                        capture_output=True,
+                        text=True
+                    )
+                    if result.returncode == 0 and result.stdout.strip():
+                        fs_type = result.stdout.strip()
+                except:
+                    pass
+                
+                # Prepare mount command
+                mount_cmd = ["mount"]
+                if fs_type:
+                    mount_cmd.extend(["-t", fs_type])
+                mount_cmd.extend([drive, mount_point])
+                
                 result = subprocess.run(
-                    ["mount", drive, mount_point], 
+                    mount_cmd, 
                     capture_output=True, 
                     text=True
                 )
@@ -243,8 +400,14 @@ class DiskManager:
             
             # If that fails, try with sudo
             try:
+                # Prepare sudo mount command
+                mount_cmd = ["sudo", "mount"]
+                if fs_type:
+                    mount_cmd.extend(["-t", fs_type])
+                mount_cmd.extend([drive, mount_point])
+                
                 result = subprocess.run(
-                    ["sudo", "mount", drive, mount_point], 
+                    mount_cmd, 
                     capture_output=True, 
                     text=True
                 )
@@ -315,6 +478,42 @@ class DiskManager:
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
+            
+            # Check if recordings table exists and create it if not
+            cursor.execute("""
+                SELECT name FROM sqlite_master 
+                WHERE type='table' AND name='recordings'
+            """)
+            if not cursor.fetchone():
+                # Create the recordings table if it doesn't exist
+                cursor.execute("""
+                    CREATE TABLE recordings (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        file_path TEXT NOT NULL,
+                        file_size INTEGER NOT NULL,
+                        duration INTEGER,
+                        start_time TIMESTAMP,
+                        end_time TIMESTAMP,
+                        gps_data TEXT,
+                        trip_id TEXT,
+                        archived INTEGER DEFAULT 0,
+                        backed_up INTEGER DEFAULT 0,
+                        backup_path TEXT,
+                        is_processed INTEGER DEFAULT 0,
+                        thumbnail_path TEXT
+                    )
+                """)
+                conn.commit()
+                logger.info("Created recordings table in database")
+                # Return empty stats since table was just created
+                conn.close()
+                return {
+                    "totalVideos": 0,
+                    "totalSize": 0,
+                    "oldestVideo": None,
+                    "newestVideo": None,
+                    "byMonth": []
+                }
             
             # Get total video count
             cursor.execute("SELECT COUNT(*) FROM recordings")
@@ -566,7 +765,8 @@ class DiskManager:
             "autoCleanThreshold": self.settings.get("autoCleanThreshold", 90),
             "autoCleanDays": self.settings.get("autoCleanDays", 30),
             "mainDrive": self.settings.get("mainDrive", "/dev/sda1"),
-            "mountPoint": self.settings.get("mountPoint", "/mnt/dashcam_storage")
+            "mountPoint": self.settings.get("mountPoint", "/mnt/dashcam_storage"),
+            "autoDetectDrives": self.settings.get("autoDetectDrives", True)
         }
     
     def update_storage_settings(self, settings):
@@ -599,3 +799,335 @@ class DiskManager:
             logger.error(f"Error unmounting drive during cleanup: {str(e)}")
             
         logger.info("DiskManager cleanup completed")
+    
+    def detect_usb_drives(self) -> List[Dict[str, Any]]:
+        """
+        Detect and return information about all connected USB storage devices.
+        
+        Returns:
+            List of dictionaries with USB drive information including name, model,
+            size, partitions, and mount status.
+        """
+        try:
+            usb_drives = []
+            
+            # Use lsblk to get all block devices with USB transport
+            result = subprocess.run(
+                ["lsblk", "-o", "NAME,SIZE,MODEL,TRAN,TYPE,MOUNTPOINT", "-J"], 
+                capture_output=True, 
+                text=True
+            )
+            
+            if result.returncode != 0:
+                logger.error(f"Error running lsblk command: {result.stderr}")
+                return []
+                
+            # Parse JSON output
+            try:
+                devices_data = json.loads(result.stdout)
+                for device in devices_data.get("blockdevices", []):
+                    # Check if it's a USB device or a removable device
+                    is_usb = device.get("tran") == "usb" and device.get("type") == "disk"
+                    
+                    # If not detected as USB via lsblk, try checking via sysfs
+                    if not is_usb and device.get("type") == "disk":
+                        dev_name = device.get("name")
+                        if dev_name and os.path.exists(f"/sys/block/{dev_name}"):
+                            removable_path = f"/sys/block/{dev_name}/removable"
+                            if os.path.exists(removable_path):
+                                try:
+                                    with open(removable_path, 'r') as f:
+                                        if f.read().strip() == '1':
+                                            is_usb = True
+                                except:
+                                    pass
+                    
+                    if is_usb:
+                        model = device.get("model", "")
+                        device_info = {
+                            "name": f"/dev/{device['name']}",
+                            "model": model.strip() if model and isinstance(model, str) else "Dispositivo USB",
+                            "size": device.get("size", ""),
+                            "mounted": False,
+                            "mountpoint": None,
+                            "partitions": []
+                        }
+                        
+                        # Check for partitions
+                        if "children" in device:
+                            for partition in device["children"]:
+                                part_info = {
+                                    "name": f"/dev/{partition['name']}",
+                                    "size": partition.get("size", ""),
+                                    "mounted": partition.get("mountpoint") is not None,
+                                    "mountpoint": partition.get("mountpoint", None)
+                                }
+                                # If any partition is mounted, mark the device as mounted
+                                # and use the first mounted partition's mountpoint for the device
+                                if part_info["mounted"]:
+                                    device_info["mounted"] = True
+                                    if device_info["mountpoint"] is None:
+                                        device_info["mountpoint"] = part_info["mountpoint"]
+                                    
+                                device_info["partitions"].append(part_info)
+                        
+                        # If no partitions found, check if the whole device is mounted
+                        else:
+                            device_info["mounted"] = device.get("mountpoint") is not None
+                            device_info["mountpoint"] = device.get("mountpoint", None)
+                            
+                        usb_drives.append(device_info)
+            except json.JSONDecodeError:
+                logger.error("Failed to parse lsblk JSON output")
+                return []
+                
+            return usb_drives
+                
+        except Exception as e:
+            logger.error(f"Error detecting USB drives: {str(e)}")
+            return []
+            
+    def get_disk_details(self, device_path) -> Dict[str, Any]:
+        """
+        Get detailed information about a specific disk device.
+        
+        Args:
+            device_path: Path to the device (e.g., /dev/sda)
+            
+        Returns:
+            Dictionary with detailed disk information
+        """
+        try:
+            # Fix path if it has double slash
+            if '//' in device_path:
+                device_path = device_path.replace('//', '/')
+                
+            details = {
+                "device": device_path,
+                "exists": os.path.exists(device_path),
+                "mounted": False,
+                "mountpoint": None,
+                "size": "Unknown",
+                "used": 0,
+                "free": 0,
+                "percent": 0,
+                "filesystem": "Unknown",
+                "label": "Unknown",
+                "uuid": "Unknown",
+                "model": "Unknown",
+                "vendor": "Unknown",
+                "serial": "Unknown",
+                "partitions": []
+            }
+            
+            # Check if device exists
+            if not details["exists"]:
+                return details
+                
+            # Get basic device info using lsblk
+            try:
+                result = subprocess.run(
+                    ["lsblk", "-o", "NAME,SIZE,MODEL,VENDOR,SERIAL,FSTYPE,LABEL,UUID,MOUNTPOINT", device_path, "-J"],
+                    capture_output=True,
+                    text=True
+                )
+                
+                if result.returncode == 0:
+                    lsblk_data = json.loads(result.stdout)
+                    blockdevices = lsblk_data.get("blockdevices", [])
+                    
+                    if not blockdevices:
+                        logger.warning(f"No block device information found for {device_path}")
+                        return details
+                        
+                    device_data = blockdevices[0]
+                    details["size"] = device_data.get("size", "Unknown")
+                    
+                    # Handle potential None values with safe access
+                    model = device_data.get("model")
+                    details["model"] = model.strip() if model and isinstance(model, str) else "Unknown"
+                    
+                    vendor = device_data.get("vendor")
+                    details["vendor"] = vendor.strip() if vendor and isinstance(vendor, str) else "Unknown"
+                    
+                    serial = device_data.get("serial")
+                    details["serial"] = serial.strip() if serial and isinstance(serial, str) else "Unknown"
+                    
+                    details["filesystem"] = device_data.get("fstype", "Unknown")
+                    details["label"] = device_data.get("label", "Unknown")
+                    details["uuid"] = device_data.get("uuid", "Unknown")
+                    
+                    # Check mount status
+                    mount_point = device_data.get("mountpoint")
+                    if mount_point:
+                        details["mounted"] = True
+                        details["mountpoint"] = mount_point
+                        
+                        # Get disk usage information if mounted
+                        try:
+                            disk_usage = shutil.disk_usage(mount_point)
+                            details["used"] = disk_usage.used
+                            details["free"] = disk_usage.free
+                            details["percent"] = int(disk_usage.used * 100 / disk_usage.total) if disk_usage.total > 0 else 0
+                        except Exception as e:
+                            logger.error(f"Error getting disk usage for {mount_point}: {str(e)}")
+                    
+                    # Check for partitions
+                    if "children" in device_data:
+                        for partition in device_data["children"]:
+                            part_path = f"/dev/{partition['name']}"
+                            part_info = {
+                                "device": part_path,
+                                "size": partition.get("size", "Unknown"),
+                                "filesystem": partition.get("fstype", "Unknown"),
+                                "label": partition.get("label", "Unknown"),
+                                "uuid": partition.get("uuid", "Unknown"),
+                                "mounted": False,
+                                "mountpoint": None,
+                                "used": 0,
+                                "free": 0,
+                                "percent": 0
+                            }
+                            
+                            # Check mount status for partition
+                            mount_point = partition.get("mountpoint")
+                            if mount_point:
+                                part_info["mounted"] = True
+                                part_info["mountpoint"] = mount_point
+                                
+                                # If this partition is mounted, mark the parent device as mounted too
+                                # and use this partition's mountpoint for the device
+                                if not details["mounted"]:
+                                    details["mounted"] = True
+                                    details["mountpoint"] = mount_point
+                                
+                                # Get usage for mounted partition
+                                try:
+                                    disk_usage = shutil.disk_usage(mount_point)
+                                    part_info["used"] = disk_usage.used
+                                    part_info["free"] = disk_usage.free
+                                    part_info["percent"] = int(disk_usage.used * 100 / disk_usage.total) if disk_usage.total > 0 else 0
+                                    
+                                    # Also update device-level usage info if not already set
+                                    if details["used"] == 0:
+                                        details["used"] = disk_usage.used
+                                        details["free"] = disk_usage.free
+                                        details["percent"] = int(disk_usage.used * 100 / disk_usage.total) if disk_usage.total > 0 else 0
+                                except Exception as e:
+                                    logger.error(f"Error getting disk usage for {mount_point}: {str(e)}")
+                                    
+                            details["partitions"].append(part_info)
+            except Exception as e:
+                logger.error(f"Error getting detailed disk info: {str(e)}")
+            
+            return details
+                
+        except Exception as e:
+            logger.error(f"Error getting disk details: {str(e)}")
+            return {
+                "device": device_path,
+                "exists": os.path.exists(device_path),
+                "error": str(e)
+            }
+            
+    def safely_eject_drive(self, device_path) -> Dict[str, Any]:
+        """
+        Safely eject a drive after unmounting all its partitions.
+        
+        Args:
+            device_path: Path to the device (e.g., /dev/sda)
+            
+        Returns:
+            Dictionary with status and message
+        """
+        try:
+            # First, get device details to find all mounted partitions
+            details = self.get_disk_details(device_path)
+            
+            unmount_failed = []
+            
+            # Unmount the main device if it's mounted
+            if details["mounted"]:
+                success = self._unmount_device(details["mountpoint"])
+                if not success:
+                    unmount_failed.append(details["mountpoint"])
+            
+            # Unmount all partitions
+            for partition in details["partitions"]:
+                if partition["mounted"]:
+                    success = self._unmount_device(partition["mountpoint"])
+                    if not success:
+                        unmount_failed.append(partition["mountpoint"])
+            
+            # If any unmount operations failed, return error
+            if unmount_failed:
+                return {
+                    "success": False,
+                    "message": f"Failed to unmount points: {', '.join(unmount_failed)}"
+                }
+            
+            # Try to power down the drive with udisks2 (if available)
+            try:
+                # Get just the device name without /dev/ prefix
+                device_name = os.path.basename(device_path)
+                result = subprocess.run(
+                    ["udisksctl", "power-off", "-b", device_name],
+                    capture_output=True,
+                    text=True
+                )
+                
+                if result.returncode == 0:
+                    return {
+                        "success": True,
+                        "message": f"Drive {device_path} safely ejected and powered down"
+                    }
+                else:
+                    return {
+                        "success": True,
+                        "message": f"Drive {device_path} unmounted, but could not be powered down: {result.stderr}"
+                    }
+            except FileNotFoundError:
+                # udisksctl not available
+                return {
+                    "success": True,
+                    "message": f"Drive {device_path} unmounted. Please wait a few seconds before disconnecting"
+                }
+                
+        except Exception as e:
+            logger.error(f"Error ejecting drive {device_path}: {str(e)}")
+            return {
+                "success": False,
+                "message": f"Error ejecting drive: {str(e)}"
+            }
+            
+    def _unmount_device(self, mount_point) -> bool:
+        """Helper method to unmount a device at a specific mount point"""
+        try:
+            # First try unmounting without sudo
+            result = subprocess.run(
+                ["umount", mount_point], 
+                capture_output=True, 
+                text=True
+            )
+            
+            if result.returncode == 0:
+                logger.info(f"Successfully unmounted {mount_point}")
+                return True
+                
+            # If that fails, try with sudo
+            result = subprocess.run(
+                ["sudo", "umount", mount_point], 
+                capture_output=True, 
+                text=True
+            )
+            
+            if result.returncode == 0:
+                logger.info(f"Successfully unmounted {mount_point} with sudo")
+                return True
+            else:
+                logger.error(f"Failed to unmount {mount_point}: {result.stderr}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error during unmount of {mount_point}: {str(e)}")
+            return False

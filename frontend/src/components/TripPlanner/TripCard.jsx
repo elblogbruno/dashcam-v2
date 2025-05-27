@@ -1,5 +1,5 @@
-import React from 'react';
-import { FaDownload, FaPlay, FaStop, FaEdit, FaTrash, FaCheck, FaMapMarkerAlt, FaSync } from 'react-icons/fa';
+import React, { useRef } from 'react';
+import { FaDownload, FaPlay, FaStop, FaEdit, FaTrash, FaCheck, FaMapMarkerAlt, FaSync, FaFileImport } from 'react-icons/fa';
 
 const TripCard = ({ 
   trip, 
@@ -9,11 +9,13 @@ const TripCard = ({
   onStartNavigation,
   onEdit,
   onManageLandmarks,
+  onImportLandmarksFromKml,
   isSelected,
   downloadingTrip,
   downloadProgress,
   isActiveTripId = false  // Nueva prop para indicar si este viaje está activo actualmente
 }) => {
+  const kmlFileInputRef = useRef(null);
   const formatDate = (dateString) => {
     const options = { year: 'numeric', month: 'short', day: 'numeric' };
     return new Date(dateString).toLocaleDateString(undefined, options);
@@ -122,9 +124,34 @@ const TripCard = ({
               e.stopPropagation();
               onManageLandmarks(trip);
             }}
-            className="py-0.5 sm:py-1 px-2 sm:px-3 rounded bg-blue-500 hover:bg-blue-600 text-white flex items-center flex-grow text-xs sm:text-sm"
+            className="py-0.5 sm:py-1 px-2 sm:px-3 rounded bg-blue-500 hover:bg-blue-600 text-white flex items-center text-xs sm:text-sm"
           >
             <FaMapMarkerAlt className="mr-1" /> Landmarks
+          </button>
+          
+          {/* Input oculto para subir KML/KMZ */}
+          <input
+            ref={kmlFileInputRef}
+            type="file"
+            accept=".kml,.kmz"
+            className="hidden"
+            onChange={(e) => {
+              e.stopPropagation();
+              onImportLandmarksFromKml(trip.id, e);
+            }}
+          />
+          
+          {/* Botón para importar KML */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              if (kmlFileInputRef.current) {
+                kmlFileInputRef.current.click();
+              }
+            }}
+            className="py-0.5 sm:py-1 px-2 sm:px-3 rounded bg-green-600 hover:bg-green-700 text-white flex items-center text-xs sm:text-sm"
+          >
+            <FaFileImport className="mr-1" /> Importar KML
           </button>
 
           {new Date(trip.end_date) >= new Date() && (

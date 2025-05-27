@@ -1,7 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { toast } from 'react-hot-toast';
-import { FaMapMarkerAlt, FaCalendarAlt, FaPlus, FaTrash, FaSearch, FaSpinner, FaArrowUp, FaArrowDown, FaEdit } from 'react-icons/fa';
+import { FaMapMarkerAlt, FaCalendarAlt, FaPlus, FaTrash, FaSearch, FaSpinner, FaArrowUp, FaArrowDown, FaEdit, FaFileImport } from 'react-icons/fa';
 import axios from 'axios';
+
+// Importamos el nuevo componente y servicio
+import KmlPreview from './KmlPreview';
+import { uploadKmlFile } from '../../services/kmlService';
 
 const TripForm = ({ initialData, onSubmit, onCancel }) => {
   const [tripName, setTripName] = useState('');
@@ -15,6 +19,11 @@ const TripForm = ({ initialData, onSubmit, onCancel }) => {
   const [waypoints, setWaypoints] = useState([]);
   const [newWaypoint, setNewWaypoint] = useState({ lat: '', lon: '', name: '' });
   const [editingWaypointIndex, setEditingWaypointIndex] = useState(-1);
+  
+  // Estados para la importación de KML/KMZ
+  const [isImportingKml, setIsImportingKml] = useState(false);
+  const [kmlWaypoints, setKmlWaypoints] = useState([]);
+  const [isLoadingKml, setIsLoadingKml] = useState(false);
   
   // State for location search
   const [isSearchingStart, setIsSearchingStart] = useState(false);
@@ -213,6 +222,62 @@ const TripForm = ({ initialData, onSubmit, onCancel }) => {
       behavior: 'smooth',
       block: 'center'
     });
+  };
+  
+  // Función para manejar la subida de archivos KML/KMZ
+  const handleKmlFileUpload = async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    // Verificar que es un archivo KML o KMZ
+    const validExtensions = ['kml', 'kmz'];
+    const fileExtension = file.name.split('.').pop().toLowerCase();
+    
+    if (!validExtensions.includes(fileExtension)) {
+      toast.error('Por favor, sube un archivo KML o KMZ válido');
+      return;
+    }
+    
+    setIsLoadingKml(true);
+    
+    try {
+      // Subir el archivo y recibir los puntos
+      const result = await uploadKmlFile(file);
+      
+      if (result && result.waypoints && result.waypoints.length > 0) {
+        setKmlWaypoints(result.waypoints);
+        setIsImportingKml(true);
+        toast.success(`Se encontraron ${result.waypoints.length} puntos en el archivo`);
+      } else {
+        toast.error('No se encontraron puntos en el archivo');
+      }
+    } catch (error) {
+      console.error('Error uploading KML file:', error);
+      toast.error(`Error al procesar el archivo: ${error.message || 'Error desconocido'}`);
+    } finally {
+      setIsLoadingKml(false);
+      // Limpiar el input de archivo para permitir subir el mismo archivo de nuevo
+      event.target.value = null;
+    }
+  };
+  
+  // Función para cancelar la importación de KML
+  const cancelKmlImport = () => {
+    setIsImportingKml(false);
+    setKmlWaypoints([]);
+  };
+  
+  // Función para confirmar puntos seleccionados del KML
+  const confirmKmlImport = (selectedWaypoints) => {
+    if (selectedWaypoints && selectedWaypoints.length > 0) {
+      // Añadir los nuevos puntos a los existentes
+      setWaypoints([...waypoints, ...selectedWaypoints]);
+      toast.success(`Se han añadido ${selectedWaypoints.length} puntos al viaje`);
+    }
+    
+    // Cerrar la vista de previsualización
+    setIsImportingKml(false);
+    setKmlWaypoints([]);
   };
   
   const cancelEditingWaypoint = () => {
@@ -576,8 +641,41 @@ const TripForm = ({ initialData, onSubmit, onCancel }) => {
                 <FaMapMarkerAlt className="mr-1 text-dashcam-600" />
                 Waypoints
               </label>
-              <div className="text-xs sm:text-sm text-gray-600">
-                {waypoints.length} waypoint{waypoints.length !== 1 ? 's' : ''}
+              <div className="flex items-center space-x-2">
+                <div className="text-xs sm:text-sm text-gray-600">
+                  {waypoints.length} waypoint{waypoints.length !== 1 ? 's' : ''}
+                </div>
+                
+                {/* Botón para importar KML/KMZ */}
+                <div className="relative">
+                  <input
+                    type="file"
+                    id="kml-file-input"
+                    accept=".kml,.kmz"
+                    className="sr-only"
+                    onChange={handleKmlFileUpload}
+                    disabled={isLoadingKml}
+                  />
+                  <label
+                    htmlFor="kml-file-input"
+                    className={`bg-green-600 hover:bg-green-700 text-white text-xs py-1 px-2 rounded-md flex items-center cursor-pointer ${
+                      isLoadingKml ? 'opacity-50 cursor-not-allowed' : ''
+                    }`}
+                    title="Importar puntos desde archivo KML/KMZ"
+                  >
+                    {isLoadingKml ? (
+                      <>
+                        <FaSpinner className="animate-spin mr-1" /> 
+                        Cargando...
+                      </>
+                    ) : (
+                      <>
+                        <FaFileImport className="mr-1" /> 
+                        Importar KML/KMZ
+                      </>
+                    )}
+                  </label>
+                </div>
               </div>
             </div>
             
@@ -848,6 +946,16 @@ const TripForm = ({ initialData, onSubmit, onCancel }) => {
           </button>
         </div>
       </form>
+
+      {/* Modal para previsualizar KML/KMZ */}
+      {isImportingKml && kmlWaypoints.length > 0 && (
+        <KmlPreview
+          points={kmlWaypoints}
+          onClose={cancelKmlImport}
+          onConfirm={confirmKmlImport}
+          type="waypoints"
+        />
+      )}
     </div>
   );
 };

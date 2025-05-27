@@ -3,9 +3,31 @@
 @tailwind utilities;
 
 @layer base {
+  /* Mobile-first approach */
+  html {
+    font-size: 14px; /* Smaller base font for mobile */
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  @media (min-width: 768px) {
+    html {
+      font-size: 16px; /* Larger font for desktop */
+    }
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+    line-height: 1.5;
+    overflow-x: hidden;
+    background-color: #f8fafc;
+  }
+
   /* Estilos base para asegurar que el texto sea visible en los inputs y selectores */
   input, select, textarea, button {
     @apply text-gray-800;
+    font-size: inherit;
+    -webkit-appearance: none;
   }
   
   input::placeholder, textarea::placeholder {
@@ -26,6 +48,23 @@
   /* Estilos para spans dentro de labels (comúnmente usado con checkboxes) */
   label span {
     @apply text-gray-800;
+  }
+
+  /* Improve touch targets for mobile */
+  button, a, input, select, textarea {
+    min-height: 44px;
+    touch-action: manipulation;
+  }
+
+  /* Safe area support for modern mobile devices */
+  @supports (padding: max(0px)) {
+    .safe-area-top {
+      padding-top: max(env(safe-area-inset-top), 0px);
+    }
+    
+    .safe-area-bottom {
+      padding-bottom: max(env(safe-area-inset-bottom), 0px);
+    }
   }
 }
 
@@ -51,4 +90,150 @@
   .select {
     @apply px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-dashcam-500 focus:border-dashcam-500 text-gray-800 bg-white;
   }
+}
+
+/* Estilos para manejar el navbar y layout principal */
+.app-container {
+  min-height: 100vh;
+  position: relative;
+}
+
+/* Modificado: evitar padding-bottom excesivo en páginas que manejan su propio layout */
+.content-wrapper {
+  min-height: calc(100vh - 60px);
+}
+
+/* Excepción para páginas de mapa que necesitan ocupar todo el espacio disponible */
+.map-page-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 100vh;
+  width: 100vw;
+  z-index: 40; /* Colocar por encima del diseño estándar pero debajo del navegador */
+}
+
+/* Eliminada regla que causaba conflictos */
+/* .min-h-screen {
+  padding-bottom: 80px;
+} */
+
+/* Ajustes para elementos flotantes en la parte inferior */
+.fixed.bottom-6,
+.fixed.bottom-4 {
+  bottom: 80px; /* Mayor margen inferior para no interferir con el navbar */
+}
+
+/* Estilos específicos para el navbar y layout */
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  overflow-x: hidden;
+}
+
+/* Estilo específico para eliminar padding del título Smart Dashcam */
+.bg-dashcam-800.text-white.py-2.px-4 {
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
+.bg-dashcam-800.text-white.py-2.px-4 h1 {
+  margin-left: 0;
+  padding-left: 8px;
+}
+
+/* Asegurar que la barra de estado se extienda completamente */
+.bg-dashcam-800.text-white.py-2.px-4 {
+  width: 100%;
+}
+
+/* En móviles, aplicar un pequeño padding sólo al contenido interno */
+@media (max-width: 640px) {
+  .bg-dashcam-800.text-white.py-2.px-4 {
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+  }
+  
+  .bg-dashcam-800.text-white.py-2.px-4 > div {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+  
+  .bg-dashcam-800.text-white.py-2.px-4 h1 {
+    padding-left: 8px;
+  }
+}
+
+/* Ajustes específicos para el padding en pantallas muy pequeñas */
+@media (max-width: 375px) {
+  .content-wrapper {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+  
+  .card {
+    padding-left: 10px !important;
+    padding-right: 10px !important;
+  }
+}
+
+/* Ajuste específico para el botón flotante de carga */
+.fixed.bottom-20 {
+  bottom: 6rem; /* Aumentado para que esté sobre el navbar */
+}
+
+/* Mejora la interacción con el menú desplegable */
+#main-navbar .relative {
+  position: static; /* Cambia de relative a static para que el menú desplegable use el navbar como referencia */
+}
+
+/* Asegurarse que el mapa leaflet ocupe todo su contenedor */
+.leaflet-container {
+  height: 100%;
+  width: 100%;
+  z-index: 0;
+}
+
+/* Resolver conflictos de z-index para garantizar elementos superpuestos */
+.z-50 {
+  z-index: 50 !important;
+}
+.z-40 {
+  z-index: 40 !important;
+}
+.z-30 {
+  z-index: 30 !important;
+}
+.z-20 {
+  z-index: 20 !important;
+}
+.z-10 {
+  z-index: 10 !important;
+}
+.z-0 {
+  z-index: 0 !important;
+}
+
+/* Ajustes específicos para los controles del mapa Leaflet */
+.leaflet-top {
+  top: 60px !important; /* Empujar los controles por debajo de la barra de estado */
+}
+
+.leaflet-control-zoom {
+  margin-top: 10px !important;
+  border: 2px solid rgba(0,0,0,0.2) !important;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.3) !important;
+}
+
+/* Mejora de la visibilidad de los botones de zoom */
+.leaflet-control-zoom a {
+  background-color: white !important;
+  color: #333 !important;
+  font-weight: bold !important;
+  height: 30px !important;
+  width: 30px !important;
+  line-height: 30px !important;
+  font-size: 18px !important;
 }

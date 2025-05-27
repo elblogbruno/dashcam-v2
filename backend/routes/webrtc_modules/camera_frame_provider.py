@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 class CameraFrameProvider:
     """Handles camera frame capture and processing for WebRTC streams"""
     
-    def __init__(self, camera_manager=None, max_queue_size=30):  # Increased from 10 to 30
+    def __init__(self, camera_manager=None, max_queue_size=15):  # Reducido de 30 a 15 para menor latencia
         self.camera_manager = camera_manager
         self.frame_queue = asyncio.Queue(maxsize=max_queue_size)
         self.capture_running = True
@@ -31,7 +31,7 @@ class CameraFrameProvider:
             "timestamp": 0
         }
         self.buffer_last_updated = 0
-        self.buffer_ttl = 0.05  # 50ms TTL for buffer
+        self.buffer_ttl = 0.03  # Reducido de 50ms a 30ms TTL para el buffer, para reducir lag
         
         # Default frames
         self.default_frames = {
@@ -40,10 +40,10 @@ class CameraFrameProvider:
         }
         
         # Adaptive frame rate control
-        self.target_fps = 20
+        self.target_fps = 15  # Reducido de 20 a 15 fps para mejorar estabilidad
         self.last_frame_time = time.time()
         self.frame_interval = 1.0 / self.target_fps
-        self.load_factor = 0.5  # Start at medium CPU load
+        self.load_factor = 0.3  # Reducido de 0.5 a 0.3 para usar menos CPU
         
     def _generate_default_frame(self, camera_type, message="Camera not available", size=(640, 480)):
         """Generate a default frame with an error message"""
@@ -120,19 +120,22 @@ class CameraFrameProvider:
                 # Dynamically adjust processing based on queue fullness
                 queue_fullness = self.frame_queue.qsize() / self.frame_queue.maxsize
                 
-                # Increase capture rate when queue is less than 50% full
-                if queue_fullness < 0.5:
-                    self.target_fps = min(30, self.target_fps + 1)  # Gradually increase up to 30fps
-                    self.load_factor = min(0.9, self.load_factor + 0.05)  # Increase CPU usage
-                    if queue_fullness < 0.2:  # Critical low queue
+                # Estrategia de ajuste de FPS más agresiva para reducir lag
+                if queue_fullness < 0.3:  # Reducido de 0.5 a 0.3
+                    # Si la cola está muy vacía, aumentar FPS más rápidamente
+                    self.target_fps = min(20, self.target_fps + 2)  # Más agresivo, +2 en lugar de +1
+                    self.load_factor = min(0.8, self.load_factor + 0.1)  # Más agresivo
+                    
+                    if queue_fullness < 0.15:  # Critical low queue, reducido de 0.2 a 0.15
                         current_time = time.time()
                         if current_time - self.last_warning_time.get("queue_low", 0) > self.warning_interval:
                             logger.warning(f"⚠️ WebRTC frame queue running low: {self.frame_queue.qsize()}/{self.frame_queue.maxsize}")
                             self.last_warning_time["queue_low"] = current_time
-                elif queue_fullness > 0.8:
-                    # Reduce capture rate to avoid buffer bloat when queue is more than 80% full
-                    self.target_fps = max(15, self.target_fps - 1)  # Gradually decrease down to 15fps
-                    self.load_factor = max(0.3, self.load_factor - 0.05)  # Reduce CPU usage
+                            
+                elif queue_fullness > 0.7:  # Reducido de 0.8 a 0.7 para ser más proactivo
+                    # Reduce capture rate to avoid buffer bloat when queue is more than 70% full
+                    self.target_fps = max(10, self.target_fps - 2)  # Más agresivo en la reducción
+                    self.load_factor = max(0.2, self.load_factor - 0.1)  # Reduce CPU usage more aggressively
                 
                 self.frame_interval = 1.0 / self.target_fps
                 
@@ -171,10 +174,27 @@ class CameraFrameProvider:
             logger.info("🛑 Camera frame capture worker terminated")
     
     async def _capture_single_camera_frame(self, camera_type):
-        """Capture frame from a single camera"""
+        """Capture frame from a single camera with optimization for shared frames"""
         frame = None
         
         try:
+            # OPTIMIZACIÓN: Intentar usar frame compartido del worker MJPEG primero
+            try:
+                from backend.routes import mjpeg_stream
+                if hasattr(mjpeg_stream, 'is_mjpeg_worker_active') and mjpeg_stream.is_mjpeg_worker_active():
+                    shared_frame = mjpeg_stream.get_shared_frame(camera_type)
+                    if shared_frame is not None:
+                        # Log uso de frame compartido (rate limited)
+                        current_time = time.time()
+                        if current_time - self.last_warning_time.get(f"shared_{camera_type}", 0) > 60:
+                            logger.info(f"🔄 Using shared frame from MJPEG worker for {camera_type}")
+                            self.last_warning_time[f"shared_{camera_type}"] = current_time
+                        return shared_frame
+            except Exception as e:
+                # Si falla acceso a frame compartido, continuar con captura normal
+                pass
+            
+            # Captura normal si no hay frame compartido disponible
             if self.camera_manager is None:
                 return self.default_frames[camera_type].copy()
                 
@@ -245,7 +265,11 @@ class CameraFrameProvider:
             
         try:
             h, w = frame.shape[:2]
-            timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+            now = time.time()
+            # Incluir milisegundos en el timestamp para mayor precisión
+            timestamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(now))
+            ms = int((now - int(now)) * 1000)
+            timestamp = f"{timestamp}.{ms:03d}"
             
             # Add timestamp
             cv2.putText(

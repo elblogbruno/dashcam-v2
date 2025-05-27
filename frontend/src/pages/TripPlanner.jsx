@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { toast, Toaster } from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
-import { FaRoute, FaPlus, FaMapMarkerAlt, FaStop } from 'react-icons/fa';
+import { FaRoute, FaPlus, FaMapMarkerAlt, FaStop, FaFileImport } from 'react-icons/fa';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 
@@ -9,6 +9,7 @@ import L from 'leaflet';
 import TripForm from '../components/TripPlanner/TripForm';
 import TripCard from '../components/TripPlanner/TripCard';
 import TripMapPreview from '../components/TripPlanner/TripMapPreview';
+import KmlPreview from '../components/TripPlanner/KmlPreview';
 
 // Import services
 import { 
@@ -20,6 +21,7 @@ import {
 
 // Import our new landmark service
 import { downloadTripLandmarks } from '../services/landmarkService';
+import { uploadKmlFile, importLandmarksFromKml } from '../services/kmlService';
 
 // Fix Leaflet icon issues
 import icon from 'leaflet/dist/images/marker-icon.png';
@@ -44,6 +46,13 @@ const TripPlanner = () => {
   const [selectedTab, setSelectedTab] = useState('upcoming'); // 'upcoming' or 'past'
   const [editingTrip, setEditingTrip] = useState(null);
   const [activeTripInfo, setActiveTripInfo] = useState(null); // Para almacenar información del viaje activo
+  
+  // Estados para la importación de KML/KMZ
+  const [isImportingLandmarks, setIsImportingLandmarks] = useState(false);
+  const [kmlPlacemarks, setKmlPlacemarks] = useState([]);
+  const [importingTripId, setImportingTripId] = useState(null);
+  const [isLoadingKml, setIsLoadingKml] = useState(false);
+  
   const navigate = useNavigate();
   
   // Fetch trips when component mounts
@@ -147,19 +156,11 @@ const TripPlanner = () => {
     
     try {
       // Use our new simplified landmark service for downloading
+      // Las notificaciones ahora se gestionan directamente en el servicio
       await downloadTripLandmarks(tripId, (progress, detail) => {
         setDownloadProgress(progress);
-        
-        // Show a toast message at certain progress milestones
-        if (progress % 20 < 1) { // Show at ~0%, ~20%, ~40%, ~60%, ~80%
-          toast(detail, {
-            icon: '🌍',
-            duration: 3000
-          });
-        }
+        // Ya no necesitamos mostrar toasts aquí, lo hace el servicio
       });
-      
-      toast.success('Landmarks downloaded successfully');
       
       // Mark the trip as having landmarks downloaded
       setTrips(trips.map(trip => {
@@ -173,7 +174,7 @@ const TripPlanner = () => {
       fetchTrips();
     } catch (error) {
       console.error('Error downloading landmarks:', error);
-      toast.error('Failed to download landmarks: ' + (error.message || 'Unknown error'));
+      // No necesitamos mostrar el error aquí, ya lo hace el servicio
     } finally {
       setDownloadingTrip(null);
       setDownloadProgress(null);
@@ -203,6 +204,83 @@ const TripPlanner = () => {
 
   const isPastTrip = (trip) => {
     return new Date(trip.end_date) < new Date();
+  };
+  
+  // Función para manejar la subida de archivos KML/KMZ para landmarks
+  const handleImportLandmarksFile = async (tripId, event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    // Verificar que es un archivo KML o KMZ
+    const validExtensions = ['kml', 'kmz'];
+    const fileExtension = file.name.split('.').pop().toLowerCase();
+    
+    if (!validExtensions.includes(fileExtension)) {
+      toast.error('Por favor, sube un archivo KML o KMZ válido');
+      return;
+    }
+    
+    setImportingTripId(tripId);
+    setIsLoadingKml(true);
+    
+    try {
+      // Subir el archivo y recibir los puntos
+      const result = await uploadKmlFile(file);
+      
+      if (result && result.placemarks && result.placemarks.length > 0) {
+        setKmlPlacemarks(result.placemarks);
+        setIsImportingLandmarks(true);
+        toast.success(`Se encontraron ${result.placemarks.length} puntos de interés en el archivo`);
+      } else {
+        toast.error('No se encontraron puntos de interés en el archivo');
+      }
+    } catch (error) {
+      console.error('Error uploading KML file for landmarks:', error);
+      toast.error(`Error al procesar el archivo: ${error.message || 'Error desconocido'}`);
+    } finally {
+      setIsLoadingKml(false);
+      // Limpiar el input de archivo para permitir subir el mismo archivo de nuevo
+      event.target.value = null;
+    }
+  };
+  
+  // Función para cancelar la importación de landmarks desde KML
+  const cancelLandmarksImport = () => {
+    setIsImportingLandmarks(false);
+    setKmlPlacemarks([]);
+    setImportingTripId(null);
+  };
+  
+  // Función para confirmar puntos seleccionados del KML como landmarks
+  const confirmLandmarksImport = async (selectedPlacemarks) => {
+    if (!importingTripId || selectedPlacemarks.length === 0) {
+      cancelLandmarksImport();
+      return;
+    }
+    
+    try {
+      // Crear un nuevo FormData y un blob con los puntos seleccionados
+      const data = new FormData();
+      const blob = new Blob([JSON.stringify(selectedPlacemarks)], {
+        type: 'application/json'
+      });
+      
+      data.append('placemarks', blob, 'placemarks.json');
+      
+      // Importar los puntos como landmarks para el viaje
+      const result = await importLandmarksFromKml(importingTripId, data, selectedPlacemarks.map((_, index) => index));
+      
+      toast.success(`Se han importado ${selectedPlacemarks.length} puntos de interés para el viaje`);
+      
+      // Refrescar la lista de viajes para reflejar los nuevos landmarks
+      fetchTrips();
+    } catch (error) {
+      console.error('Error importing landmarks from KML:', error);
+      toast.error(`Error al importar puntos de interés: ${error.message || 'Error desconocido'}`);
+    } finally {
+      // Cerrar la vista de previsualización
+      cancelLandmarksImport();
+    }
   };
 
   const filteredTrips = trips.filter(trip => 
@@ -387,6 +465,7 @@ const TripPlanner = () => {
                   onStartNavigation={startNavigation}
                   onEdit={handleEditTrip}
                   onManageLandmarks={manageTripLandmarks}
+                  onImportLandmarksFromKml={handleImportLandmarksFile}
                   isSelected={selectedTripForPreview?.id === trip.id}
                   downloadingTrip={downloadingTrip}
                   downloadProgress={downloadingTrip === trip.id ? downloadProgress : null}
@@ -403,7 +482,7 @@ const TripPlanner = () => {
             <h3 className="text-base sm:text-lg font-semibold">Trip Preview</h3>
           </div>
           
-          <div className="h-[250px] sm:h-[300px] md:h-[350px] lg:h-[400px]">
+          <div className="h-[450px] sm:h-[500px] md:h-[550px] lg:h-[600px]">
             <TripMapPreview
               trip={selectedTripForPreview}
               onStartNavigation={startNavigation}
@@ -412,6 +491,16 @@ const TripPlanner = () => {
           </div>
         </div>
       </div>
+
+      {/* Modal para previsualizar landmarks desde KML/KMZ */}
+      {isImportingLandmarks && kmlPlacemarks.length > 0 && (
+        <KmlPreview
+          points={kmlPlacemarks}
+          onClose={cancelLandmarksImport}
+          onConfirm={confirmLandmarksImport}
+          type="landmarks"
+        />
+      )}
     </div>
   );
 };

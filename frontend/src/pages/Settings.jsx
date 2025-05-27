@@ -3,7 +3,7 @@ import axios from 'axios'
 import { 
   FaVolumeMute, FaVolumeUp, FaSync, FaCog, FaUpload, 
   FaWifi, FaFileUpload, FaCamera, FaCheck, FaExclamationTriangle,
-  FaSearch, FaVideo
+  FaSearch, FaVideo, FaMicrophone, FaBell, FaBug
 } from 'react-icons/fa'
 
 function Settings() {
@@ -12,6 +12,19 @@ function Settings() {
     volume: 80,
     engine: 'pyttsx3'
   })
+  
+  // Navegar a la sección especificada en el hash de la URL al cargar
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (hash) {
+      const element = document.querySelector(hash);
+      if (element) {
+        setTimeout(() => {
+          element.scrollIntoView({ behavior: 'smooth' });
+        }, 100);
+      }
+    }
+  }, [])
   
   const [videoSettings, setVideoSettings] = useState({
     roadQuality: 'high',
@@ -48,7 +61,8 @@ function Settings() {
     video: true,
     wifi: true,
     landmarks: true,
-    upload: true
+    upload: true,
+    debug: true
   })
 
   // Fetch settings on mount
@@ -588,6 +602,63 @@ function Settings() {
             >
               {syncStatus.inProgress ? 'Sincronizando...' : 'Sincronizar Puntos de Interés'}
             </button>
+          </div>
+        </div>
+      </div>
+      
+      {/* Debug Tools Section */}
+      <div id="debug-section" className="card mb-4 p-0 overflow-hidden">
+        <div className="bg-gray-800 text-white p-3">
+          <h2 className="text-lg font-medium flex items-center">
+            <FaBug className="mr-2" />
+            Herramientas de Depuración
+          </h2>
+        </div>
+        
+        <div className="p-4">
+          <div className="bg-yellow-50 border-l-4 border-yellow-400 p-3 mb-4">
+            <p className="text-sm text-yellow-800">
+              <strong>Nota:</strong> Estas herramientas son para desarrolladores y soporte técnico. Su uso incorrecto puede afectar el funcionamiento del sistema.
+            </p>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <a href="/notifications" className="bg-gray-100 hover:bg-gray-200 transition rounded-lg p-4 flex items-center border border-gray-300">
+              <div className="w-12 h-12 bg-gray-800 text-white rounded-full flex items-center justify-center mr-3">
+                <FaBell className="text-xl" />
+              </div>
+              <div>
+                <h3 className="font-medium">Probador de Notificaciones</h3>
+                <p className="text-xs text-gray-600 mt-1">
+                  Prueba diferentes tipos de notificaciones del sistema
+                </p>
+              </div>
+            </a>
+            
+            <a href="/mic-led-tester" className="bg-gray-100 hover:bg-gray-200 transition rounded-lg p-4 flex items-center border border-gray-300">
+              <div className="w-12 h-12 bg-gray-800 text-white rounded-full flex items-center justify-center mr-3">
+                <FaMicrophone className="text-xl" />
+              </div>
+              <div>
+                <h3 className="font-medium">LEDs del Micrófono</h3>
+                <p className="text-xs text-gray-600 mt-1">
+                  Control directo de LEDs del ReSpeaker 2mic HAT
+                </p>
+              </div>
+            </a>
+          </div>
+          
+          <div className="mt-4 bg-gray-100 rounded-lg p-4 border border-gray-300">
+            <h3 className="font-medium mb-2 flex items-center">
+              <FaCog className="mr-2" />
+              Información del Sistema
+            </h3>
+            
+            <div className="text-sm">
+              <p className="mb-1"><strong>Versión:</strong> Dashcam v2.0</p>
+              <p className="mb-1"><strong>Fecha:</strong> {new Date().toLocaleDateString()}</p>
+              <p><strong>Hardware:</strong> ReSpeaker 2mic HAT detectado</p>
+            </div>
           </div>
         </div>
       </div>

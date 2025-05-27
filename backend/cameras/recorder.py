@@ -21,6 +21,8 @@ class VideoRecorder:
         self.current_clip_sequence = 0
         self.video_quality = "normal"  # Calidad de grabación: "normal" o "high"
         self.last_quality_change = None
+        self.completed_clips = []  # Lista para almacenar los clips completados
+        self.clip_completed_callback = None  # Callback para cuando se completa un clip
     
     def add_camera(self, name, camera):
         """Add a camera to be managed by this recorder"""
@@ -39,6 +41,9 @@ class VideoRecorder:
             # Reset clip sequence counter and start time
             self.current_clip_sequence = 0
             self.clip_start_time = datetime.now()
+            
+            # Reiniciar la lista de clips completados
+            self.completed_clips = []
             
             # Start first clip
             self._start_new_clip()
@@ -143,7 +148,6 @@ class VideoRecorder:
             
             # Detener la grabación
             self.recording = False
-            completed_clips = [current_clip]  # Iniciar con el clip actual
             
             # Detener todas las cámaras manualmente
             for camera_name, camera in self.cameras.items():
@@ -170,9 +174,15 @@ class VideoRecorder:
             # Actualizar con archivos válidos solamente
             current_clip['files'] = valid_files
             
+            # Combinar el clip actual con los clips completados previamente durante la grabación
+            all_clips = self.completed_clips + [current_clip]
+            
             logger.info("Recording stopped")
-            logger.info(f"Completed clip with valid files: {valid_files}")
-            return completed_clips
+            logger.info(f"Returning {len(all_clips)} clips including the current clip")
+            logger.info(f"Completed clips content: {self.completed_clips}")
+            logger.info(f"Current clip content: {current_clip}")
+            
+            return all_clips
             
         except Exception as e:
             logger.error(f"Error stopping recording: {str(e)}")
@@ -191,7 +201,7 @@ class VideoRecorder:
     
     def _record_video(self):
         """Recording thread function"""
-        completed_clips = []
+        self.completed_clips = []  # Reiniciar la lista de clips completados
         
         try:
             # For the interior camera (OpenCV), we need to handle frame-by-frame recording
@@ -209,8 +219,26 @@ class VideoRecorder:
                         'sequence': self.current_clip_sequence,
                         'quality': self.video_quality
                     }
-                    completed_clips.append(clip_info)
+                    self.completed_clips.append(clip_info)
                     logger.info(f"Completed clip {self.current_clip_sequence}, starting new clip")
+                    
+                    # Verificar que los archivos existan
+                    valid_files = {}
+                    for camera_name, file_path in self.output_files.items():
+                        if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+                            valid_files[camera_name] = file_path
+                        else:
+                            logger.warning(f"Video file {file_path} is missing or empty")
+                            
+                    # Actualizar con archivos válidos solamente
+                    clip_info['files'] = valid_files
+                    
+                    # Si hay un callback configurado, notificar que se completó un clip
+                    if self.clip_completed_callback and callable(self.clip_completed_callback):
+                        try:
+                            self.clip_completed_callback(clip_info)
+                        except Exception as e:
+                            logger.error(f"Error en clip_completed_callback: {str(e)}")
                     
                     # Start new clip
                     self._start_new_clip()
@@ -235,12 +263,20 @@ class VideoRecorder:
                 'sequence': self.current_clip_sequence,
                 'quality': self.video_quality
             }
-            completed_clips.append(clip_info)
+            self.completed_clips.append(clip_info)
             
-            # Return completed clips for database recording
-            return completed_clips
+            logger.info(f"Recording thread finished with {len(self.completed_clips)} completed clips")
                     
         except Exception as e:
             logger.error(f"Error in recording thread: {str(e)}")
             self.recording = False
             return completed_clips
+
+    def set_clip_completed_callback(self, callback):
+        """Establece una función de callback que se llamará cuando se complete un clip
+        
+        Args:
+            callback: Función que recibe como parámetro la información del clip completado
+        """
+        self.clip_completed_callback = callback
+        logger.info("Callback de clips completados configurado")

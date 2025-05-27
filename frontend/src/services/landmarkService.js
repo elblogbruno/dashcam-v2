@@ -1,4 +1,7 @@
 import { API_BASE_URL } from '../config';
+import { showInfo, showSuccess, showError } from './notificationService';
+import offlineMapManager from './offlineMapService';
+import landmarkImageManager from './landmarkImageService';
 
 /**
  * Fetch all landmarks
@@ -16,6 +19,60 @@ export const fetchAllLandmarks = async () => {
 };
 
 /**
+ * Descarga recursos offline (mapas e imágenes) para un viaje
+ * @param {string} tripId - ID del viaje
+ * @param {function} onProgress - Callback de progreso
+ */
+export const setupOfflineResources = async (tripId, onProgress = null) => {
+  try {
+    // Obtener los landmarks descargados para este viaje
+    const landmarksResponse = await fetch(`${API_BASE_URL}/landmarks/by-trip/${tripId}`);
+    if (!landmarksResponse.ok) throw new Error('Failed to fetch trip landmarks');
+    const landmarks = await landmarksResponse.json();
+    
+    // Obtener el detalle del viaje para tener la información de la ruta
+    const tripResponse = await fetch(`${API_BASE_URL}/trip-planner/${tripId}`);
+    if (!tripResponse.ok) throw new Error('Failed to fetch trip details');
+    const trip = await tripResponse.json();
+    
+    // Descargar el mapa offline en segundo plano
+    offlineMapManager.downloadMapTilesForTrip(trip, (progress, detail) => {
+      if (onProgress) {
+        onProgress(progress, `Mapa offline: ${detail}`);
+      }
+    }).catch(error => {
+      console.error('Error downloading offline map:', error);
+      showError(`Error al descargar mapa offline: ${error.message}`, {
+        title: 'Error de Descarga',
+        timeout: 5000
+      });
+    });
+    
+    // Descargar imágenes para landmarks en segundo plano
+    landmarkImageManager.downloadLandmarkImages(tripId, landmarks, (progress, detail) => {
+      if (onProgress) {
+        onProgress(progress, `Imágenes: ${detail}`);
+      }
+    }).catch(error => {
+      console.error('Error downloading landmark images:', error);
+      showError(`Error al descargar imágenes: ${error.message}`, {
+        title: 'Error de Descarga',
+        timeout: 5000
+      });
+    });
+    
+    return true;
+  } catch (error) {
+    console.error('Error setting up offline resources:', error);
+    showError(`Error al preparar recursos offline: ${error.message}`, {
+      title: 'Advertencia',
+      timeout: 5000
+    });
+    return false;
+  }
+};
+
+/**
  * Download landmarks for a specific trip
  * @param {string} tripId - The ID of the trip
  * @param {function} onProgress - Callback for progress updates
@@ -23,13 +80,19 @@ export const fetchAllLandmarks = async () => {
  */
 export const downloadTripLandmarks = async (tripId, onProgress = null) => {
   try {
+    // Mostrar notificación de inicio
+    const startNotificationId = showInfo('Iniciando descarga de puntos de interés...', {
+      title: 'Descarga de POI',
+      timeout: 3000
+    });
+    
     // Start the download process
     const response = await fetch(`${API_BASE_URL}/trip-planner/${tripId}/download-landmarks`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ radius_km: 10 })
+      body: JSON.stringify({ radius_km: 10, notify: true })
     });
     
     if (!response.ok) {
@@ -47,17 +110,54 @@ export const downloadTripLandmarks = async (tripId, onProgress = null) => {
     // Create an EventSource to track progress
     const eventSource = new EventSource(`${API_BASE_URL}/trip-planner/${tripId}/download-landmarks-stream`);
     
+    let lastProgressNotification = null;
+    
     return new Promise((resolve, reject) => {
       eventSource.onmessage = (event) => {
         const data = JSON.parse(event.data);
         
-        if (data.type === 'progress' && onProgress) {
-          onProgress(data.progress, data.detail);
+        if (data.type === 'progress') {
+          if (onProgress) {
+            onProgress(data.progress, data.detail);
+          }
+          
+          // Mostrar notificaciones de progreso en hitos importantes (cada 25%)
+          if (data.progress % 25 < 1 && data.progress > 0) {
+            // Remover notificación anterior si existe
+            if (lastProgressNotification) {
+              // No es necesario removerla manualmente porque tienen timeout
+            }
+            
+            // Crear nueva notificación
+            lastProgressNotification = showInfo(`${data.progress}% completado - ${data.detail}`, {
+              title: 'Descarga de POI en progreso',
+              timeout: 3000
+            });
+          }
         } else if (data.type === 'complete') {
           eventSource.close();
+          
+          // Mostrar notificación de finalización
+          showSuccess('Descarga de puntos de interés completada', {
+            title: 'Descarga Completada',
+            timeout: 5000
+          });
+          
+          // Iniciar descarga de mapas e imágenes offline después de resolver
+          setTimeout(() => {
+            setupOfflineResources(tripId, onProgress);
+          }, 500);
+          
           resolve(data);
         } else if (data.type === 'error') {
           eventSource.close();
+          
+          // Mostrar notificación de error
+          showError(`Error en la descarga: ${data.message || 'Error desconocido'}`, {
+            title: 'Error de Descarga',
+            timeout: 8000
+          });
+          
           reject(new Error(data.message || 'Download failed'));
         }
       };

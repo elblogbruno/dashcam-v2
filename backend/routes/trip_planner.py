@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 landmark_checker = None
 trip_logger = None
 config = None
+audio_notifier = None
 
 router = APIRouter()
 
@@ -315,8 +316,8 @@ async def create_planned_trip(trip: PlannedTrip, background_tasks: BackgroundTas
         # Fallback al método de archivo
         save_trips_to_disk()
     
-    # Automatically download landmarks in the background
-    background_tasks.add_task(auto_download_landmarks_for_trip, trip)
+    # No descargamos landmarks automáticamente ahora
+    # La descarga se iniciará manualmente o desde el frontend
     
     return trip
 
@@ -424,7 +425,7 @@ async def delete_planned_trip(trip_id: str):
     raise HTTPException(status_code=404, detail="Planned trip not found")
 
 @router.post("/{trip_id}/download-landmarks")
-async def download_landmarks_for_trip(trip_id: str, background_tasks: BackgroundTasks, radius_km: int = 10):
+async def download_landmarks_for_trip(trip_id: str, background_tasks: BackgroundTasks, radius_km: int = 10, notify: bool = True):
     """Download landmarks for a planned trip route"""
     # Find the planned trip
     trip = None
@@ -444,6 +445,15 @@ async def download_landmarks_for_trip(trip_id: str, background_tasks: Background
         }
     
     try:
+        # Notificar al usuario que se está iniciando la descarga
+        if notify and audio_notifier:
+            audio_notifier.announce(
+                f"Iniciando descarga de puntos de interés para el viaje {trip.name}",
+                title="Descarga Iniciada",
+                notification_type="info",
+                send_notification=True
+            )
+            
         # Initialize progress tracker for this download
         active_downloads[trip_id] = {
             "progress": 0,
@@ -1087,6 +1097,17 @@ async def download_trip_landmarks_with_progress(trip: PlannedTrip, radius_km: in
         
         logger.info(f"[LANDMARK_DOWNLOAD] Successfully downloaded {len(unique_landmarks)} landmarks for trip {trip.id}")
         
+        # Notificar al usuario sobre la finalización de la descarga
+        if audio_notifier:
+            # Obtener el nombre del viaje para la notificación
+            trip_name = trip.name if hasattr(trip, 'name') and trip.name else "sin nombre"
+            audio_notifier.announce(
+                f"Se han descargado {len(unique_landmarks)} puntos de interés para el viaje {trip_name}",
+                title="Descarga Completa",
+                notification_type="success",
+                send_notification=True
+            )
+        
     except Exception as e:
         logger.error(f"[LANDMARK_DOWNLOAD] Error in background landmark download: {str(e)}", exc_info=True)
         # Update status to error
@@ -1095,6 +1116,16 @@ async def download_trip_landmarks_with_progress(trip: PlannedTrip, radius_km: in
             "detail": str(e),
             "status": "error"
         }
+        
+        # Notificar al usuario sobre el error
+        if audio_notifier:
+            trip_name = trip.name if hasattr(trip, 'name') and trip.name else "sin nombre"
+            audio_notifier.announce(
+                f"Error al descargar puntos de interés para el viaje {trip_name}: {str(e)}",
+                title="Error en Descarga",
+                notification_type="error",
+                send_notification=True
+            )
 
 async def get_landmark_settings():
     """Get the current landmark download settings"""

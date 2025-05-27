@@ -40,6 +40,7 @@ try:
     from settings_manager import settings_manager  # Import the settings manager
     from data_persistence import get_persistence_manager  # Import our new persistence manager
     from auto_trip_manager import auto_trip_manager  # Import our new auto trip manager
+    from hdd_copy_module import HDDCopyModule  # Import our new HDD copy module
     logger.info("Módulos importados correctamente")
 except Exception as e:
     logger.error(f"Error importando módulos: {e}", exc_info=True)
@@ -49,6 +50,11 @@ except Exception as e:
 try:
     logger.info("Importando rutas...")
     from routes import router as api_router
+    
+    # Import new routes for offline maps, landmark images and geocoding
+    from routes import landmark_images
+    from routes import offline_maps
+    from routes import geocode
     logger.info("Rutas importadas correctamente")
 except Exception as e:
     logger.error(f"Error importando rutas: {e}", exc_info=True)
@@ -81,6 +87,10 @@ try:
     trip_logger = TripLogger(db_path=config.db_path)
     logger.info("TripLogger inicializado")
     
+    # Configurar el trip_logger en el camera_manager
+    camera_manager.set_trip_logger(trip_logger)
+    logger.info("TripLogger configurado en CameraManager")
+    
     landmark_checker = LandmarkChecker(landmarks_file=config.landmarks_path)
     logger.info("LandmarkChecker inicializado")
     
@@ -99,6 +109,10 @@ try:
         settings_path=config.storage_settings_path
     )
     logger.info("DiskManager inicializado")
+    
+    # Inicializar el módulo de copia a HDD
+    hdd_copy_module = HDDCopyModule(disk_manager, camera_manager, audio_notifier)
+    logger.info("HDDCopyModule inicializado")
 except Exception as e:
     logger.error(f"Error inicializando componentes: {e}", exc_info=True)
     raise
@@ -131,11 +145,13 @@ try:
     import routes.trip_planner as trip_planner_routes
     import routes.settings as settings_routes
     import routes.cameras as cameras_routes  # Importar el nuevo módulo de rutas de cámaras
+    import routes.camera_reset as camera_reset_routes  # Importar el módulo de reinicio de cámaras
+    import routes.kml_parser as kml_parser_routes  # Importar el nuevo módulo de rutas de KML
     
     # Set up shared components in the route modules
     recording_routes.camera_manager = camera_manager
     recording_routes.trip_logger = trip_logger
-    recording_routes.is_recording = is_recording
+    recording_routes.is_recording = is_recording  # Esto es solo una asignación inicial, no un enlace
     
     landmarks_routes.landmark_checker = landmark_checker
     
@@ -154,22 +170,47 @@ try:
     # Configurar el módulo de rutas de cámaras
     cameras_routes.camera_manager = camera_manager
     
+    # Configurar el módulo de reinicio de cámaras
+    camera_reset_routes.camera_manager = camera_manager
+    
     # Configurar el módulo de WebRTC
     import routes.webrtc as webrtc_routes
     webrtc_routes.camera_manager = camera_manager
+    
+    # Configurar el módulo de streaming MJPEG
+    import routes.mjpeg_stream as mjpeg_stream_routes
+    mjpeg_stream_routes.camera_manager = camera_manager
     
     # Configurar el módulo de rutas de audio
     import routes.audio as audio_routes
     audio_routes.audio_notifier = audio_notifier
     
+    # Configurar módulo de almacenamiento con el componente de copia HDD
+    storage_routes.hdd_copy_module = hdd_copy_module
+    
     # Initialize trip planner routes
     trip_planner_routes.landmark_checker = landmark_checker
     trip_planner_routes.trip_logger = trip_logger
     trip_planner_routes.config = config
+    trip_planner_routes.audio_notifier = audio_notifier
     trip_planner_routes.initialize() # Call the new initialize function to load saved trips
+    
+    # Proporcionar la lista de clientes WebSocket al audio_notifier
+    audio_notifier.connected_clients = connected_clients
+    
+    # Initialize KML parser routes
+    kml_parser_routes.landmark_checker = landmark_checker
+    kml_parser_routes.planned_trips = trip_planner_routes.planned_trips
+    kml_parser_routes.config = config
     
     # Initialize settings routes
     settings_routes.config = config
+    
+    # Initialize the new routes for offline maps, landmark images and geocoding
+    landmark_images.config = config
+    offline_maps.config = config
+    
+    # No need to configure geocode module as it doesn't require specific configuration
     
     # Initialize the auto trip manager
     auto_trip_manager.initialize(
@@ -190,6 +231,14 @@ except Exception as e:
 try:
     logger.info("Incluyendo router API...")
     app.include_router(api_router)
+    
+    # Initialize configuration for modules that need it
+    import routes.offline_maps as offline_maps
+    offline_maps.config = config
+    
+    import routes.organic_maps as organic_maps
+    organic_maps.init_modules(config)
+    
     logger.info("Router API incluido correctamente")
 except Exception as e:
     logger.error(f"Error incluyendo router API: {e}", exc_info=True)
@@ -236,7 +285,11 @@ async def websocket_endpoint(websocket: WebSocket):
     except Exception as e:
         logger.info(f"Cliente WebSocket desconectado: {str(e)}")
         # Client disconnected
-        connected_clients.remove(websocket)
+        try:
+            if websocket in connected_clients:
+                connected_clients.remove(websocket)
+        except Exception as ex:
+            logger.warning(f"Error al eliminar WebSocket de connected_clients: {str(ex)}")
 
 # Background task to update location and check landmarks
 @app.on_event("startup")
@@ -256,6 +309,15 @@ async def startup_event():
     # Check for planned trips that should start automatically
     logger.info("Verificando viajes programados para hoy...")
     asyncio.create_task(check_scheduled_trips())
+    
+    # Initialize WebRTC module
+    logger.info("Inicializando módulo WebRTC...")
+    try:
+        from routes.webrtc import initialize_webrtc
+        await initialize_webrtc()
+        logger.info("✅ Módulo WebRTC inicializado correctamente")
+    except Exception as e:
+        logger.error(f"❌ Error inicializando WebRTC: {e}", exc_info=True)
     
     logger.info("Evento de inicio completado")
 
@@ -368,6 +430,19 @@ try:
         logger.info(f"Frontend montado desde: {frontend_path}")
     else:
         logger.warning(f"Directorio del frontend no encontrado: {frontend_path}")
+        
+    # Mount videos directory for direct access
+    logger.info("Montando directorio de videos...")
+    videos_path = os.path.join(config.data_path, "videos")
+    app.mount("/videos", StaticFiles(directory=videos_path), name="videos")
+    logger.info(f"Directorio de videos montado desde: {videos_path}")
+    
+    # Mount thumbnails directory
+    logger.info("Montando directorio de miniaturas...")
+    thumbnails_dir = os.path.join(config.data_path, "thumbnails")
+    os.makedirs(thumbnails_dir, exist_ok=True)
+    app.mount("/thumbnails", StaticFiles(directory=thumbnails_dir), name="thumbnails")
+    logger.info(f"Directorio de miniaturas montado desde: {thumbnails_dir}")
 except Exception as e:
     logger.error(f"Error montando archivos estáticos: {e}", exc_info=True)
 
@@ -439,7 +514,76 @@ async def shutdown_event():
     except Exception as e:
         logger.error(f"Error al limpiar DiskManager: {e}")
     
+    try:
+        if hdd_copy_module:
+            logger.info("Limpiando recursos de HDDCopyModule...")
+            if hasattr(hdd_copy_module, 'cleanup') and callable(hdd_copy_module.cleanup):
+                hdd_copy_module.cleanup()
+    except Exception as e:
+        logger.error(f"Error al limpiar HDDCopyModule: {e}")
+    
     logger.info("Evento de apagado completado")
+
+async def close_all_streaming_connections():
+    """Cierra todas las conexiones de streaming (WebRTC y MJPEG) al iniciar el servidor"""
+    try:
+        # Cerrar conexiones WebRTC
+        logger.info("Cerrando todas las conexiones WebRTC existentes...")
+        import routes.webrtc as webrtc_routes
+        response = await webrtc_routes.close_webrtc_connections()
+        logger.info(f"Resultado de limpieza WebRTC: {response}")
+        
+        # Cerrar también las conexiones MJPEG explícitamente
+        logger.info("Reiniciando el sistema de streaming MJPEG...")
+        import routes.mjpeg_stream as mjpeg_stream_routes
+        
+        # Limpiar todas las conexiones MJPEG activas
+        clients_to_clean = 0
+        
+        try:
+            logger.info(f"Limpiando {len(mjpeg_stream_routes.client_streams)} clientes MJPEG activos...")
+            
+            # Crear una lista de clientes para limpiar
+            clients_to_remove = list(mjpeg_stream_routes.client_streams.keys())
+            
+            for client_id in clients_to_remove:
+                try:
+                    await mjpeg_stream_routes.cleanup_client(client_id, "reinicio del servidor")
+                    clients_to_clean += 1
+                except Exception as e:
+                    logger.error(f"Error limpiando cliente MJPEG {client_id}: {e}")
+            
+            logger.info(f"Limpiados {clients_to_clean} clientes MJPEG")
+        except Exception as e:
+            logger.error(f"Error durante limpieza de clientes MJPEG: {e}")
+        
+        # Resetear las estructuras de datos para eliminar clientes MJPEG antiguos
+        mjpeg_stream_routes.active_clients = {"road": 0, "interior": 0}
+        mjpeg_stream_routes.client_streams = {}
+        mjpeg_stream_routes.stats["clients_connected"] = 0
+        mjpeg_stream_routes.stats["start_time"] = time.time()
+        
+        # Reiniciar el worker de captura de frames 
+        logger.info("Iniciando un nuevo worker de captura MJPEG...")
+        # Cancelar cualquier worker anterior si existe
+        try:
+            for task in asyncio.all_tasks():
+                if "mjpeg" in task.get_name().lower():
+                    task.cancel()
+        except Exception as e:
+            logger.warning(f"Error al intentar cancelar tareas MJPEG existentes: {e}")
+        
+        # Iniciar un nuevo worker limpio
+        asyncio.create_task(mjpeg_stream_routes.initialize_mjpeg())
+        
+        logger.info("Limpieza completa de los sistemas de streaming")
+        logger.info("Conexiones MJPEG reiniciadas correctamente")
+    except Exception as e:
+        logger.error(f"Error cerrando conexiones de streaming: {e}", exc_info=True)
+        
+# Crear tarea para limpiar conexiones al inicio
+if __name__ != "__main__":  # Solo cuando se ejecuta mediante uvicorn
+    asyncio.create_task(close_all_streaming_connections())
 
 if __name__ == "__main__":
     try:

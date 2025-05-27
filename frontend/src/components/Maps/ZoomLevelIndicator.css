@@ -1,0 +1,65 @@
+/* Estilos para el indicador de nivel de zoom */
+.leaflet-zoom-indicator {
+  position: absolute;
+  z-index: 1000;
+}
+
+.leaflet-bottomright {
+  bottom: 120px; /* Ajustado para estar más arriba */
+  right: 10px;
+}
+
+.leaflet-bottomleft {
+  bottom: 10px;
+  left: 10px;
+}
+
+.leaflet-topleft {
+  top: 10px;
+  left: 10px;
+}
+
+.leaflet-topright {
+  top: 10px;
+  right: 10px;
+}
+
+.leaflet-control {
+  clear: both;
+}
+
+/* Estilos para el contenedor del indicador */
+.leaflet-control.bg-white {
+  background-color: rgba(255, 255, 255, 0.9);
+  padding: 5px 10px;
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.3s ease;
+  border: 1px solid rgba(0,0,0,0.2);
+}
+
+/* Animación de aparición/desaparición */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+
+.pulse-animation {
+  animation: pulse 0.5s ease-in-out;
+}
+
+.leaflet-zoom-indicator.visible {
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+.pulse-animation {
+  animation: pulse 0.3s ease-in-out;
+}

@@ -3,7 +3,7 @@ import os
 import json
 import logging
 import time
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -22,6 +22,9 @@ class TripLogger:
         
         # Initialize database
         self._init_database()
+        
+        # Check for and apply any schema migrations
+        self._check_and_apply_migrations()
         
         # Current trip ID (set when recording starts)
         self.current_trip_id = None
@@ -62,7 +65,8 @@ class TripLogger:
             )
             ''')
             
-            # Create external videos table (for Insta360 uploads)
+            # Create external videos table (for Insta360 uploads) 
+            # !!! Actualizada para incluir columna 'tags' !!!
             cursor.execute('''
             CREATE TABLE IF NOT EXISTS external_videos (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -71,6 +75,7 @@ class TripLogger:
                 lat REAL,
                 lon REAL,
                 source TEXT,
+                tags TEXT,
                 upload_time TIMESTAMP
             )
             ''')
@@ -99,6 +104,38 @@ class TripLogger:
             
         except Exception as e:
             logger.error(f"Database initialization error: {str(e)}")
+            raise
+    
+    def _check_and_apply_migrations(self):
+        """Verifica y aplica migraciones necesarias en la base de datos"""
+        try:
+            logger.info("Verificando si se necesitan migraciones de esquema...")
+            self._add_tags_column_if_missing()
+            logger.info("Verificación de migraciones completada")
+        except Exception as e:
+            logger.error(f"Error durante la verificación de migraciones: {str(e)}")
+    
+    def _add_tags_column_if_missing(self):
+        """Añade la columna 'tags' a la tabla external_videos si no existe"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # Verificar si la columna ya existe
+            cursor.execute("PRAGMA table_info(external_videos)")
+            columns = [column[1] for column in cursor.fetchall()]
+            
+            if 'tags' not in columns:
+                logger.info("Columna 'tags' no encontrada en tabla 'external_videos'. Añadiendo columna...")
+                cursor.execute("ALTER TABLE external_videos ADD COLUMN tags TEXT")
+                conn.commit()
+                logger.info("Columna 'tags' añadida correctamente")
+            else:
+                logger.info("Columna 'tags' ya existe en tabla 'external_videos'")
+                
+            conn.close()
+        except Exception as e:
+            logger.error(f"Error al verificar/añadir columna 'tags': {str(e)}")
             raise
             
     def start_trip(self):
@@ -161,7 +198,22 @@ class TripLogger:
         """End the current trip recording"""
         if not self.current_trip_id:
             logger.warning("No active trip to end")
-            return False
+            # Intentar buscar el último viaje sin finalizar en caso de fallo anterior
+            try:
+                conn = sqlite3.connect(self.db_path)
+                cursor = conn.cursor()
+                cursor.execute("SELECT id FROM trips WHERE end_time IS NULL ORDER BY start_time DESC LIMIT 1")
+                result = cursor.fetchone()
+                if result:
+                    self.current_trip_id = result[0]
+                    logger.info(f"Recovered unfinished trip ID: {self.current_trip_id}")
+                conn.close()
+            except Exception as e:
+                logger.error(f"Error finding unfinished trip: {str(e)}")
+            
+            if not self.current_trip_id:
+                logger.warning("No trip to end, creating a new one")
+                return self.start_trip()  # Crear un nuevo viaje si no hay ninguno activo
             
         try:
             conn = sqlite3.connect(self.db_path)
@@ -180,6 +232,12 @@ class TripLogger:
                 ''', (now.isoformat(), self.current_trip_id))
                 
             conn.commit()
+            
+            # Verificar que la actualización se hizo correctamente
+            cursor.execute("SELECT end_time FROM trips WHERE id = ?", (self.current_trip_id,))
+            result = cursor.fetchone()
+            logger.info(f"Trip end time update result: {result}")
+            
             conn.close()
             
             # Record the trip ID and reset current trip
@@ -191,7 +249,9 @@ class TripLogger:
             
         except Exception as e:
             logger.error(f"Error ending trip: {str(e)}")
-            return False
+            import traceback
+            logger.error(traceback.format_exc())
+            return self.current_trip_id  # Devolver el ID actual incluso si hay error para no perder referencia
             
     def add_landmark_encounter(self, landmark_data):
         """Record when a landmark is encountered during a trip"""
@@ -289,9 +349,16 @@ class TripLogger:
             conn.row_factory = sqlite3.Row  # Return rows as dictionaries
             cursor = conn.cursor()
             
-            # Query trip details
+            # Query trip details with safe type casting
             cursor.execute('''
-            SELECT * FROM trips WHERE id = ?
+            SELECT id, start_time, end_time, 
+                   CAST(IFNULL(start_lat, 0.0) AS REAL) as start_lat, 
+                   CAST(IFNULL(start_lon, 0.0) AS REAL) as start_lon,
+                   CAST(IFNULL(end_lat, 0.0) AS REAL) as end_lat, 
+                   CAST(IFNULL(end_lon, 0.0) AS REAL) as end_lon,
+                   CAST(IFNULL(distance_km, 0.0) AS REAL) as distance_km,
+                   video_files, summary_file 
+            FROM trips WHERE id = ?
             ''', (trip_id,))
             
             trip = cursor.fetchone()
@@ -349,9 +416,16 @@ class TripLogger:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             
-            # Query trips on the target date
+            # Query trips on the target date - with type casting for safety
             cursor.execute('''
-            SELECT * FROM trips 
+            SELECT id, start_time, end_time, 
+                   CAST(IFNULL(start_lat, 0.0) AS REAL) as start_lat, 
+                   CAST(IFNULL(start_lon, 0.0) AS REAL) as start_lon,
+                   CAST(IFNULL(end_lat, 0.0) AS REAL) as end_lat, 
+                   CAST(IFNULL(end_lon, 0.0) AS REAL) as end_lon,
+                   CAST(IFNULL(distance_km, 0.0) AS REAL) as distance_km,
+                   video_files, summary_file  
+            FROM trips 
             WHERE date(start_time) = ? 
             ORDER BY start_time DESC
             ''', (date_str,))
@@ -396,9 +470,16 @@ class TripLogger:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             
-            # Query trips in the date range
+            # Query trips in the date range - con conversión segura de tipos
             cursor.execute('''
-            SELECT * FROM trips 
+            SELECT id, start_time, end_time, 
+                   CAST(IFNULL(start_lat, 0.0) AS REAL) as start_lat, 
+                   CAST(IFNULL(start_lon, 0.0) AS REAL) as start_lon,
+                   CAST(IFNULL(end_lat, 0.0) AS REAL) as end_lat, 
+                   CAST(IFNULL(end_lon, 0.0) AS REAL) as end_lon,
+                   CAST(IFNULL(distance_km, 0.0) AS REAL) as distance_km,
+                   video_files, summary_file 
+            FROM trips 
             WHERE date(start_time) >= ? AND date(start_time) <= ? 
             ORDER BY start_time DESC
             ''', (start_str, end_str))
@@ -440,19 +521,19 @@ class TripLogger:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             
-            # Query all trips with limit - usando IFNULL para manejar valores nulos
+            # Query all trips with limit - usando CAST para asegurar los tipos correctos
             cursor.execute('''
             SELECT id, start_time, end_time, 
-                   IFNULL(start_lat, 0.0) as start_lat, 
-                   IFNULL(start_lon, 0.0) as start_lon,
-                   IFNULL(end_lat, 0.0) as end_lat, 
-                   IFNULL(end_lon, 0.0) as end_lon,
-                   IFNULL(distance_km, 0.0) as distance_km,
+                   CAST(IFNULL(start_lat, 0.0) AS REAL) as start_lat, 
+                   CAST(IFNULL(start_lon, 0.0) AS REAL) as start_lon,
+                   CAST(IFNULL(end_lat, 0.0) AS REAL) as end_lat, 
+                   CAST(IFNULL(end_lon, 0.0) AS REAL) as end_lon,
+                   CAST(IFNULL(distance_km, 0.0) AS REAL) as distance_km,
                    video_files, summary_file 
             FROM trips 
             ORDER BY start_time DESC
             LIMIT ?
-            ''', (limit,))
+            ''', (limit if limit is not None else -1,))
             
             trips = [dict(row) for row in cursor.fetchall()]
             
@@ -468,8 +549,13 @@ class TripLogger:
             
             return trips
             
+        except sqlite3.Error as e:
+            logger.error(f"Error de SQLite al obtener todos los viajes: {str(e)}, tipo: {type(e)}")
+            return []
         except Exception as e:
-            logger.error(f"Error getting all trips: {str(e)}")
+            logger.error(f"Error general al obtener todos los viajes: {str(e)}, tipo: {type(e)}")
+            import traceback
+            logger.error(f"Detalle: {traceback.format_exc()}")
             return []
             
     def add_external_video(self, video_date, metadata):
@@ -488,14 +574,15 @@ class TripLogger:
             
             cursor.execute('''
             INSERT INTO external_videos
-            (date, file_path, lat, lon, source, upload_time)
-            VALUES (?, ?, ?, ?, ?, ?)
+            (date, file_path, lat, lon, source, tags, upload_time)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             ''', (
                 date_str,
                 metadata.get('file_path', ''),
                 metadata.get('lat'),
                 metadata.get('lon'),
                 metadata.get('source', 'external'),
+                metadata.get('tags'),
                 now.isoformat()
             ))
             
@@ -607,6 +694,9 @@ class TripLogger:
             logger.warning("No clips data provided")
             return False
             
+        logger.info(f"Adding video clips to database. Trip ID: {trip_id}, Clips count: {len(clips_data)}")
+        logger.info(f"Clips data: {clips_data}")
+        
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
@@ -617,14 +707,17 @@ class TripLogger:
             
             # Procesamos cada clip
             for clip in clips_data:
+                logger.info(f"Processing clip: {clip}")
+                
                 if not isinstance(clip, dict):
                     logger.warning(f"Invalid clip data format: {type(clip)}")
                     continue
                     
                 # Verificar campos requeridos
                 required_fields = ['start_time', 'end_time', 'sequence', 'quality', 'files']
-                if not all(field in clip for field in required_fields):
-                    logger.warning(f"Clip missing required fields: {clip}")
+                missing_fields = [field for field in required_fields if field not in clip]
+                if missing_fields:
+                    logger.warning(f"Clip missing required fields: {missing_fields}")
                     continue
                     
                 # Verificar que el campo 'files' es un diccionario
@@ -635,6 +728,9 @@ class TripLogger:
                 # Extract file paths for each camera
                 road_file = clip['files'].get('road', '')
                 interior_file = clip['files'].get('interior', '')
+                
+                logger.info(f"Road file: {road_file}")
+                logger.info(f"Interior file: {interior_file}")
                 
                 # Verificar que al menos un archivo existe
                 if not road_file and not interior_file:
@@ -667,13 +763,25 @@ class TripLogger:
                         1 if landmark_id else 0,
                         landmark_id or ''
                     ))
-                    logger.info(f"Added clip {clip['sequence']} to database")
+                    
+                    clip_id = cursor.lastrowid
+                    logger.info(f"Added clip {clip['sequence']} to database, row ID: {clip_id}")
+                    
+                    # Sincronizar automáticamente con la tabla recordings
+                    sync_count = self._sync_clip_to_recordings(trip_id, clip, cursor)
+                    if sync_count > 0:
+                        logger.info(f"Sincronizados {sync_count} archivos del clip {clip['sequence']} a recordings")
+                    
                 except Exception as e:
                     logger.error(f"Error inserting clip into database: {e}")
             
             # Actualizar la lista de archivos de video del viaje
             if all_video_files:
                 self.update_trip_videos(trip_id, all_video_files)
+            
+            # Sincronizar cada clip con la tabla recordings
+            for clip in clips_data:
+                self._sync_clip_to_recordings(trip_id, clip, cursor)
             
             conn.commit()
             conn.close()
@@ -682,5 +790,116 @@ class TripLogger:
             return len(valid_clips) > 0
             
         except Exception as e:
+            logger.error(f"Exception in add_video_clips: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return False
+            
+        except Exception as e:
             logger.error(f"Error adding video clips: {str(e)}")
             return False
+
+    def _sync_clip_to_recordings(self, trip_id, clip_data, cursor):
+        """
+        Sincronizar un clip con la tabla recordings.
+        Esta función se llama automáticamente cuando se añaden clips.
+        """
+        try:
+            start_time = clip_data['start_time']
+            end_time = clip_data['end_time']
+            files = clip_data['files']
+            
+            # Calcular duración
+            try:
+                start_dt = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
+                end_dt = datetime.fromisoformat(end_time.replace('Z', '+00:00'))
+                duration = int((end_dt - start_dt).total_seconds())
+            except Exception as e:
+                logger.warning(f"No se pudo calcular duración para clip: {e}")
+                duration = 0
+            
+            # Procesar cada archivo (road e interior)
+            sync_count = 0
+            for camera_type, filename in files.items():
+                if not filename:
+                    continue
+                    
+                # Construir la ruta completa del archivo
+                file_path = f"/root/dashcam-v2/data/videos/{filename}"
+                
+                # Obtener tamaño del archivo
+                file_size = 0
+                try:
+                    if os.path.exists(file_path):
+                        file_size = os.path.getsize(file_path)
+                except Exception as e:
+                    logger.warning(f"No se pudo obtener el tamaño de {file_path}: {e}")
+                
+                # Verificar si ya existe en recordings
+                cursor.execute("""
+                    SELECT id FROM recordings WHERE file_path = ?
+                """, (file_path,))
+                
+                if cursor.fetchone() is None:
+                    # Insertar en recordings
+                    cursor.execute("""
+                        INSERT INTO recordings (
+                            file_path, file_size, duration, 
+                            start_time, end_time, trip_id,
+                            is_archived, is_processed
+                        ) VALUES (?, ?, ?, ?, ?, ?, 0, 0)
+                    """, (
+                        file_path, file_size, duration,
+                        start_time, end_time, str(trip_id)
+                    ))
+                    sync_count += 1
+                    logger.debug(f"Sincronizado a recordings: {filename} ({camera_type})")
+                else:
+                    logger.debug(f"Ya existe en recordings: {filename}")
+            
+            return sync_count
+            
+        except Exception as e:
+            logger.error(f"Error sincronizando clip a recordings: {e}")
+            return 0
+
+    def get_external_video(self, video_id):
+        """
+        Obtiene la información de un video externo específico por su ID
+        
+        Args:
+            video_id: ID del video externo a buscar
+            
+        Returns:
+            Diccionario con los datos del video o None si no se encuentra
+        """
+        try:
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+            SELECT * FROM external_videos
+            WHERE id = ?
+            ''', (video_id,))
+            
+            row = cursor.fetchone()
+            conn.close()
+            
+            if row:
+                video_dict = dict(row)
+                
+                # Parse metadata JSON if it exists
+                if video_dict.get('metadata'):
+                    try:
+                        video_dict['metadata'] = json.loads(video_dict['metadata'])
+                    except:
+                        video_dict['metadata'] = {}
+                        
+                return video_dict
+            else:
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error obteniendo video externo {video_id}: {str(e)}")
+            return None

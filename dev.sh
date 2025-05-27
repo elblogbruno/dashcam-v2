@@ -128,15 +128,50 @@ check_camera_usage() {
     
     case "$CAM_OPTION" in
       1)
-        echo "Intentando liberar cámaras..."
+        echo "Intentando liberar cámaras y recursos WebRTC..."
         # Terminar procesos que usan dispositivos de video específicos
+        echo "Liberando dispositivos de cámara..."
         sudo fuser -k /dev/video0 2>/dev/null
+        
+        # Matar procesos que podrían estar usando WebRTC/WebSockets
+        echo "Liberando puertos y recursos WebRTC..."
+        # Liberar puerto 8000 (API y WebSockets)
+        sudo kill -9 $(sudo lsof -t -i:8000) 2>/dev/null || true
+        # Liberar puertos de aplicación web
+        sudo kill -9 $(sudo lsof -t -i:5173) 2>/dev/null || true
+        # Liberar puertos de WebSockets (80, 443, 8443, etc)
+        sudo kill -9 $(sudo lsof -t -i:80) 2>/dev/null || true
+        sudo kill -9 $(sudo lsof -t -i:443) 2>/dev/null || true
+        sudo kill -9 $(sudo lsof -t -i:8443) 2>/dev/null || true
+        # Liberar puertos típicamente usados por WebRTC (rangos ICE)
+        sudo kill -9 $(sudo lsof -t -i:57000-65535) 2>/dev/null || true
+        sudo kill -9 $(sudo lsof -t -i:49152-65535) 2>/dev/null || true
+        
+        # Buscar procesos Python específicos usando WebRTC
+        echo "Buscando procesos específicos de WebRTC..."
+        for pid in $(ps aux | grep "[a]iortc\|[W]ebRTC\|uvicorn\|main.py\|python.*8000" | awk '{print $2}'); do
+          echo "Matando proceso Python: $pid"
+          sudo kill -9 $pid 2>/dev/null || true
+        done
+        
         # Reiniciar módulo USB para la cámara USB
+        echo "Reiniciando módulos de cámara USB..."
         sudo rmmod uvcvideo 2>/dev/null || true
         sleep 1
         sudo modprobe uvcvideo 2>/dev/null || true
+        
+        # Liberar PiCamera (si existe)
+        if [ -e /dev/vchiq ]; then
+          echo "Liberando PiCamera..."
+          sudo fuser -k /dev/vchiq 2>/dev/null || true
+          # También intentar reiniciar el módulo de la PiCamera
+          sudo rmmod bcm2835-v4l2 2>/dev/null || true
+          sleep 1
+          sudo modprobe bcm2835-v4l2 2>/dev/null || true
+        fi
+        
         sleep 2
-        echo "Reinicio de cámaras completado."
+        echo "Reinicio de cámaras y recursos WebRTC completado."
         ;;
       2)
         echo "Continuando con cámaras ocupadas..."
@@ -152,8 +187,41 @@ check_camera_usage() {
 # Function to clean up on exit
 cleanup() {
   echo "Shutting down development services..."
-  kill $BACKEND_PID 2>/dev/null
-  kill $FRONTEND_PID 2>/dev/null
+  
+  # Matar procesos principales con más control
+  if [ -n "$BACKEND_PID" ]; then
+    echo "Deteniendo servidor backend (PID: $BACKEND_PID)..."
+    # Intentar primero un cierre limpio, luego forzado
+    kill -15 $BACKEND_PID 2>/dev/null || kill -9 $BACKEND_PID 2>/dev/null
+    wait $BACKEND_PID 2>/dev/null || true
+  fi
+  
+  if [ -n "$FRONTEND_PID" ]; then
+    echo "Deteniendo servidor frontend (PID: $FRONTEND_PID)..."
+    kill -15 $FRONTEND_PID 2>/dev/null || kill -9 $FRONTEND_PID 2>/dev/null
+    wait $FRONTEND_PID 2>/dev/null || true
+  fi
+  
+  # Asegurar que todos los puertos y recursos se liberen
+  echo "Liberando todos los recursos y puertos..."
+  # Liberar puerto 8000 (API y WebSockets)
+  sudo kill -9 $(sudo lsof -t -i:8000) 2>/dev/null || true
+  # Liberar puertos usados por WebRTC (rango ICE)
+  sudo kill -9 $(sudo lsof -t -i:57000-65535) 2>/dev/null || true
+  
+  # Liberar recursos de cámara
+  if [ -e /dev/video0 ]; then
+    echo "Liberando cámaras USB..."
+    sudo fuser -k /dev/video0 2>/dev/null || true
+  fi
+  
+  # Liberar PiCamera si existe
+  if [ -e /dev/vchiq ]; then
+    echo "Liberando PiCamera..."
+    sudo fuser -k /dev/vchiq 2>/dev/null || true
+  fi
+  
+  echo "Todos los recursos liberados."
   exit 0
 }
 
@@ -211,6 +279,11 @@ try:
         log_level='info',
         reload=True,  # Enable hot reloading for development
         reload_dirs=['$SCRIPT_DIR/backend'],  # Watch this directory for changes
+        timeout_keep_alive=120,  # Aumentar timeout para conexiones WebSocket persistentes
+        # Configuración específica para WebSockets
+        ws_max_size=16777216,  # 16MB para permitir transferencia de frames grandes
+        ws_ping_interval=30.0,  # Enviar ping cada 30 segundos para mantener conexión
+        ws_ping_timeout=60.0,   # Timeout para ping de 60 segundos
     )
 except Exception as e:
     logger.critical(f'Fatal error starting Uvicorn: {e}', exc_info=True)
