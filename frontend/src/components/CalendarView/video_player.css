@@ -1,0 +1,832 @@
+/* 
+ * VIDEO_PLAYER.CSS
+ * Estilos específicos para el reproductor de video
+ */
+
+/* Contenedor de video principal */
+.nest-video-container {
+  width: 100%;
+  height: 60vh; /* Altura fija para el video */
+  position: relative;
+  background-color: #000;
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* En pantallas grandes, el video ocupa menos altura para dejar espacio al SelectedClipInfo */
+@media (min-width: 768px) {
+  .nest-video-container {
+    height: 50vh;
+    max-height: calc(100vh - 200px);
+    flex-shrink: 0;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+}
+
+/* Reproductor de video */
+.video-player-container {
+  position: relative;
+  display: block;
+  width: 100%;
+  background: #000;
+  z-index: 5;
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  border: none;
+}
+
+/* Contenedor principal del video incrustado */
+.video-player-embedded {
+  position: relative;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  overflow: hidden;
+  border: none;
+  background-color: #000;
+}
+
+/* Video normal (no fullscreen) - sin aspect-ratio forzado */
+.video-player-container:not(:fullscreen) {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+}
+
+.video-player-container:not(:fullscreen) video {
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  background: #000;
+}
+
+/* Fallback para navegadores sin aspect-ratio */
+@supports not (aspect-ratio: 16 / 9) {
+  .video-player-container:not(:fullscreen) {
+    position: relative;
+    height: 0;
+    padding-bottom: 56.25%; /* 16:9 ratio */
+  }
+  
+  .video-player-container:not(:fullscreen) video {
+    position: absolute;
+    top: 0;
+    left: 0;
+  }
+}
+
+/* Estilos para el elemento video */
+.video-fullsize {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background-color: #000;
+  border: none;
+  outline: none;
+  display: block;
+  margin: 0;
+  padding: 0;
+}
+
+/* Correcciones específicas para eliminar barras negras del video */
+.video-fullsize {
+  width: auto !important;
+  height: auto !important;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain !important;
+  background: #000;
+  display: block;
+}
+
+/* Pantalla completa */
+.video-player-container:fullscreen {
+  background-color: #000;
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.video-player-container:fullscreen video {
+  object-fit: contain;
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+}
+
+/* Soporte para webkit y otros navegadores */
+.video-player-container:-webkit-full-screen {
+  background-color: #000;
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.video-player-container:-webkit-full-screen video {
+  object-fit: contain;
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+}
+
+.video-player-container:-moz-full-screen {
+  background-color: #000;
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Estado de carga del video */
+.video-player-embedded.loading::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--nest-background);
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.video-player-embedded.loading::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.1);
+  border-top-color: var(--nest-accent);
+  animation: video-spin 1s linear infinite;
+  z-index: 6;
+}
+
+@keyframes video-spin {
+  to { transform: translate(-50%, -50%) rotate(360deg); }
+}
+
+/* Controles del reproductor */
+.video-controls-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(to top, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0) 100%);
+  padding: 16px 12px 8px 12px;
+  z-index: 20;
+  opacity: 1;
+  transition: opacity 0.3s ease;
+}
+
+/* Barra de progreso */
+.progress-container {
+  width: 100%;
+  height: 4px;
+  background-color: rgba(255,255,255,0.3);
+  border-radius: 2px;
+  margin-bottom: 12px;
+  cursor: pointer;
+  position: relative;
+}
+
+.progress-bar {
+  height: 100%;
+  background-color: var(--nest-selected);
+  border-radius: 2px;
+  position: relative;
+}
+
+.progress-bar::after {
+  content: '';
+  position: absolute;
+  right: -5px;
+  top: -2.5px;
+  width: 10px;
+  height: 10px;
+  background-color: white;
+  border-radius: 50%;
+  box-shadow: 0 0 3px rgba(0,0,0,0.5);
+}
+
+/* Layout de controles */
+.player-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+
+.controls-left, .controls-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Botones de control */
+.play-button, .mute-button, .fullscreen-button {
+  background: transparent;
+  border: none;
+  color: white;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 16px;
+  transition: background-color 0.2s;
+  border-radius: 50%;
+}
+
+.play-button:hover, .mute-button:hover, .fullscreen-button:hover {
+  background-color: rgba(255,255,255,0.2);
+}
+
+/* Contador de tiempo */
+.time-display {
+  color: white;
+  font-size: 14px;
+  font-family: monospace;
+}
+
+/* Botón de reproducción grande en el centro */
+.nest-play-button {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background-color: var(--nest-selected);
+  color: white;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.2s, transform 0.2s;
+}
+
+.nest-event-thumbnail:hover .nest-play-button {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1.1);
+}
+
+/* Miniaturas y contenedores */
+.nest-thumbnail-container {
+  position: relative;
+  width: 100%;
+  height: 0;
+  padding-bottom: 40%;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.nest-thumbnail {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.3s ease;
+}
+
+.nest-thumbnail-container:hover .nest-thumbnail {
+  transform: scale(1.05);
+}
+
+/* Overlay de reproducción */
+.nest-play-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0,0,0,0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.nest-thumbnail-container:hover .nest-play-overlay {
+  opacity: 1;
+}
+
+.nest-play-icon {
+  font-size: 36px;
+  color: white;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
+}
+
+/* Video secundario (PiP) */
+.secondary-video-container {
+  position: absolute;
+  border-radius: 8px;
+  overflow: hidden;
+  z-index: 10;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+}
+
+/* Mejoras para eliminar espacios negros */
+.nest-video-container video {
+  width: 100%;
+  height: 100%;
+  display: block;
+  position: absolute;
+}
+
+/* Contenedor específico para el reproductor embebido */
+.video-player-embedded {
+  position: relative;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #000; /* Fondo negro para evitar espacios visibles */
+}
+
+/* Asegurar que el video ocupe todo el espacio disponible */
+video {
+  width: 100% !important;
+  height: 100% !important;
+  display: block;
+  object-fit: fill !important; /* Ajusta para llenar todo el contenedor */
+  object-position: center center;
+  background-color: transparent;
+  margin: 0;
+  padding: 0;
+  min-width: 100%;
+  min-height: 100%;
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1; /* Asegurar que el video esté por encima del fondo */
+  transform: translateZ(0); /* Mejorar rendimiento con hardware acceleration */
+}
+
+/* Mejoras específicas para eliminar espacios negros */
+@media (max-width: 767px) {
+  .nest-video-container {
+    width: 100vw;
+    margin-left: -1px;
+    margin-right: -1px;
+    border-radius: 0;
+  }
+  
+  .video-player-container {
+    border-radius: 0;
+  }
+  
+  .video-player-embedded {
+    border-radius: 0;
+  }
+}
+
+/* Ajustes para video en modo mobile */
+@media (orientation: portrait) and (max-width: 767px) {
+  .video-player-container {
+    height: auto;
+    aspect-ratio: 16/9;
+    width: 100%;
+    overflow: hidden;
+  }
+  
+  .video-wrapper {
+    position: relative;
+    width: 100vw;
+    max-width: 100%;
+    overflow: hidden;
+  }
+  
+  video {
+    width: 100vw !important;
+    height: 100% !important;
+    max-width: none;
+    margin-left: 0;
+    margin-right: 0;
+    object-fit: fill !important;
+  }
+}
+
+/* Video ratio adjustments to fix black bars */
+.video-ratio-adjuster {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  position: relative;
+  background-color: #000;
+  width: 100%;
+  height: 100%;
+}
+
+/* Horizontal video (landscape) optimization */
+.video-horizontal {
+  width: 100% !important;
+  height: auto !important;
+  min-height: 100%;
+  object-fit: fill !important;
+}
+
+/* Vertical video (portrait) optimization */
+.video-vertical {
+  width: auto !important;
+  height: 100% !important;
+  min-width: 100%;
+  object-fit: fill !important;
+}
+
+/* Fix for iOS devices */
+@supports (-webkit-touch-callout: none) {
+  video {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: fill !important;
+    z-index: 1;
+  }
+}
+
+/* Estilos específicos para pantalla completa */
+:fullscreen .video-player-container {
+  background-color: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+:fullscreen video {
+  position: relative !important;
+  object-fit: contain !important;
+  max-width: 100%;
+  max-height: 100%;
+  width: auto !important;
+  height: auto !important;
+  margin: auto;
+  z-index: 10;
+  border: none;
+  outline: none;
+}
+
+:fullscreen .video-fullscreen {
+  position: relative !important;
+  object-fit: contain !important;
+}
+
+/* Soporte para diferentes prefijos de navegador */
+:-webkit-full-screen .video-player-container {
+  background-color: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+:-webkit-full-screen video {
+  position: relative !important;
+  object-fit: contain !important;
+  max-width: 100%;
+  max-height: 100%;
+  width: auto !important;
+  height: auto !important;
+  margin: auto;
+  z-index: 10;
+  border: none;
+  outline: none;
+}
+
+:-ms-fullscreen .video-player-container {
+  background-color: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+:-ms-fullscreen video {
+  position: relative !important;
+  object-fit: contain !important;
+  max-width: 100%;
+  max-height: 100%;
+  width: auto !important;
+  height: auto !important;
+  margin: auto;
+  z-index: 10;
+  border: none;
+  outline: none;
+}
+
+/* Mejoras específicas para dispositivos móviles en pantalla completa */
+@media screen and (max-width: 767px) {
+  :fullscreen video, :-webkit-full-screen video, :-ms-fullscreen video {
+    max-width: none;
+    max-height: none;
+  }
+  
+  :fullscreen .video-controls-bar, :-webkit-full-screen .video-controls-bar, :-ms-fullscreen .video-controls-bar {
+    padding: 24px 16px 12px 16px; /* Controles más grandes en móvil */
+  }
+}
+
+/* Asegurar relación de aspecto 16:9 en modo normal - sin espacios */
+.video-player-container:not(:fullscreen) {
+  position: relative;
+  height: 0;
+  overflow: hidden;
+  margin: 0;
+  padding: 0 0 56.25% 0; /* Relación de aspecto 16:9 (9/16 = 0.5625 = 56.25%) */
+  box-sizing: border-box;
+  border: none;
+  background-color: #000; /* Fondo negro para evitar espacios visibles */
+}
+
+.video-player-container:not(:fullscreen) video {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: fill !important; /* Aseguramos que cubra todo el espacio */
+  z-index: 1;
+  margin: 0;
+  border: 0;
+  display: block;
+  box-sizing: border-box;
+}
+
+/* Asegurar compatibilidad en diferentes navegadores */
+.video-player-container:not(:-webkit-full-screen) {
+  position: relative;
+  padding-bottom: 56.25%;
+  height: 0;
+  overflow: hidden;
+}
+
+.video-player-container:not(:-ms-fullscreen) {
+  position: relative;
+  padding-bottom: 56.25%;
+  height: 0;
+  overflow: hidden;
+}
+
+/* Estilos específicos para pantalla completa */
+.video-player-container:fullscreen {
+  background-color: #000;
+  width: 100vw;
+  height: 100vh;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.video-player-container:fullscreen video {
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  position: absolute;
+  margin: auto;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+/* Soporte para webkit (Safari) */
+.video-player-container:-webkit-full-screen {
+  background-color: #000;
+  width: 100vw;
+  height: 100vh;
+}
+
+/* Soporte para Firefox */
+.video-player-container:-moz-full-screen {
+  background-color: #000;
+  width: 100vw;
+  height: 100vh;
+}
+
+/* Estilos para video horizontal y vertical en pantalla completa */
+.video-fullscreen.video-horizontal {
+  width: 100% !important;
+  height: auto !important;
+  max-height: 100vh;
+}
+
+.video-fullscreen.video-vertical {
+  width: auto !important;
+  height: 100% !important;
+  max-width: 100vw;
+}
+
+/* Eliminar margen y padding en todos los contextos */
+.video-wrapper {
+  margin: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+}
+
+/* Eliminación completa de espacios alrededor del video */
+.video-fullsize {
+  margin: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  outline: none !important;
+  box-sizing: border-box !important;
+  display: block !important;
+  background-color: #000 !important;
+}
+
+/* Asegurar que el contenedor padre no tenga espacios */
+.video-player-embedded,
+.video-player-embedded * {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+.video-player-embedded {
+  line-height: 0; /* Eliminar el espacio de línea que podría crear gaps */
+}
+
+/* Sobrescribir cualquier estilo de Tailwind que pueda interferir */
+.video-player-embedded .w-full {
+  width: 100% !important;
+}
+
+.video-player-embedded .h-full {
+  height: 100% !important;
+}
+
+/* Estilos específicos para diferentes ratios de aspecto */
+.video-wrapper {
+  background-color: #000; /* Fondo negro para evitar espacios visibles */
+  border-radius: 0; /* Sin bordes redondeados que puedan crear espacios */
+}
+
+/* Ajustes para video secundario en modo PIP */
+.secondary-video-container video {
+  background-color: #000;
+  object-fit: fill;
+}
+
+/* Optimizaciones específicas para móviles */
+@media (max-width: 767px) {
+  .video-player-container {
+    max-height: 50vh; /* Limitar altura en móviles para evitar que ocupe toda la pantalla */
+  }
+  
+  .video-player-embedded {
+    position: relative;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+  }
+  
+  /* Controles más grandes en móviles */
+  .player-controls button {
+    width: 36px;
+    height: 36px;
+    font-size: 18px;
+  }
+  
+  .time-display {
+    font-size: 12px;
+  }
+}
+
+/* Optimizaciones para tablets */
+@media (min-width: 768px) and (max-width: 1024px) {
+  .video-player-container:not(:fullscreen) {
+    max-height: 60vh;
+  }
+}
+
+/* Optimizaciones para desktop */
+@media (min-width: 1025px) {
+  .video-player-container:not(:fullscreen) {
+    max-height: 70vh;
+  }
+}
+
+/* Asegurar que el video mantenga la relación de aspecto en todas las resoluciones */
+.video-wrapper:not(:fullscreen) {
+  aspect-ratio: 16 / 9;
+  width: 100%;
+  height: auto;
+}
+
+/* Soporte para navegadores que no soportan aspect-ratio */
+@supports not (aspect-ratio: 16 / 9) {
+  .video-wrapper:not(:fullscreen) {
+    height: 0;
+    padding-bottom: 56.25%; /* 16:9 ratio */
+  }
+}
+
+/* Mejoras para el panel de video */
+.nest-video-panel {
+  overflow-y: auto;
+  flex-direction: column;
+  position: relative;
+}
+
+/* Asegurar que el SelectedClipInfo sea siempre visible */
+.selected-clip-info {
+  position: relative !important;
+  z-index: 15 !important;
+  background: linear-gradient(135deg, var(--nest-card-bg) 0%, rgba(255, 255, 255, 0.05) 100%) !important;
+  backdrop-filter: blur(12px) !important;
+  box-shadow: 
+    0 12px 40px rgba(0, 0, 0, 0.2),
+    0 4px 16px rgba(0, 0, 0, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15) !important;
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+  margin: 16px !important;
+  flex-shrink: 0 !important;
+  will-change: transform, height !important;
+}
+
+@media (max-width: 767px) {
+  .selected-clip-info {
+    margin: 12px !important;
+    position: relative !important;
+    z-index: 20 !important;
+  }
+}
+
+/* Mejorar la visibilidad del contenido del SelectedClipInfo */
+.selected-clip-info .selected-clip-content {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.01) 100%) !important;
+  backdrop-filter: blur(5px) !important;
+  border-radius: 0 0 14px 14px !important;
+}
+
+.selected-clip-info .selected-clip-header {
+  background: linear-gradient(90deg, rgba(0, 0, 0, 0.2) 0%, rgba(0, 0, 0, 0.1) 100%) !important;
+  backdrop-filter: blur(8px) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15) !important;
+}
+
+/* Correcciones para el video en fullscreen */
+.video-fullscreen {
+  object-fit: contain !important;
+  width: 100% !important;
+  height: 100% !important;
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+}
+
+/* Asegurar que no hay conflictos de posicionamiento */
+.video-player-container {
+  z-index: 5 !important;
+  position: relative !important;
+}
+
+.video-player-embedded {
+  z-index: 5 !important;
+  position: relative !important;
+}

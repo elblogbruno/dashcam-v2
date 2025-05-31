@@ -4,6 +4,7 @@ import logging
 import numpy as np
 import time
 from typing import Dict, Any, Optional
+from shutdown_control import should_continue_loop
 
 logger = logging.getLogger(__name__)
 
@@ -114,7 +115,7 @@ class CameraFrameProvider:
         logger.info("🎥 Starting camera frame capture worker for WebRTC...")
         
         try:
-            while self.capture_running:
+            while self.capture_running and should_continue_loop("webrtc"):
                 loop_start_time = time.time()
                 
                 # Dynamically adjust processing based on queue fullness

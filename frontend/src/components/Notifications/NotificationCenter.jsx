@@ -13,7 +13,7 @@ const NotificationCenter = () => {
   const activeNotifications = notifications.filter(n => !n.read);
 
   return (
-    <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 max-w-md w-full pointer-events-none">
+    <div className="fixed top-0 left-0 right-0 z-50 flex flex-col gap-2 w-full pointer-events-none p-4 safe-area-top">
       {activeNotifications.map(notification => (
         <NotificationItem 
           key={notification.id} 

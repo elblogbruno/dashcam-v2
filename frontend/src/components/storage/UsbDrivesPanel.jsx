@@ -8,7 +8,7 @@ function UsbDrivesPanel({ drives, diskInfo, actionLoading, formatBytes, onViewDe
   return (
     <div className="card bg-white shadow-xl rounded-xl border border-neutral-200 hover:shadow-2xl transition-all duration-500">
       <div className="card-body p-0">
-        <div className="bg-gradient-to-r from-dashcam-600 to-dashcam-500 text-dashcam-content p-3 sm:p-4 font-semibold">
+        <div className="bg-gradient-to-r from-dashcam-600 to-dashcam-500 text-white p-3 sm:p-4 font-semibold">
           <div className="flex items-center">
             <FaUsb className="text-xl sm:text-2xl mr-2 sm:mr-3" />
             <div>
@@ -41,7 +41,7 @@ function UsbDrivesPanel({ drives, diskInfo, actionLoading, formatBytes, onViewDe
                   <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3 mb-3 sm:mb-4">
                     <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
                       <div className="bg-gradient-to-r from-dashcam-500 to-dashcam-600 p-2 sm:p-3 rounded-full shadow-md flex-shrink-0">
-                        <FaUsb className="text-sm sm:text-lg text-dashcam-content" />
+                        <FaUsb className="text-sm sm:text-lg text-white" />
                       </div>
                       <div className="min-w-0 flex-1">
                         <h3 className="text-sm sm:text-base font-medium text-neutral-900 truncate">{drive.name || 'Dispositivo desconocido'}</h3>
@@ -63,7 +63,11 @@ function UsbDrivesPanel({ drives, diskInfo, actionLoading, formatBytes, onViewDe
                       <FaDatabase className="text-dashcam-500 flex-shrink-0" />
                       <div className="min-w-0 flex-1">
                         <p className="text-xs text-neutral-600">Tamaño</p>
-                        <p className="text-xs sm:text-sm font-medium truncate">{drive.size ? formatBytes(drive.size) : 'Desconocido'}</p>
+                        <p className="text-xs sm:text-sm font-medium truncate text-neutral-800">
+                          {(drive.size !== undefined && drive.size !== null && !isNaN(drive.size) && drive.size > 0) 
+                            ? formatBytes(drive.size) 
+                            : 'Desconocido'}
+                        </p>
                       </div>
                     </div>
                     

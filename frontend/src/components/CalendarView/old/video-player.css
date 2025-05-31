@@ -1,0 +1,151 @@
+/* Estilos específicos para el reproductor de video */
+
+/* Contenedor del reproductor */
+.video-player-embedded {
+  position: relative;
+  width: 100%;
+  background-color: #000;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+/* Contenedor de video principal */
+.video-player-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  background-color: #000;
+  overflow: hidden;
+}
+
+/* Barra de controles del video */
+.video-controls-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.7));
+  padding: 8px 12px;
+  transition: opacity 0.3s ease;
+  display: flex;
+  flex-direction: column;
+  z-index: 10;
+}
+
+/* Contenedor de la barra de progreso */
+.progress-container {
+  width: 100%;
+  height: 5px;
+  background-color: rgba(255, 255, 255, 0.3);
+  border-radius: 2.5px;
+  cursor: pointer;
+  position: relative;
+  margin-bottom: 8px;
+}
+
+/* Barra de progreso */
+.progress-bar {
+  height: 100%;
+  background-color: var(--nest-selected);
+  border-radius: 2.5px;
+  position: relative;
+}
+
+/* Marcador de progreso */
+.progress-bar::after {
+  content: '';
+  position: absolute;
+  right: -5px;
+  top: -2.5px;
+  width: 10px;
+  height: 10px;
+  background-color: white;
+  border-radius: 50%;
+  box-shadow: 0 0 3px rgba(0, 0, 0, 0.5);
+}
+
+/* Controles del reproductor */
+.player-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: 36px;
+}
+
+/* Sección izquierda de controles */
+.controls-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Sección derecha de controles */
+.controls-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Botones de control */
+.play-button,
+.mute-button,
+.fullscreen-button {
+  background: transparent;
+  border: none;
+  color: white;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  transition: background-color 0.2s;
+}
+
+.play-button:hover,
+.mute-button:hover,
+.fullscreen-button:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Display de tiempo */
+.time-display {
+  color: white;
+  font-size: 14px;
+  font-family: monospace;
+}
+
+/* Ajustes para dispositivos móviles */
+@media (max-width: 768px) {
+  .player-controls {
+    height: 32px;
+  }
+  
+  .play-button,
+  .mute-button,
+  .fullscreen-button {
+    width: 28px;
+    height: 28px;
+    font-size: 14px;
+  }
+  
+  .time-display {
+    font-size: 12px;
+  }
+  
+  .progress-container {
+    height: 4px;
+    margin-bottom: 6px;
+  }
+}
+
+/* Estilos para el video secundario (PIP) */
+.secondary-video-container {
+  z-index: 2;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+}

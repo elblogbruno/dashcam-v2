@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { 
   FaHdd, FaSync, FaChartBar, FaCheckCircle, 
-  FaExclamationTriangle, FaUsb, FaCopy
+  FaExclamationTriangle, FaUsb, FaCopy, FaFolderOpen
 } from 'react-icons/fa';
 import axios from 'axios';
 
@@ -13,6 +13,7 @@ import UsbDrivesPanel from '../components/storage/UsbDrivesPanel';
 import HddBackupPanel from '../components/storage/HddBackupPanel';
 import StorageSettingsPanel from '../components/storage/StorageSettingsPanel';
 import DriveDetailsModal from '../components/storage/DriveDetailsModal';
+import FileExplorer from '../components/FileExplorer';
 
 // Importación de utilidades
 import { formatBytes, formatDate } from '../utils/formatUtils';
@@ -73,10 +74,14 @@ function UnifiedStorageManager() {
   });
 
   // Estados de interfaz
-  const [activeTab, setActiveTab] = useState('overview'); // 'overview', 'usb-drives', 'hdd-backup', 'settings'
+  const [activeTab, setActiveTab] = useState('overview'); // 'overview', 'usb-drives', 'hdd-backup', 'explorer', 'settings'
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [actionResult, setActionResult] = useState(null);
+  
+  // Estado para el explorador de archivos
+  const [selectedDisk, setSelectedDisk] = useState('internal');
+  const [selectedFile, setSelectedFile] = useState(null);
 
   // Cargar datos iniciales
   const loadData = useCallback(async () => {
@@ -189,7 +194,23 @@ function UnifiedStorageManager() {
     setActionLoading(true);
     try {
       const response = await axios.get(`/api/storage/disk-details/${device}`);
-      setSelectedDriveDetails(response.data);
+      
+      // Asegurarnos de que los valores numéricos sean números válidos
+      const driveData = response.data;
+      
+      // Asegurarse de que los valores importantes sean numéricos
+      const cleanData = {
+        ...driveData,
+        size: typeof driveData.size === 'number' && !isNaN(driveData.size) ? driveData.size : 0,
+        used: typeof driveData.used === 'number' && !isNaN(driveData.used) ? driveData.used : 0,
+        avail: typeof driveData.avail === 'number' && !isNaN(driveData.avail) ? driveData.avail : 0,
+        name: driveData.name || device || 'Disco',
+        model: driveData.model || 'Desconocido',
+        serial: driveData.serial || 'Desconocido',
+        mounted: !!driveData.mounted
+      };
+      
+      setSelectedDriveDetails(cleanData);
       setShowDriveDetails(true);
     } catch (error) {
       setActionResult({
@@ -386,6 +407,16 @@ function UnifiedStorageManager() {
     }
   };
 
+  // Funciones para el explorador de archivos
+  const handleFileSelection = (file) => {
+    setSelectedFile(file);
+    console.log('Archivo seleccionado:', file);
+  };
+
+  const handleSwitchDisk = () => {
+    setSelectedDisk(prev => prev === 'internal' ? 'external' : 'internal');
+  };
+
   if (loading) {
     return (
       <div className="p-2 sm:p-4 max-w-7xl mx-auto">
@@ -405,18 +436,13 @@ function UnifiedStorageManager() {
 
   return (
     <div className="p-2 sm:p-4 max-w-7xl mx-auto">
+      <h1 className="text-xl sm:text-2xl font-bold text-dashcam-800 flex items-center mb-4 sm:mb-6">
+        <FaHdd className="mr-2" /> 
+        <span className="hidden sm:inline">Administrador de Almacenamiento</span>
+        <span className="sm:hidden">Almacenamiento</span>
+      </h1>
+      
       <div className="bg-white rounded-xl sm:rounded-2xl shadow-lg border border-neutral-200 overflow-hidden">
-        <div className="bg-gradient-to-br from-dashcam-600 to-dashcam-500 p-4 sm:p-6">
-          <h1 className="text-lg sm:text-2xl font-bold text-white flex items-center gap-2 sm:gap-3">
-            <FaHdd className="text-xl sm:text-2xl" /> 
-            <span className="hidden sm:inline">Administrador de Almacenamiento</span>
-            <span className="sm:hidden">Almacenamiento</span>
-          </h1>
-          <p className="text-dashcam-50 mt-2 text-sm sm:text-base hidden sm:block">
-            Gestiona tus unidades USB, copias de respaldo y configuración de almacenamiento
-          </p>
-        </div>
-        
         <div className="border-b border-neutral-200">
           <nav className="flex overflow-x-auto space-x-1 sm:space-x-2 px-3 sm:px-6 scrollbar-hide" role="tablist">
             <button
@@ -462,6 +488,21 @@ function UnifiedStorageManager() {
               <div className="flex items-center gap-1 sm:gap-2">
                 <FaCopy className="text-sm sm:text-base" />
                 <span className="text-sm sm:text-base">Copia</span>
+              </div>
+            </button>
+            <button
+              onClick={() => setActiveTab('explorer')}
+              className={`py-3 sm:py-4 px-2 sm:px-4 font-medium transition-all border-b-2 hover:text-dashcam-600 whitespace-nowrap ${
+                activeTab === 'explorer'
+                  ? 'border-dashcam-500 text-dashcam-600'
+                  : 'border-transparent text-neutral-600 hover:border-neutral-300'
+              }`}
+              role="tab"
+              aria-selected={activeTab === 'explorer'}
+            >
+              <div className="flex items-center gap-1 sm:gap-2">
+                <FaFolderOpen className="text-sm sm:text-base" />
+                <span className="text-sm sm:text-base">Explorador</span>
               </div>
             </button>
             <button
@@ -537,6 +578,30 @@ function UnifiedStorageManager() {
                   onEjectAfterCopy={handleEjectAfterCopy}
                   diskInfo={diskInfo}
                 />
+              </div>
+            )}
+            
+            {activeTab === 'explorer' && (
+              <div className="bg-white rounded-xl sm:rounded-2xl shadow-lg border border-neutral-200/70 hover:shadow-xl transition-all duration-500">
+                <div className="p-4 sm:p-6">
+                  <div className="flex justify-between items-center mb-4">
+                    <h2 className="text-lg sm:text-xl font-semibold text-gray-800">Explorador de archivos</h2>
+                    <button 
+                      className="px-3 py-2 bg-gray-600 text-white rounded-lg flex items-center gap-2 hover:bg-gray-700"
+                      onClick={handleSwitchDisk}
+                    >
+                      {selectedDisk === 'internal' ? 'Cambiar a Disco Externo' : 'Cambiar a Disco Interno'}
+                    </button>
+                  </div>
+                  <FileExplorer 
+                    onFileSelect={handleFileSelection}
+                    showVideosOnly={false}
+                    allowFileOperations={true}
+                    allowIndexing={true}
+                    selectedDisk={selectedDisk}
+                    height="60vh"
+                  />
+                </div>
               </div>
             )}
             

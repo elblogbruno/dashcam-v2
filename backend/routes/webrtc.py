@@ -12,6 +12,7 @@ import threading
 import time
 import uuid
 import cv2
+from shutdown_control import should_continue_loop, register_task
 
 # Import our custom modules
 from .webrtc_modules.camera_frame_provider import CameraFrameProvider
@@ -29,6 +30,12 @@ camera_manager = None
 
 # MediaRelay to handle media tracks for multiple connections
 relay = MediaRelay()  # Maneja frames para múltiples conexiones
+
+# Estado del streaming WebRTC (desactivado por defecto)
+streaming_enabled = {
+    "road": False,
+    "interior": False
+}
 
 # Configuración para mejorar rendimiento
 WEBRTC_CONNECTION_TIMEOUT = 30  # segundos
@@ -67,15 +74,18 @@ async def initialize_webrtc():
             logger.info("🔄 MJPEG worker already active, using shared frames instead of starting duplicate worker")
         else:
             # Solo iniciar worker si no hay sistema MJPEG activo
-            asyncio.create_task(frame_provider.capture_frame_worker())
+            frame_capture_task = asyncio.create_task(frame_provider.capture_frame_worker())
+            register_task(frame_capture_task, "webrtc_frame_capture")
             logger.info("✅ Started WebRTC frame capture worker")
     except Exception as e:
         # Fallback: iniciar worker si no se puede verificar MJPEG
         logger.warning(f"Could not check MJPEG status, starting WebRTC worker anyway: {e}")
-        asyncio.create_task(frame_provider.capture_frame_worker())
+        frame_capture_task = asyncio.create_task(frame_provider.capture_frame_worker())
+        register_task(frame_capture_task, "webrtc_frame_capture")
     
     # Iniciar worker de verificación de heartbeats
-    asyncio.create_task(check_inactive_connections())
+    heartbeat_task = asyncio.create_task(check_inactive_connections())
+    register_task(heartbeat_task, "webrtc_heartbeat")
     
     # Initialize the WebRTC helper
     await initialize_webrtc_helper()
@@ -119,7 +129,7 @@ async def check_inactive_connections():
     """
     logger.info("🔍 Iniciando worker de monitoreo de conexiones WebRTC inactivas")
     
-    while True:
+    while should_continue_loop("webrtc"):
         try:
             current_time = time.time()
             connections_to_close = []
@@ -139,6 +149,8 @@ async def check_inactive_connections():
         
         # Esperar antes de la próxima verificación
         await asyncio.sleep(HEARTBEAT_CHECK_INTERVAL)
+    
+    logger.info("🛑 Worker de monitoreo WebRTC terminado")
 
 # Endpoint to check WebRTC status
 @router.get("/status")
@@ -169,7 +181,8 @@ async def get_webrtc_status():
         "status": "ok" if frame_provider_ok else "error",
         "active_connections": active_connections,
         "camera_status": camera_info,
-        "uptime": time.time() - webrtc_manager.start_time if hasattr(webrtc_manager, "start_time") else 0
+        "uptime": time.time() - webrtc_manager.start_time if hasattr(webrtc_manager, "start_time") else 0,
+        "streaming_enabled": streaming_enabled
     }
 
 class CameraStreamTrack(MediaStreamTrack):
@@ -192,6 +205,30 @@ class CameraStreamTrack(MediaStreamTrack):
         
     async def recv(self):
         """Get the next frame with improved frame timing control."""
+        # Check if streaming is enabled for this camera type
+        if not streaming_enabled.get(self.camera_type, False):
+            # Create a frame indicating streaming is disabled
+            import cv2
+            import numpy as np
+            
+            # Create a visual message for the user
+            img = np.zeros((480, 640, 3), dtype=np.uint8)
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            cv2.putText(img, "Streaming WebRTC desactivado", (120, 240), font, 1, (255, 255, 255), 2)
+            cv2.putText(img, "Active el streaming desde el botón", (100, 280), font, 1, (255, 255, 255), 2)
+            cv2.putText(img, f"Cámara: {self.camera_type}", (240, 320), font, 1, (0, 120, 255), 2)
+            
+            # Convert to av.VideoFrame
+            av_frame = av.VideoFrame.from_ndarray(img, format="bgr24")
+            av_frame.time_base = fractions.Fraction(1, 90000)
+            av_frame.pts = self.frame_counter
+            self.frame_counter += 90000 // self.target_fps
+            
+            # Short sleep to avoid high CPU usage
+            await asyncio.sleep(0.5)
+            
+            return av_frame
+        
         # Calculate time since last frame
         current_time = time.time()
         elapsed = current_time - self._last_frame_time
@@ -445,6 +482,21 @@ async def receive_heartbeat(connection_id: str, disconnect: bool = False):
             return {"status": "ok"}
     else:
         return {"status": "error", "message": "Conexión no encontrada"}
+
+@router.post("/toggle/{camera_type}")
+async def toggle_webrtc_streaming(camera_type: str):
+    """Activa o desactiva el streaming WebRTC para una cámara específica"""
+    if camera_type not in ["road", "interior"]:
+        return {"status": "error", "message": "Tipo de cámara no válido. Use 'road' o 'interior'."}
+    
+    # Cambiar estado del streaming para la cámara específica
+    streaming_enabled[camera_type] = not streaming_enabled[camera_type]
+    
+    return {
+        "status": "ok",
+        "camera_type": camera_type,
+        "enabled": streaming_enabled[camera_type]
+    }
 
 async def cleanup_connection(connection_id: str):
     """Clean up resources associated with a connection."""

@@ -52,21 +52,21 @@ const NotificationItem = ({ notification, onClose }) => {
 
   return (
     <div 
-      className={`${styles.bgColor} text-white rounded-lg shadow-lg border-l-4 ${styles.borderColor} 
-        flex items-start p-3 animate-fadeIn pointer-events-auto`}
+      className={`${styles.bgColor} text-white rounded-xl shadow-lg border-l-4 ${styles.borderColor} 
+        flex items-start p-4 animate-fadeIn pointer-events-auto mx-auto max-w-sm w-full`}
     >
-      <div className="flex-shrink-0 mr-2 mt-0.5">
+      <div className="flex-shrink-0 mr-3 mt-0.5 text-lg">
         {styles.icon}
       </div>
       <div className="flex-grow">
         {notification.title && (
-          <h4 className="font-semibold text-sm">{notification.title}</h4>
+          <h4 className="font-semibold text-sm mb-0.5">{notification.title}</h4>
         )}
         <p className="text-sm">{notification.message}</p>
       </div>
       <button 
         onClick={onClose} 
-        className="flex-shrink-0 ml-2 text-white hover:text-gray-200 focus:outline-none"
+        className="flex-shrink-0 ml-2 text-white hover:text-gray-200 focus:outline-none touch-target"
         aria-label="Cerrar notificación"
       >
         <FaTimes />

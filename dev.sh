@@ -61,128 +61,13 @@ fi
 # Check for port conflicts before starting servers
 if netstat -tuln | grep LISTEN | grep -q ":8000 "; then
   echo "Error: Port 8000 is already in use. Another process might be blocking it."
-  echo "Try: sudo lsof -i :8000 to identify the process."
-  echo "Or: sudo kill -9 \$(sudo lsof -t -i:8000) to forcibly close it."
   exit 1
 fi
 
 if netstat -tuln | grep LISTEN | grep -q ":5173 "; then
   echo "Error: Port 5173 is already in use. This port is needed for Vite dev server."
-  echo "Try: sudo lsof -i :5173 to identify the process."
-  echo "Or: sudo kill -9 \$(sudo lsof -t -i:5173) to forcibly close it."
   exit 1
 fi
-
-# Function to check if cameras are in use
-check_camera_usage() {
-  echo "Verificando si las cámaras están ocupadas..."
-  CAMERAS_IN_USE=false
-  
-  # Solo verificar video0 (cámara interior USB)
-  if [ -e "/dev/video0" ]; then
-    # Intentar abrir el dispositivo sin bloqueo
-    if ! timeout 1 cat "/dev/video0" > /dev/null 2>&1; then
-      echo "⚠️ /dev/video0 parece estar en uso"
-      USING_PROCESSES=$(sudo fuser -v "/dev/video0" 2>/dev/null)
-      if [ -n "$USING_PROCESSES" ]; then
-        echo "  Procesos usando /dev/video0:"
-        sudo fuser -v "/dev/video0" 2>/dev/null | awk '{print $2}' | while read PID; do
-          if [ -n "$PID" ] && [ "$PID" -eq "$PID" ] 2>/dev/null; then  # Verificar que es un número
-            CMD=$(ps -p "$PID" -o comm= 2>/dev/null)
-            echo "  - PID $PID ($CMD)"
-          fi
-        done
-      fi
-      CAMERAS_IN_USE=true
-    else
-      echo "✓ /dev/video0 está disponible"
-    fi
-  else
-    echo "⚠️ /dev/video0 no existe - cámara USB no detectada"
-  fi
-  
-  # Verificar si PiCamera (CSI) está en uso
-  if [ -e /dev/vchiq ]; then
-    if ! timeout 1 cat /dev/vchiq > /dev/null 2>&1; then
-      echo "⚠️ La cámara CSI (PiCamera) parece estar en uso"
-      CAMERAS_IN_USE=true
-    else
-      echo "✓ La cámara CSI (PiCamera) está disponible"
-    fi
-  else
-    echo "⚠️ /dev/vchiq no existe - PiCamera no detectada"
-  fi
-  
-  # Si hay cámaras ocupadas, ofrecer opciones
-  if [ "$CAMERAS_IN_USE" = true ]; then
-    echo ""
-    echo "⚠️ Algunas cámaras parecen estar siendo utilizadas por otros procesos."
-    echo "Esto podría causar problemas al iniciar la aplicación."
-    echo ""
-    echo "Opciones:"
-    echo "1) Intentar liberar las cámaras automáticamente"
-    echo "2) Continuar de todos modos"
-    echo "3) Salir"
-    echo ""
-    read -p "¿Qué deseas hacer? (1/2/3): " CAM_OPTION
-    
-    case "$CAM_OPTION" in
-      1)
-        echo "Intentando liberar cámaras y recursos WebRTC..."
-        # Terminar procesos que usan dispositivos de video específicos
-        echo "Liberando dispositivos de cámara..."
-        sudo fuser -k /dev/video0 2>/dev/null
-        
-        # Matar procesos que podrían estar usando WebRTC/WebSockets
-        echo "Liberando puertos y recursos WebRTC..."
-        # Liberar puerto 8000 (API y WebSockets)
-        sudo kill -9 $(sudo lsof -t -i:8000) 2>/dev/null || true
-        # Liberar puertos de aplicación web
-        sudo kill -9 $(sudo lsof -t -i:5173) 2>/dev/null || true
-        # Liberar puertos de WebSockets (80, 443, 8443, etc)
-        sudo kill -9 $(sudo lsof -t -i:80) 2>/dev/null || true
-        sudo kill -9 $(sudo lsof -t -i:443) 2>/dev/null || true
-        sudo kill -9 $(sudo lsof -t -i:8443) 2>/dev/null || true
-        # Liberar puertos típicamente usados por WebRTC (rangos ICE)
-        sudo kill -9 $(sudo lsof -t -i:57000-65535) 2>/dev/null || true
-        sudo kill -9 $(sudo lsof -t -i:49152-65535) 2>/dev/null || true
-        
-        # Buscar procesos Python específicos usando WebRTC
-        echo "Buscando procesos específicos de WebRTC..."
-        for pid in $(ps aux | grep "[a]iortc\|[W]ebRTC\|uvicorn\|main.py\|python.*8000" | awk '{print $2}'); do
-          echo "Matando proceso Python: $pid"
-          sudo kill -9 $pid 2>/dev/null || true
-        done
-        
-        # Reiniciar módulo USB para la cámara USB
-        echo "Reiniciando módulos de cámara USB..."
-        sudo rmmod uvcvideo 2>/dev/null || true
-        sleep 1
-        sudo modprobe uvcvideo 2>/dev/null || true
-        
-        # Liberar PiCamera (si existe)
-        if [ -e /dev/vchiq ]; then
-          echo "Liberando PiCamera..."
-          sudo fuser -k /dev/vchiq 2>/dev/null || true
-          # También intentar reiniciar el módulo de la PiCamera
-          sudo rmmod bcm2835-v4l2 2>/dev/null || true
-          sleep 1
-          sudo modprobe bcm2835-v4l2 2>/dev/null || true
-        fi
-        
-        sleep 2
-        echo "Reinicio de cámaras y recursos WebRTC completado."
-        ;;
-      2)
-        echo "Continuando con cámaras ocupadas..."
-        ;;
-      3|*)
-        echo "Saliendo..."
-        exit 1
-        ;;
-    esac
-  fi
-}
 
 # Function to clean up on exit
 cleanup() {
@@ -201,46 +86,13 @@ cleanup() {
     kill -15 $FRONTEND_PID 2>/dev/null || kill -9 $FRONTEND_PID 2>/dev/null
     wait $FRONTEND_PID 2>/dev/null || true
   fi
-  
-  # Asegurar que todos los puertos y recursos se liberen
-  echo "Liberando todos los recursos y puertos..."
-  # Liberar puerto 8000 (API y WebSockets)
-  sudo kill -9 $(sudo lsof -t -i:8000) 2>/dev/null || true
-  # Liberar puertos usados por WebRTC (rango ICE)
-  sudo kill -9 $(sudo lsof -t -i:57000-65535) 2>/dev/null || true
-  
-  # Liberar recursos de cámara
-  if [ -e /dev/video0 ]; then
-    echo "Liberando cámaras USB..."
-    sudo fuser -k /dev/video0 2>/dev/null || true
-  fi
-  
-  # Liberar PiCamera si existe
-  if [ -e /dev/vchiq ]; then
-    echo "Liberando PiCamera..."
-    sudo fuser -k /dev/vchiq 2>/dev/null || true
-  fi
-  
+
   echo "Todos los recursos liberados."
   exit 0
 }
 
 # Set trap for clean exit
 trap cleanup SIGINT SIGTERM
-
-# Verificar permisos de cámara
-if [ -c /dev/vchiq ]; then
-  echo "Verificando permisos de cámara..."
-  if ! groups | grep -q "video"; then
-    echo "Advertencia: El usuario actual podría no tener acceso a la cámara."
-    echo "Considera ejecutar con: sudo -u pi ./dev.sh o agregar tu usuario al grupo video."
-  else
-    echo "El usuario tiene permisos del grupo video ✓"
-  fi
-fi
-
-# Verificar uso de cámaras antes de iniciar
-check_camera_usage
 
 # Add Python path to ensure modules are found
 export PYTHONPATH="$SCRIPT_DIR:$PYTHONPATH"

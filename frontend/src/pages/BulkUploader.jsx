@@ -1,15 +1,17 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { format } from 'date-fns'
-import { FaAngleUp, FaAngleDown } from 'react-icons/fa'
+import { FaAngleUp, FaAngleDown, FaFileUpload, FaFolderOpen } from 'react-icons/fa'
 
 // Componentes
 import DragDropZone from '../components/BulkUploader/DragDropZone'
 import UploadOptions from '../components/BulkUploader/UploadOptions'
 import FileList from '../components/BulkUploader/FileList'
 import UploadResults from '../components/BulkUploader/UploadResults'
+import FileExplorer from '../components/FileExplorer'
 
 // Servicios
 import { processFiles, uploadVideoFile } from '../components/BulkUploader/uploadService'
+import axios from 'axios'
 
 function BulkUploader() {
   // Estado de archivos y carga
@@ -18,6 +20,10 @@ function BulkUploader() {
   const [uploadProgress, setUploadProgress] = useState({})
   const [uploadResults, setUploadResults] = useState([])
   const [dragActive, setDragActive] = useState(false)
+  
+  // Estado para el explorador de archivos
+  const [showFileExplorer, setShowFileExplorer] = useState(false)
+  const [selectedDisk, setSelectedDisk] = useState('internal')
   
   // Estado de opciones de carga
   const [useFileDate, setUseFileDate] = useState(true)
@@ -132,156 +138,84 @@ function BulkUploader() {
 
   // Upload all files
   const uploadFiles = async () => {
-    if (files.length === 0) return
+    if (files.length === 0) {
+      alert('No hay archivos para cargar')
+      return
+    }
     
-    console.log(`[BULK_UPLOAD] Iniciando carga de ${files.length} archivos`);
     setUploading(true)
     setUploadResults([])
     const results = []
     
     for (let i = 0; i < files.length; i++) {
-      const fileObj = files[i]
-      
-      // Skip files that have already been processed
-      if (fileObj.status === 'success') {
-        console.log(`[BULK_UPLOAD] Archivo #${i+1} (${fileObj.name}) ya fue procesado con éxito, omitiendo`);
-        continue;
-      }
-      
-      console.log(`[BULK_UPLOAD] Procesando archivo #${i+1}/${files.length}: ${fileObj.name} (${(fileObj.size / 1024 / 1024).toFixed(2)} MB)`);
-      
-      // Update status to uploading
-      setFiles(prev => {
-        const updated = [...prev]
-        updated[i] = { ...updated[i], status: 'uploading' }
-        return updated
+      const file = files[i]
+      setUploadProgress({
+        current: i + 1,
+        total: files.length,
+        percent: Math.round(((i + 1) / files.length) * 100),
+        fileName: file.name
       })
       
-      // Determine which date to use for this file
-      const fileUploadDate = useFileDate && fileObj.fileDate ? fileObj.fileDate : uploadDate
-      console.log(`[BULK_UPLOAD] Fecha seleccionada: ${fileUploadDate}, Fuente: ${useFileDate && fileObj.fileDate ? 'archivo' : 'manual'}`);
-      
       try {
-        // Inicializar el progreso a 0 para este archivo
-        setUploadProgress(prev => ({
-          ...prev,
-          [i]: 0
-        }))
-        
-        // Preparar metadatos para la carga
-        const metadata = {
-          date: fileUploadDate,
-          lat: uploadLocation.lat || null,
-          lon: uploadLocation.lon || null,
-          source: videoSource,
-          tags: tags || null
-        }
-        console.log(`[BULK_UPLOAD] Metadata preparada:`, metadata);
-        
-        // Realizar la carga con un timeout general
-        let uploadTimeout;
-        console.log(`[BULK_UPLOAD] Configurando timeout de 2 minutos para el archivo`);
-        const timeoutPromise = new Promise((_, reject) => {
-          uploadTimeout = setTimeout(() => {
-            console.error(`[BULK_UPLOAD] Timeout alcanzado después de 2 minutos para el archivo ${fileObj.name}`);
-            reject(new Error("La carga ha excedido el tiempo máximo"));
-          }, 120000); // 2 minutos por archivo como máximo
-        });
-        
-        console.log(`[BULK_UPLOAD] Iniciando la carga real del archivo ${fileObj.name}`);
-        const uploadPromise = uploadVideoFile(
-          fileObj.file, 
-          metadata, 
-          (progress) => {
-            setUploadProgress(prev => ({
-              ...prev,
-              [i]: progress
-            }))
-          }
-        );
-        
-        // Usar Promise.race para implementar el timeout
-        console.log(`[BULK_UPLOAD] Esperando a que termine la carga o el timeout`);
-        const response = await Promise.race([uploadPromise, timeoutPromise]);
-        clearTimeout(uploadTimeout);
-        
-        if (response.success) {
-          console.log(`[BULK_UPLOAD] Archivo #${i+1} cargado con éxito en ${response.uploadTime}s`);
-          
-          // Update file status to success
-          setFiles(prev => {
-            const updated = [...prev]
-            updated[i] = { ...updated[i], status: 'success', response: response.data }
-            return updated
+        // Si es un archivo externo, usamos la API de indexación en lugar de subir
+        if (file.isExternalFile) {
+          const response = await axios.post('/api/file-explorer/index-video', {
+            file_path: file.path,
+            file_date: useFileDate ? null : uploadDate,
+            latitude: uploadLocation.lat || null,
+            longitude: uploadLocation.lon || null,
+            tags: tags || null,
+            source: videoSource
           })
           
-          // Asegurar que se muestre progreso completo
-          setUploadProgress(prev => ({
-            ...prev,
-            [i]: 100
-          }))
-          
           results.push({
-            file: fileObj.name,
+            name: file.name,
             success: true,
-            message: 'Subido exitosamente',
-            date: fileUploadDate,
-            processingTime: response.uploadTime
+            message: 'Video indexado correctamente',
+            path: file.path
           })
         } else {
-          console.error(`[BULK_UPLOAD] Error en archivo #${i+1}: ${response.error}`);
-          
-          // Update file status to error
-          setFiles(prev => {
-            const updated = [...prev]
-            updated[i] = { ...updated[i], status: 'error', error: response.error }
-            return updated
-          })
-          
-          results.push({
-            file: fileObj.name,
-            success: false,
-            message: response.error,
-            date: fileUploadDate,
-            processingTime: response.uploadTime
-          })
+          // Proceso normal de subida para archivos locales
+          const result = await uploadVideoFile(
+            file, 
+            useFileDate, 
+            uploadDate, 
+            uploadLocation.lat, 
+            uploadLocation.lon, 
+            tags,
+            videoSource
+          )
+          results.push(result)
         }
       } catch (error) {
-        console.error(`[BULK_UPLOAD] Error excepcional en archivo #${i+1} (${fileObj.name}):`, error);
-        
-        // Update file status to error
-        setFiles(prev => {
-          const updated = [...prev]
-          updated[i] = { 
-            ...updated[i], 
-            status: 'error', 
-            error: error.message || "Error desconocido durante la carga" 
-          }
-          return updated
-        })
-        
+        console.error(`Error al cargar ${file.name}:`, error)
         results.push({
-          file: fileObj.name,
+          name: file.name,
           success: false,
-          message: error.message || "Error desconocido durante la carga",
-          date: fileUploadDate
+          message: error.response?.data?.detail || 'Error al cargar el archivo',
+          path: file.path || null
         })
       }
     }
     
-    console.log(`[BULK_UPLOAD] Proceso de carga finalizado. Resultados:`, results);
     setUploadResults(results)
+    setUploadProgress({})
     setUploading(false)
+    
+    // Si todas las cargas fueron exitosas, limpiar la lista de archivos
+    if (results.every(r => r.success)) {
+      clearFiles()
+    }
   }
 
   // Estado para controlar la visibilidad de opciones en dispositivos móviles
   const [showOptions, setShowOptions] = useState(false);
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
 
   // Detector de cambio de tamaño para adaptar la UI
   useEffect(() => {
     const handleResize = () => {
-      setIsMobile(window.innerWidth < 768);
+      setIsMobile(window.innerWidth < 1024);
     };
 
     window.addEventListener('resize', handleResize);
@@ -290,24 +224,56 @@ function BulkUploader() {
     };
   }, []);
 
+  // Handle file selection via FileExplorer
+  const handleFileFromExplorer = (file) => {
+    if (file && file.is_video) {
+      // Crear un objeto similar a File para mantener consistencia con el procesamiento
+      const newFile = {
+        name: file.name,
+        path: file.path,
+        size: file.size,
+        type: file.mime_type || 'video/mp4',
+        lastModified: new Date(file.modified).getTime(),
+        isExternalFile: true, // Marcar como un archivo externo
+        external: true
+      };
+      
+      setFiles(prev => [...prev, newFile]);
+      setShowFileExplorer(false); // Opcional: cerrar el explorador después de seleccionar
+    }
+  }
+
+  // Toggle para mostrar/ocultar el explorador de archivos
+  const toggleFileExplorer = () => {
+    setShowFileExplorer(!showFileExplorer);
+  }
+
+  // Cambiar entre discos interno/externo
+  const switchDisk = () => {
+    setSelectedDisk(prev => prev === 'internal' ? 'external' : 'internal');
+  }
+
   return (
-    <div className="p-3 sm:p-4 mx-auto bg-gray-50 min-h-screen overflow-hidden has-floating-button">
-      <h1 className="text-xl sm:text-2xl font-medium mb-4 sm:mb-6 text-dashcam-800 px-1">Carga Masiva de Videos</h1>
+    <div className="bg-gray-100 p-2 sm:p-4 w-full min-h-screen overflow-hidden has-floating-button">
+      <h1 className="text-xl sm:text-2xl font-bold text-dashcam-800 flex items-center mb-4 sm:mb-6">
+        <FaFileUpload className="mr-2" />
+        Carga Masiva de Videos
+      </h1>
       
       {/* En móvil, mostrar/ocultar opciones con un botón */}
       {isMobile && (
         <button 
           onClick={() => setShowOptions(!showOptions)}
-          className="w-full bg-white border border-gray-300 rounded-lg p-3 mb-4 flex items-center justify-between shadow-sm"
+          className="w-full bg-white border border-gray-300 rounded-lg p-3 mb-4 flex items-center justify-between shadow-sm hover:shadow-md transition-shadow"
         >
-          <span className="font-medium text-dashcam-700">Opciones de Carga</span>
+          <span className="font-medium text-gray-700">Opciones de Carga</span>
           {showOptions ? <FaAngleUp /> : <FaAngleDown />}
         </button>
       )}
       
-      <div className={`flex flex-col md:flex-row gap-4 ${isMobile && !showOptions ? 'mb-0' : 'mb-4'}`}>
+      <div className={`flex flex-col lg:flex-row gap-6 ${isMobile && !showOptions ? 'mb-0' : 'mb-4'}`}>
         {/* Sidebar con opciones de carga - en móvil solo se muestra cuando showOptions es true */}
-        <div className={`w-full md:w-80 lg:w-96 flex-shrink-0 transition-all duration-300 ease-in-out ${isMobile ? (showOptions ? 'max-h-[1000px] opacity-100 mb-4' : 'max-h-0 opacity-0 overflow-hidden') : ''}`}>
+        <div className={`${isMobile ? 'w-full' : 'w-80 flex-shrink-0'} transition-all duration-300 ease-in-out ${isMobile ? (showOptions ? 'max-h-[1000px] opacity-100 mb-4' : 'max-h-0 opacity-0 overflow-hidden') : ''}`}>
           <div className="sticky top-4">
             <UploadOptions 
               useFileDate={useFileDate}
@@ -331,38 +297,76 @@ function BulkUploader() {
         </div>
         
         {/* Contenido principal */}
-        <div className="flex-1 px-1">
-          {/* Drag & Drop Area */}
-          <DragDropZone 
-            dragActive={dragActive}
-            handleDrag={handleDrag}
-            handleDrop={handleDrop}
-            onSelectFilesClick={onSelectFilesClick}
-            onSelectFolderClick={onSelectFolderClick}
-            fileInputRef={fileInputRef}
-            folderInputRef={folderInputRef}
-            onFileInputChange={onFileInputChange}
-            onFolderInputChange={onFolderInputChange}
-            supportedFormats={supportedFormats}
-            isMobile={isMobile}
-          />
+        <div className="flex-1 w-full">
+          {/* Botones de acción para seleccionar archivos/carpetas y explorar archivos */}
+          <div className="mb-4 flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              <button 
+                className={`px-4 py-2 ${showFileExplorer ? 'bg-orange-600 hover:bg-orange-700' : 'bg-purple-600 hover:bg-purple-700'} text-white rounded-lg flex items-center gap-2`} 
+                onClick={toggleFileExplorer}>
+                {showFileExplorer ? 'Cerrar Explorador' : 'Explorar Archivos'}
+              </button>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              {showFileExplorer && (
+                <button 
+                  className="px-4 py-2 bg-gray-600 text-white rounded-lg flex items-center gap-2 hover:bg-gray-700"
+                  onClick={switchDisk}
+                >
+                  {selectedDisk === 'internal' ? 'Cambiar a Disco Externo' : 'Cambiar a Disco Interno'}
+                </button>
+              )}
+            </div>
+          </div>
           
-          {/* File List */}
-          <FileList 
-            files={files}
-            uploadProgress={uploadProgress}
-            removeFile={removeFile}
-            clearFiles={clearFiles}
-            uploadFiles={uploadFiles}
-            uploading={uploading}
-            isMobile={isMobile}
-          />
-          
-          {/* Upload Results */}
-          <UploadResults 
-            uploadResults={uploadResults}
-            isMobile={isMobile}
-          />
+          {showFileExplorer ? (
+            <div className="mb-6">
+              <FileExplorer 
+                onFileSelect={handleFileFromExplorer}
+                showVideosOnly={true}
+                allowFileOperations={false}
+                allowIndexing={true}
+                selectedDisk={selectedDisk}
+                height="50vh"
+              />
+            </div>
+          ) : (
+            <>
+              {/* Drag & Drop Area */}
+              <DragDropZone 
+                dragActive={dragActive}
+                handleDrag={handleDrag}
+                handleDrop={handleDrop}
+                onSelectFilesClick={onSelectFilesClick}
+                onSelectFolderClick={onSelectFolderClick}
+                fileInputRef={fileInputRef}
+                folderInputRef={folderInputRef}
+                onFileInputChange={onFileInputChange}
+                onFolderInputChange={onFolderInputChange}
+                supportedFormats={supportedFormats}
+                isMobile={isMobile}
+                onOpenFileExplorer={toggleFileExplorer}
+              />
+              
+              {/* File List */}
+              <FileList 
+                files={files}
+                uploadProgress={uploadProgress}
+                removeFile={removeFile}
+                clearFiles={clearFiles}
+                uploadFiles={uploadFiles}
+                uploading={uploading}
+                isMobile={isMobile}
+              />
+              
+              {/* Upload Results */}
+              <UploadResults 
+                uploadResults={uploadResults}
+                isMobile={isMobile}
+              />
+            </>
+          )}
         </div>
       </div>
 
@@ -372,7 +376,7 @@ function BulkUploader() {
           <button 
             onClick={uploadFiles}
             disabled={uploading}
-            className="bg-dashcam-600 hover:bg-dashcam-700 text-white rounded-full h-16 w-16 flex items-center justify-center shadow-lg transition-all transform hover:scale-105"
+            className="bg-dashcam-600 hover:bg-dashcam-700 text-white rounded-full h-16 w-16 flex items-center justify-center shadow-lg transition-all transform hover:scale-105 disabled:opacity-50"
           >
             {uploading ? (
               <div className="loader-sm"></div>

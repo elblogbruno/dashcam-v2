@@ -365,24 +365,72 @@ class DiskManager:
                             
                             break
             
-            # First try mounting without sudo
+            # Determine filesystem type for better mounting
+            fs_type = None
             try:
-                # Try to determine filesystem type for better mounting
-                fs_type = None
+                result = subprocess.run(
+                    ["blkid", "-o", "value", "-s", "TYPE", drive],
+                    capture_output=True,
+                    text=True
+                )
+                if result.returncode == 0 and result.stdout.strip():
+                    fs_type = result.stdout.strip().lower()
+                    logger.info(f"Detected filesystem type: {fs_type}")
+            except Exception as e:
+                logger.warning(f"Could not detect filesystem type: {str(e)}")
+            
+            # Special handling for NTFS filesystems
+            if fs_type == 'ntfs':
+                # Check if ntfs-3g is available
                 try:
+                    subprocess.run(["which", "ntfs-3g"], check=True, capture_output=True)
+                    logger.info("ntfs-3g is available for NTFS mounting")
+                except subprocess.CalledProcessError:
+                    logger.error("ntfs-3g is not installed. Please install it with: sudo apt-get install ntfs-3g")
+                    return False
+                
+                # Try mounting with ntfs-3g directly
+                try:
+                    mount_cmd = ["sudo", "mount", "-t", "ntfs-3g", drive, mount_point]
+                    logger.info(f"Mounting NTFS drive with command: {' '.join(mount_cmd)}")
+                    
                     result = subprocess.run(
-                        ["blkid", "-o", "value", "-s", "TYPE", drive],
-                        capture_output=True,
+                        mount_cmd, 
+                        capture_output=True, 
                         text=True
                     )
-                    if result.returncode == 0 and result.stdout.strip():
-                        fs_type = result.stdout.strip()
-                except:
-                    pass
-                
-                # Prepare mount command
+                    
+                    if result.returncode == 0:
+                        logger.info(f"Successfully mounted NTFS drive {drive} at {mount_point}")
+                        return True
+                    else:
+                        logger.error(f"Failed to mount NTFS drive: {result.stderr}")
+                        # Try with additional NTFS options
+                        mount_cmd_with_options = ["sudo", "mount", "-t", "ntfs-3g", "-o", "rw,uid=1000,gid=1000,umask=0022", drive, mount_point]
+                        logger.info(f"Trying with additional options: {' '.join(mount_cmd_with_options)}")
+                        
+                        result = subprocess.run(
+                            mount_cmd_with_options, 
+                            capture_output=True, 
+                            text=True
+                        )
+                        
+                        if result.returncode == 0:
+                            logger.info(f"Successfully mounted NTFS drive {drive} at {mount_point} with additional options")
+                            return True
+                        else:
+                            logger.error(f"Failed to mount NTFS drive with options: {result.stderr}")
+                            return False
+                            
+                except Exception as ntfs_error:
+                    logger.error(f"NTFS mount attempt failed: {str(ntfs_error)}")
+                    return False
+            
+            # For other filesystem types, use standard mounting approach
+            # First try mounting without sudo
+            try:
                 mount_cmd = ["mount"]
-                if fs_type:
+                if fs_type and fs_type != 'ntfs':
                     mount_cmd.extend(["-t", fs_type])
                 mount_cmd.extend([drive, mount_point])
                 
@@ -400,9 +448,8 @@ class DiskManager:
             
             # If that fails, try with sudo
             try:
-                # Prepare sudo mount command
                 mount_cmd = ["sudo", "mount"]
-                if fs_type:
+                if fs_type and fs_type != 'ntfs':
                     mount_cmd.extend(["-t", fs_type])
                 mount_cmd.extend([drive, mount_point])
                 
@@ -417,6 +464,18 @@ class DiskManager:
                     return True
                 else:
                     logger.error(f"Failed to mount drive with sudo: {result.stderr}")
+                    
+                    # Provide helpful error messages based on filesystem type
+                    if "unknown filesystem type" in result.stderr.lower():
+                        if fs_type:
+                            logger.error(f"Filesystem type '{fs_type}' is not supported. You may need to install additional packages.")
+                            if fs_type == 'exfat':
+                                logger.error("For exFAT support, install: sudo apt-get install exfat-fuse exfat-utils")
+                            elif fs_type == 'ntfs':
+                                logger.error("For NTFS support, install: sudo apt-get install ntfs-3g")
+                        else:
+                            logger.error("Unknown filesystem type. Try installing common filesystem support packages.")
+                    
                     logger.info("To fix permission issues, consider adding an entry to /etc/fstab or setting up sudo permissions")
                     return False
             except Exception as sudo_error:
@@ -868,6 +927,21 @@ class DiskManager:
                                     device_info["mounted"] = True
                                     if device_info["mountpoint"] is None:
                                         device_info["mountpoint"] = part_info["mountpoint"]
+                                        
+                                    # Obtener información de uso del disco para esta partición montada
+                                    try:
+                                        disk_usage = shutil.disk_usage(part_info["mountpoint"])
+                                        part_info["total"] = disk_usage.total
+                                        part_info["used"] = disk_usage.used
+                                        part_info["free"] = disk_usage.free
+                                        
+                                        # También añadir esta información al dispositivo principal
+                                        if "total" not in device_info:
+                                            device_info["total"] = disk_usage.total
+                                            device_info["used"] = disk_usage.used
+                                            device_info["free"] = disk_usage.free
+                                    except Exception as disk_err:
+                                        logger.error(f"Error obteniendo información de uso del disco en {part_info['mountpoint']}: {disk_err}")
                                     
                                 device_info["partitions"].append(part_info)
                         

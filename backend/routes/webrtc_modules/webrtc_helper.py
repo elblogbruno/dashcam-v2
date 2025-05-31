@@ -9,6 +9,7 @@ import sys
 import time
 import traceback
 from typing import Dict, Any, Optional, List, Set
+from shutdown_control import should_continue_loop, register_task
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -31,7 +32,8 @@ class WebRTCManager:
             
         self.initialized = True
         # Begin health check task
-        asyncio.create_task(self.health_check())
+        health_task = asyncio.create_task(self.health_check())
+        register_task(health_task, "webrtc_health_check")
         logger.info("WebRTC Manager initialized")
         
     async def register_peer(self, peer_id: str, peer_connection: Any) -> bool:
@@ -86,10 +88,14 @@ class WebRTCManager:
             
         self.health_check_running = True
         
-        while True:
+        while should_continue_loop("webrtc"):
             try:
                 # Wait for the specified interval
                 await asyncio.sleep(interval_seconds)
+                
+                # Check again after sleep in case shutdown was requested
+                if not should_continue_loop("webrtc"):
+                    break
                 
                 # Perform health check
                 logger.debug("Performing WebRTC health check")
@@ -107,6 +113,7 @@ class WebRTCManager:
                 logger.error(f"Error in WebRTC health check: {e}")
                 
         self.health_check_running = False
+        logger.info("🛑 WebRTC health check terminado")
         
     async def shutdown(self) -> None:
         """Shutdown all WebRTC connections"""

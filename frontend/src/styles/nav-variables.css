@@ -1,0 +1,12 @@
+/* Variables CSS para la barra de navegación */
+:root {
+  /* En móvil, la barra ocupa 64px (h-16) */
+  --nav-height: 64px;
+}
+
+/* En pantallas medianas y grandes, la navegación es lateral y no afecta a la altura */
+@media (min-width: 768px) {
+  :root {
+    --nav-height: 0px;
+  }
+}

@@ -16,6 +16,8 @@ import zipfile
 import io
 import math
 import random
+import sqlite3
+from pathlib import Path
 
 # Define router
 router = APIRouter()
@@ -814,3 +816,452 @@ def calculate_tiles_for_bounds(bounds, zoom_levels):
     logger.info(f"Calculated {len(tiles)} tiles across {len(tiles_by_zoom)} zoom levels: {zoom_summary}")
     
     return tiles
+
+@router.get("/mbtiles/metadata")
+async def get_mbtiles_metadata():
+    """Get metadata from the MBTiles file"""
+    try:
+        logger.info("[get_mbtiles_metadata] Starting metadata request...")
+        
+        # Find the MBTiles file
+        mbtiles_path = find_mbtiles_file()
+        logger.info(f"[get_mbtiles_metadata] Found MBTiles file: {mbtiles_path}")
+        if not mbtiles_path:
+            logger.error("[get_mbtiles_metadata] No MBTiles file found")
+            raise HTTPException(status_code=404, detail="No MBTiles file found")
+        
+        logger.info(f"[get_mbtiles_metadata] Found MBTiles file: {mbtiles_path}")
+        
+        # Read metadata from MBTiles
+        logger.info("[get_mbtiles_metadata] Creating MBTilesReader...")
+        try:
+            with MBTilesReader(mbtiles_path) as reader:
+                logger.info("[get_mbtiles_metadata] MBTilesReader initialized successfully")
+                metadata = reader.get_metadata()
+                logger.info(f"[get_mbtiles_metadata] Metadata retrieved successfully: {metadata}")
+                
+                return {
+                    "status": "success",
+                    "file_path": mbtiles_path,
+                    "metadata": metadata
+                }
+        except sqlite3.Error as db_error:
+            logger.error(f"[get_mbtiles_metadata] SQLite error: {str(db_error)}", exc_info=True)
+            raise HTTPException(status_code=500, detail=f"Database error: {str(db_error)}")
+        except Exception as reader_error:
+            logger.error(f"[get_mbtiles_metadata] MBTilesReader error: {str(reader_error)}", exc_info=True)
+            raise HTTPException(status_code=500, detail=f"Reader error: {str(reader_error)}")
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[get_mbtiles_metadata] Error getting MBTiles metadata: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error getting metadata: {str(e)}")
+
+
+@router.get("/mbtiles-list")
+async def get_mbtiles_list():
+    """Get list of available MBTiles files for offline maps"""
+    try:
+        logger.info("[get_mbtiles_list] Starting MBTiles file listing...")
+        
+        if not config:
+            logger.error("[get_mbtiles_list] Configuration not initialized")
+            raise HTTPException(status_code=500, detail="Configuration not initialized")
+        
+        logger.info(f"[get_mbtiles_list] Config data_path: {config.data_path}")
+        offline_maps_path = os.path.join(config.data_path, OFFLINE_MAPS_DIR)
+        logger.info(f"[get_mbtiles_list] Looking for MBTiles in: {offline_maps_path}")
+        
+        mbtiles_files = []
+        
+        if os.path.exists(offline_maps_path):
+            logger.info(f"[get_mbtiles_list] Directory exists, listing contents...")
+            files_in_dir = os.listdir(offline_maps_path)
+            logger.info(f"[get_mbtiles_list] Files found in directory: {files_in_dir}")
+            
+            for filename in files_in_dir:
+                logger.info(f"[get_mbtiles_list] Processing file: {filename}")
+                if filename.endswith('.mbtiles'):
+                    file_path = os.path.join(offline_maps_path, filename)
+                    logger.info(f"[get_mbtiles_list] Found MBTiles file: {file_path}")
+                    
+                    try:
+                        file_size = os.path.getsize(file_path)
+                        file_size_mb = round(file_size / (1024 * 1024), 2)
+                        logger.info(f"[get_mbtiles_list] File size: {file_size} bytes ({file_size_mb} MB)")
+                        
+                        mbtiles_files.append({
+                            "filename": filename,
+                            "path": file_path,
+                            "size_bytes": file_size,
+                            "size_mb": file_size_mb
+                        })
+                    except Exception as file_error:
+                        logger.error(f"[get_mbtiles_list] Error processing file {filename}: {str(file_error)}")
+        else:
+            logger.warning(f"[get_mbtiles_list] Directory does not exist: {offline_maps_path}")
+        
+        logger.info(f"[get_mbtiles_list] Found {len(mbtiles_files)} MBTiles files total")
+        
+        result = {
+            "status": "success",
+            "mbtiles_files": mbtiles_files,
+            "count": len(mbtiles_files)
+        }
+        logger.info(f"[get_mbtiles_list] Returning result: {result}")
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"[get_mbtiles_list] Error listing MBTiles files: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error listing MBTiles files: {str(e)}")
+
+@router.get("/mbtiles/{filename}")
+async def serve_mbtiles_file(filename: str):
+    """Serve MBTiles file for frontend consumption"""
+    try:
+        if not config:
+            raise HTTPException(status_code=500, detail="Configuration not initialized")
+        
+        # Validate filename to prevent directory traversal
+        if ".." in filename or "/" in filename or "\\" in filename:
+            raise HTTPException(status_code=400, detail="Invalid filename")
+        
+        offline_maps_path = os.path.join(config.data_path, OFFLINE_MAPS_DIR)
+        file_path = os.path.join(offline_maps_path, filename)
+        
+        if not os.path.exists(file_path) or not file_path.endswith('.mbtiles'):
+            raise HTTPException(status_code=404, detail="MBTiles file not found")
+        
+        return FileResponse(
+            path=file_path,
+            media_type="application/x-sqlite3",
+            filename=filename
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error serving MBTiles file: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error serving MBTiles file: {str(e)}")
+
+# MBTiles helper functions
+class MBTilesReader:
+    """Helper class to read tiles from MBTiles files"""
+    
+    def __init__(self, file_path: str):
+        self.file_path = file_path
+        self._conn = None
+        logger.info(f"[MBTilesReader.__init__] Initializing with file: {file_path}")
+    
+    def __enter__(self):
+        logger.info(f"[MBTilesReader.__enter__] Opening SQLite connection to: {self.file_path}")
+        try:
+            # Check if file exists and is readable
+            if not os.path.exists(self.file_path):
+                logger.error(f"[MBTilesReader.__enter__] File does not exist: {self.file_path}")
+                raise FileNotFoundError(f"MBTiles file not found: {self.file_path}")
+            
+            if not os.access(self.file_path, os.R_OK):
+                logger.error(f"[MBTilesReader.__enter__] File is not readable: {self.file_path}")
+                raise PermissionError(f"Cannot read MBTiles file: {self.file_path}")
+            
+            file_size = os.path.getsize(self.file_path)
+            logger.info(f"[MBTilesReader.__enter__] File size: {file_size} bytes")
+            
+            # Connect to the SQLite database
+            self._conn = sqlite3.connect(self.file_path)
+            logger.info(f"[MBTilesReader.__enter__] SQLite connection established successfully")
+            
+            # Test the connection by checking database structure
+            cursor = self._conn.cursor()
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+            tables = cursor.fetchall()
+            table_names = [table[0] for table in tables]
+            logger.info(f"[MBTilesReader.__enter__] Database tables found: {table_names}")
+            
+            # Check if essential tables exist
+            required_tables = ['metadata', 'tiles']
+            missing_tables = [table for table in required_tables if table not in table_names]
+            if missing_tables:
+                logger.error(f"[MBTilesReader.__enter__] Missing required tables: {missing_tables}")
+                raise ValueError(f"Invalid MBTiles file - missing tables: {missing_tables}")
+            
+            logger.info("[MBTilesReader.__enter__] MBTiles database validation successful")
+            return self
+            
+        except Exception as e:
+            logger.error(f"[MBTilesReader.__enter__] Error opening database: {str(e)}", exc_info=True)
+            if self._conn:
+                self._conn.close()
+                self._conn = None
+            raise
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self._conn:
+            self._conn.close()
+    
+    def get_tile(self, z: int, x: int, y: int) -> Optional[bytes]:
+        """Get a tile from the MBTiles database"""
+        if not self._conn:
+            logger.error(f"[MBTilesReader.get_tile] No database connection for tile z={z}, x={x}, y={y}")
+            return None
+        
+        try:
+            # MBTiles uses TMS tiling scheme, convert from XYZ to TMS
+            tms_y = (2 ** z) - 1 - y
+            logger.debug(f"[MBTilesReader.get_tile] Converting XYZ({z},{x},{y}) to TMS({z},{x},{tms_y})")
+            
+            cursor = self._conn.cursor()
+            logger.debug(f"[MBTilesReader.get_tile] Executing SQL query for tile z={z}, x={x}, tms_y={tms_y}")
+            
+            cursor.execute(
+                "SELECT tile_data FROM tiles WHERE zoom_level = ? AND tile_column = ? AND tile_row = ?",
+                (z, x, tms_y)
+            )
+            result = cursor.fetchone()
+            
+            if result:
+                tile_size = len(result[0])
+                logger.debug(f"[MBTilesReader.get_tile] Found tile data, size: {tile_size} bytes")
+                return result[0]
+            else:
+                logger.warning(f"[MBTilesReader.get_tile] No tile found for z={z}, x={x}, tms_y={tms_y}")
+                return None
+            
+        except Exception as e:
+            logger.error(f"[MBTilesReader.get_tile] Error getting tile z={z}, x={x}, y={y}: {str(e)}", exc_info=True)
+            return None
+    
+    def get_metadata(self) -> Dict[str, Any]:
+        """Get metadata from the MBTiles file"""
+        if not self._conn:
+            logger.error("[MBTilesReader.get_metadata] No database connection")
+            return {}
+        
+        try:
+            logger.debug("[MBTilesReader.get_metadata] Executing metadata query...")
+            cursor = self._conn.cursor()
+            cursor.execute("SELECT name, value FROM metadata")
+            metadata_rows = cursor.fetchall()
+            metadata = dict(metadata_rows)
+            logger.info(f"[MBTilesReader.get_metadata] Retrieved {len(metadata)} metadata entries: {list(metadata.keys())}")
+            return metadata
+        except Exception as e:
+            logger.error(f"[MBTilesReader.get_metadata] Error getting metadata: {str(e)}", exc_info=True)
+            return {}
+    
+    def get_available_tiles_info(self) -> Dict[str, Any]:
+        """Get information about available tiles in the MBTiles database"""
+        if not self._conn:
+            logger.error("[MBTilesReader.get_available_tiles_info] No database connection")
+            return {}
+        
+        try:
+            cursor = self._conn.cursor()
+            
+            # Get zoom level range
+            cursor.execute("SELECT MIN(zoom_level), MAX(zoom_level) FROM tiles")
+            zoom_range = cursor.fetchone()
+            
+            # Get tile count per zoom level
+            cursor.execute("SELECT zoom_level, COUNT(*) FROM tiles GROUP BY zoom_level ORDER BY zoom_level")
+            tiles_per_zoom = dict(cursor.fetchall())
+            
+            # Get bounds for each zoom level
+            bounds_info = {}
+            for zoom in tiles_per_zoom.keys():
+                cursor.execute("""
+                    SELECT MIN(tile_column), MAX(tile_column), MIN(tile_row), MAX(tile_row) 
+                    FROM tiles WHERE zoom_level = ?
+                """, (zoom,))
+                min_x, max_x, min_y, max_y = cursor.fetchone()
+                bounds_info[zoom] = {
+                    'min_x': min_x, 'max_x': max_x,
+                    'min_y': min_y, 'max_y': max_y,
+                    'count': tiles_per_zoom[zoom]
+                }
+            
+            info = {
+                'zoom_range': zoom_range,
+                'tiles_per_zoom': tiles_per_zoom,
+                'bounds_per_zoom': bounds_info,
+                'total_tiles': sum(tiles_per_zoom.values())
+            }
+            
+            logger.info(f"[MBTilesReader.get_available_tiles_info] MBTiles info: {info}")
+            return info
+            
+        except Exception as e:
+            logger.error(f"[MBTilesReader.get_available_tiles_info] Error: {str(e)}", exc_info=True)
+            return {}
+
+def find_mbtiles_file() -> Optional[str]:
+    """Find the first available MBTiles file"""
+    try:
+        logger.info("[find_mbtiles_file] Starting search for MBTiles files...")
+        
+        if not config:
+            logger.error("[find_mbtiles_file] Config not initialized!")
+            return None
+        
+        logger.info(f"[find_mbtiles_file] Config data_path: {config.data_path}")
+        offline_maps_path = os.path.join(config.data_path, OFFLINE_MAPS_DIR)
+        logger.info(f"[find_mbtiles_file] Looking in directory: {offline_maps_path}")
+        
+        if not os.path.exists(offline_maps_path):
+            logger.error(f"[find_mbtiles_file] Directory does not exist: {offline_maps_path}")
+            return None
+        
+        files_found = os.listdir(offline_maps_path)
+        logger.info(f"[find_mbtiles_file] Files in directory: {files_found}")
+        
+        for filename in files_found:
+            logger.info(f"[find_mbtiles_file] Checking file: {filename}")
+            if filename.endswith('.mbtiles'):
+                file_path = os.path.join(offline_maps_path, filename)
+                logger.info(f"[find_mbtiles_file] Found MBTiles file: {file_path}")
+                if os.path.exists(file_path):
+                    file_size = os.path.getsize(file_path)
+                    logger.info(f"[find_mbtiles_file] File exists and size is: {file_size} bytes")
+                    return file_path
+                else:
+                    logger.warning(f"[find_mbtiles_file] File path exists in listing but not accessible: {file_path}")
+        
+        logger.warning("[find_mbtiles_file] No MBTiles files found in directory")
+        return None
+    except Exception as e:
+        logger.error(f"[find_mbtiles_file] Error finding MBTiles file: {str(e)}", exc_info=True)
+        return None
+
+@router.get("/mbtiles/tile/{z}/{x}/{y}")
+async def get_mbtiles_tile(z: int, x: int, y: int):
+    """Get a tile from MBTiles in XYZ format for Leaflet"""
+    try:
+        logger.info(f"[get_mbtiles_tile] Requested tile: z={z}, x={x}, y={y}")
+        
+        # Find the MBTiles file
+        mbtiles_path = find_mbtiles_file()
+        if not mbtiles_path:
+            logger.error("[get_mbtiles_tile] No MBTiles file found")
+            raise HTTPException(status_code=404, detail="No MBTiles file found")
+        
+        logger.info(f"[get_mbtiles_tile] Using MBTiles file: {mbtiles_path}")
+        
+        # Read the tile from MBTiles
+        logger.info(f"[get_mbtiles_tile] Creating MBTilesReader for file: {mbtiles_path}")
+        try:
+            with MBTilesReader(mbtiles_path) as reader:
+                logger.info(f"[get_mbtiles_tile] MBTilesReader initialized successfully")
+                tile_data = reader.get_tile(z, x, y)
+                
+                if tile_data is None:
+                    # Get some context about what tiles are available near this coordinate
+                    cursor = reader._conn.cursor()
+                    
+                    # Check if any tiles exist at this zoom level
+                    cursor.execute("SELECT COUNT(*) FROM tiles WHERE zoom_level = ?", (z,))
+                    tiles_at_zoom = cursor.fetchone()[0]
+                    
+                    # Check what zoom levels are available
+                    cursor.execute("SELECT DISTINCT zoom_level FROM tiles ORDER BY zoom_level")
+                    available_zooms = [row[0] for row in cursor.fetchall()]
+                    
+                    # Check bounds at this zoom level
+                    cursor.execute("""
+                        SELECT MIN(tile_column), MAX(tile_column), MIN(tile_row), MAX(tile_row) 
+                        FROM tiles WHERE zoom_level = ?
+                    """, (z,))
+                    bounds_result = cursor.fetchone()
+                    
+                    tms_y = (2 ** z) - 1 - y  # Convert to TMS for logging
+                    
+                    logger.warning(f"[get_mbtiles_tile] Tile not found: z={z}, x={x}, y={y} (TMS: z={z}, x={x}, tms_y={tms_y})")
+                    logger.info(f"[get_mbtiles_tile] Available zoom levels: {available_zooms}")
+                    logger.info(f"[get_mbtiles_tile] Tiles at zoom {z}: {tiles_at_zoom}")
+                    
+                    if bounds_result and bounds_result[0] is not None:
+                        min_x, max_x, min_y, max_y = bounds_result
+                        logger.info(f"[get_mbtiles_tile] Bounds at zoom {z}: x=[{min_x}-{max_x}], tms_y=[{min_y}-{max_y}]")
+                        
+                        # Check if requested coordinates are outside bounds
+                        if x < min_x or x > max_x:
+                            logger.warning(f"[get_mbtiles_tile] Requested x={x} is outside bounds [{min_x}-{max_x}]")
+                        if tms_y < min_y or tms_y > max_y:
+                            logger.warning(f"[get_mbtiles_tile] Requested tms_y={tms_y} is outside bounds [{min_y}-{max_y}]")
+                    
+                    raise HTTPException(status_code=404, detail=f"Tile not found at z={z}, x={x}, y={y}")
+                
+                logger.info(f"[get_mbtiles_tile] Found tile data, size: {len(tile_data)} bytes")
+                
+                # Determine content type based on the tile data
+                if tile_data.startswith(b'\x89PNG'):
+                    content_type = "image/png"
+                elif tile_data.startswith(b'\xff\xd8\xff'):
+                    content_type = "image/jpeg"
+                elif tile_data.startswith(b'RIFF') and b'WEBP' in tile_data[:12]:
+                    content_type = "image/webp"
+                else:
+                    content_type = "image/png"  # Default fallback
+                
+                logger.info(f"[get_mbtiles_tile] Returning tile with content type: {content_type}")
+                
+                return Response(
+                    content=tile_data,
+                    media_type=content_type,
+                    headers={
+                        "Cache-Control": "public, max-age=86400",  # Cache for 24 hours
+                        "Access-Control-Allow-Origin": "*"
+                    }
+                )
+        except sqlite3.Error as db_error:
+            logger.error(f"[get_mbtiles_tile] SQLite error: {str(db_error)}", exc_info=True)
+            raise HTTPException(status_code=500, detail=f"Database error: {str(db_error)}")
+        except Exception as reader_error:
+            logger.error(f"[get_mbtiles_tile] MBTilesReader error: {str(reader_error)}", exc_info=True)
+            raise HTTPException(status_code=500, detail=f"Reader error: {str(reader_error)}")
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[get_mbtiles_tile] Error serving MBTiles tile z={z}, x={x}, y={y}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error serving tile: {str(e)}")
+
+@router.get("/mbtiles/info")
+async def get_mbtiles_info():
+    """Get detailed information about available tiles in the MBTiles file"""
+    try:
+        logger.info("[get_mbtiles_info] Starting MBTiles info request...")
+        
+        # Find the MBTiles file
+        mbtiles_path = find_mbtiles_file()
+        if not mbtiles_path:
+            logger.error("[get_mbtiles_info] No MBTiles file found")
+            raise HTTPException(status_code=404, detail="No MBTiles file found")
+        
+        logger.info(f"[get_mbtiles_info] Found MBTiles file: {mbtiles_path}")
+        
+        # Read info from MBTiles
+        try:
+            with MBTilesReader(mbtiles_path) as reader:
+                logger.info("[get_mbtiles_info] MBTilesReader initialized successfully")
+                metadata = reader.get_metadata()
+                tiles_info = reader.get_available_tiles_info()
+                
+                return {
+                    "status": "success",
+                    "file_path": mbtiles_path,
+                    "metadata": metadata,
+                    "tiles_info": tiles_info
+                }
+        except Exception as reader_error:
+            logger.error(f"[get_mbtiles_info] MBTilesReader error: {str(reader_error)}", exc_info=True)
+            raise HTTPException(status_code=500, detail=f"Reader error: {str(reader_error)}")
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[get_mbtiles_info] Error getting MBTiles info: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error getting info: {str(e)}")
+

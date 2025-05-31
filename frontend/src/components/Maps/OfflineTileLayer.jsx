@@ -12,10 +12,34 @@ import PlaceholderTileAlert from './PlaceholderTileAlert';
 const OfflineTileLayer = ({ url, tripId, preferredSource, onChangeMapSource, onAvailabilityChange, ...props }) => {
   const map = useMap();
   const [offlineAvailable, setOfflineAvailable] = useState(false);
+  const [mbtilesAvailable, setMbtilesAvailable] = useState(false);
   const [showIndicator, setShowIndicator] = useState(false);
   const [mapSource, setMapSource] = useState('online');
   const [customTileLayer, setCustomTileLayer] = useState(null);
+  // Nuevo estado para controlar cuando mostrar el error
+  const [showMapError, setShowMapError] = useState(false);
+  // Contador de errores de carga
+  const [tileErrorCount, setTileErrorCount] = useState(0);
   
+  // Función para verificar disponibilidad de archivos .mbtiles
+  const checkMbtilesAvailability = async () => {
+    try {
+      console.log('[OfflineTileLayer] Checking for .mbtiles files...');
+      // Verificar si hay archivos .mbtiles en el servidor
+      const response = await fetch('/api/offline-maps/mbtiles-list');
+      if (response.ok) {
+        const data = await response.json();
+        const hasMbtiles = data && data.mbtiles_files && data.mbtiles_files.length > 0;
+        setMbtilesAvailable(hasMbtiles);
+        console.log(`[OfflineTileLayer] MBTiles files available: ${hasMbtiles}`, data);
+        return hasMbtiles;
+      }
+    } catch (error) {
+      console.error('[OfflineTileLayer] Error checking .mbtiles availability:', error);
+    }
+    return false;
+  };
+
   // Función para verificar disponibilidad de mapas offline
   const checkOfflineMaps = async () => {
     if (tripId) {
@@ -30,26 +54,32 @@ const OfflineTileLayer = ({ url, tripId, preferredSource, onChangeMapSource, onA
         setOfflineAvailable(hasOfflineMaps);
         console.log(`[OfflineTileLayer] Offline maps available for trip ${tripId}: ${hasOfflineMaps}`);
         
+        // Verificar si hay archivos .mbtiles disponibles
+        const hasMbtiles = await checkMbtilesAvailability();
+        
+        // Determinar si hay algún tipo de mapas offline disponibles
+        const anyOfflineAvailable = hasOfflineMaps || hasMbtiles;
+        
         // Notificar al componente padre sobre la disponibilidad de mapas
         if (onAvailabilityChange) {
-          onAvailabilityChange('offline', hasOfflineMaps);
+          onAvailabilityChange('offline', anyOfflineAvailable);
         }
         
         // Determinar qué fuente de mapas usar, respetando la preferencia si se proporciona
         let sourceToUse = 'online';
         
         if (preferredSource === 'auto') {
-          if (hasOfflineMaps) {
+          if (anyOfflineAvailable) {
             sourceToUse = 'offline';
           }
           console.log(`[OfflineTileLayer] Auto source selection chose: ${sourceToUse}`);
         } else if (
-          (preferredSource === 'offline' && hasOfflineMaps) ||
+          (preferredSource === 'offline' && anyOfflineAvailable) ||
           preferredSource === 'online'
         ) {
           sourceToUse = preferredSource;
           console.log(`[OfflineTileLayer] Using preferred source: ${sourceToUse}`);
-        } else if (hasOfflineMaps) {
+        } else if (anyOfflineAvailable) {
           sourceToUse = 'offline';
           console.log(`[OfflineTileLayer] Preferred source not available, falling back to offline`);
         } else {
@@ -64,10 +94,10 @@ const OfflineTileLayer = ({ url, tripId, preferredSource, onChangeMapSource, onA
         }
         
         // Añadir información al mapa
-        map.offlineAvailable = hasOfflineMaps;
+        map.offlineAvailable = anyOfflineAvailable;
         
         // Si hay mapas offline, forzar una actualización de los tiles
-        if (hasOfflineMaps) {
+        if (anyOfflineAvailable) {
           console.log(`[OfflineTileLayer] Maps available for trip ${tripId}: Using=${sourceToUse}`);
           setShowIndicator(true);
           setTimeout(() => setShowIndicator(false), 5000); // Ocultar después de 5 segundos
@@ -82,7 +112,9 @@ const OfflineTileLayer = ({ url, tripId, preferredSource, onChangeMapSource, onA
         console.error('[OfflineTileLayer] Error checking offline maps:', error);
       }
     } else {
-      console.log('[OfflineTileLayer] No tripId provided, cannot check for offline maps');
+      console.log('[OfflineTileLayer] No tripId provided, checking for .mbtiles files anyway...');
+      // Sin tripId, solo verificar .mbtiles
+      await checkMbtilesAvailability();
     }
   };
   
@@ -100,16 +132,99 @@ const OfflineTileLayer = ({ url, tripId, preferredSource, onChangeMapSource, onA
     checkOfflineMaps();
   }, [tripId]);
 
-  // Implementación de TileLayer personalizada con manejo de tiles offline/online
+  // Efecto para controlar cuando mostrar el mensaje de error
   useEffect(() => {
-    console.log(`[OfflineTileLayer] Setting up custom tile layer with mapSource=${mapSource}`);
-    
-    // Si ya existe una capa, eliminarla primero
-    if (customTileLayer) {
-      map.removeLayer(customTileLayer);
+    // Solo mostrar el error si hay varios fallos de carga
+    if (tileErrorCount > 3) {
+      setShowMapError(true);
+      // Ocultar después de 5 segundos
+      const timer = setTimeout(() => {
+        setShowMapError(false);
+        setTileErrorCount(0);
+      }, 5000);
+      return () => clearTimeout(timer);
     }
+  }, [tileErrorCount]);
+
+  // Función para configurar la capa MBTiles usando el endpoint del backend
+  const setupMBTilesLayer = async () => {
+    try {
+      console.log('[OfflineTileLayer] Setting up MBTiles layer via backend endpoint...');
+      
+      // Verificar que el endpoint esté disponible
+      try {
+        const metadataResponse = await fetch('/api/offline-maps/mbtiles/metadata');
+        if (!metadataResponse.ok) {
+          throw new Error('MBTiles metadata endpoint not available');
+        }
+        const metadata = await metadataResponse.json();
+        console.log('[OfflineTileLayer] MBTiles metadata:', metadata);
+      } catch (error) {
+        console.error('[OfflineTileLayer] MBTiles endpoint not available, falling back to online');
+        setupOnlineLayer();
+        return;
+      }
+
+      console.log('[OfflineTileLayer] Creating MBTiles tile layer...');
+      
+      // Crear capa de tiles usando el endpoint XYZ del backend
+      const mbtilesUrl = '/api/offline-maps/mbtiles/tile/{z}/{x}/{y}';
+      
+      const newLayer = new L.TileLayer(mbtilesUrl, {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors | MBTiles',
+        minZoom: 1,
+        maxZoom: 19,
+        errorTileUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+        crossOrigin: true
+      });
+
+      // Configurar eventos para la capa
+      newLayer.on('loading', () => {
+        console.log('[OfflineTileLayer] MBTiles tiles loading...');
+      });
+
+      newLayer.on('load', () => {
+        console.log('[OfflineTileLayer] MBTiles tiles loaded successfully');
+        setShowIndicator(true);
+        setTimeout(() => setShowIndicator(false), 3000);
+      });
+
+      newLayer.on('tileerror', (ev) => {
+        console.warn('[OfflineTileLayer] MBTiles tile error:', ev);
+        // No mostrar error inmediatamente, algunos tiles pueden no estar disponibles
+      });
+
+      // Agregar la capa al mapa
+      map.addLayer(newLayer);
+      setCustomTileLayer(newLayer);
+      
+      console.log('[OfflineTileLayer] MBTiles layer added to map via backend endpoint');
+
+    } catch (error) {
+      console.error('[OfflineTileLayer] Error setting up MBTiles layer:', error);
+      setupOnlineLayer();
+    }
+  };
+
+  // Función para configurar capa de tiles online
+  const setupOnlineLayer = () => {
+    const newLayer = new L.TileLayer(url, { 
+      ...props,
+      subdomains: 'abc',
+      minZoom: 1,
+      maxZoom: 19,
+      errorTileUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+      crossOrigin: true
+    });
     
-    // Crear un método personalizado de carga de tiles
+    map.addLayer(newLayer);
+    setCustomTileLayer(newLayer);
+    console.log('[OfflineTileLayer] Online tile layer added to map');
+  };
+
+  // Función para configurar capa de tiles offline personalizada
+  const setupCustomOfflineLayer = () => {
+    // Crear un método personalizado de carga de tiles para el sistema offline existente
     const customTileLayerClass = L.TileLayer.extend({
       createTile: function(coords, done) {
         const tile = document.createElement('img');
@@ -117,6 +232,10 @@ const OfflineTileLayer = ({ url, tripId, preferredSource, onChangeMapSource, onA
         // Añadir manejadores de eventos para detectar problemas de carga
         tile.onerror = function(e) {
           console.error(`[OfflineTileLayer] Error loading tile z=${coords.z}, x=${coords.x}, y=${coords.y}`);
+          
+          // Incrementar contador de errores
+          setTileErrorCount(prev => prev + 1);
+          
           // Intentar con URL alternativa en caso de error
           if (mapSource === 'online') {
             const alternativeSubdomain = String.fromCharCode(97 + (Math.abs(coords.x + coords.y) % 3));
@@ -145,84 +264,89 @@ const OfflineTileLayer = ({ url, tripId, preferredSource, onChangeMapSource, onA
           try {
             console.log(`[OfflineTileLayer] Creating tile for z=${coords.z}, x=${coords.x}, y=${coords.y}, source=${mapSource}`);
             let tileUrl = null;
-            
-            // Solo intentar cargar desde offline si la fuente es offline
+
             if (mapSource === 'offline' && tripId) {
-              console.log(`[OfflineTileLayer] Attempting to get standard offline tile for z=${coords.z}, x=${coords.x}, y=${coords.y}`);
-              tileUrl = await offlineMapManager.getTileUrl(coords);
-              
-              if (tileUrl) {
-                console.log(`[OfflineTileLayer] ✓ Found standard offline tile for z=${coords.z}, x=${coords.x}, y=${coords.y}`);
-              } else {
-                console.log(`[OfflineTileLayer] ✗ No standard offline tile found for z=${coords.z}, x=${coords.x}, y=${coords.y}`);
+              // Intentar cargar desde almacenamiento offline primero
+              try {
+                const offlineTile = await offlineMapManager.getTile(coords.z, coords.x, coords.y);
+                if (offlineTile && offlineTile.data) {
+                  tileUrl = offlineTile.data;
+                  console.log(`[OfflineTileLayer] Loaded offline tile for z=${coords.z}, x=${coords.x}, y=${coords.y}`);
+                } else {
+                  throw new Error('Tile not found in offline storage');
+                }
+              } catch (offlineError) {
+                console.warn(`[OfflineTileLayer] Offline tile not available for z=${coords.z}, x=${coords.x}, y=${coords.y}, falling back to online`);
+                // Si el tile offline no está disponible, usar la URL online
+                tileUrl = url
+                  .replace('{s}', String.fromCharCode(97 + (Math.abs(coords.x + coords.y) % 3)))
+                  .replace('{z}', coords.z)
+                  .replace('{x}', coords.x)
+                  .replace('{y}', coords.y);
               }
-            }
-            
-            // Si estamos en modo online o no se encontró el tile offline, usar la URL online
-            if (!tileUrl || mapSource === 'online') {
-              // Usar un subdominio aleatorio para distribuir la carga
-              const subdomain = String.fromCharCode(97 + (Math.abs(coords.x + coords.y) % 3)); // 'a', 'b', o 'c'
-              
+            } else {
+              // Modo online normal
               tileUrl = url
-                .replace('{s}', subdomain)
+                .replace('{s}', String.fromCharCode(97 + (Math.abs(coords.x + coords.y) % 3)))
                 .replace('{z}', coords.z)
                 .replace('{x}', coords.x)
                 .replace('{y}', coords.y);
-              
-              console.log(`[OfflineTileLayer] Using online tile: ${tileUrl}`);
             }
-            
+
             tile.src = tileUrl;
-            tile.alt = '';
-            
-            // Evento de carga exitosa
-            tile.onload = function() {
-              done(null, tile);
-            };
-            
-          } catch (error) {
-            console.error(`[OfflineTileLayer] Error loading tile:`, error);
-            
-            // En caso de error, intentar cargar desde OSM directamente
-            const fallbackUrl = `https://a.tile.openstreetmap.org/${coords.z}/${coords.x}/${coords.y}.png`;
-            console.log(`[OfflineTileLayer] Using fallback URL: ${fallbackUrl}`);
-            tile.src = fallbackUrl;
             done(null, tile);
+          } catch (error) {
+            console.error(`[OfflineTileLayer] Error in loadTile: ${error.message}`);
+            done(error, tile);
           }
         };
-        
+
         loadTile();
         return tile;
       }
     });
-    
-    // Crear e instanciar la nueva capa con opciones adecuadas para OSM
-    const newLayer = new customTileLayerClass(url, { 
+
+    const newLayer = new customTileLayerClass(url, {
       ...props,
-      subdomains: 'abc',       // Subdominios estándar de OSM
-      minZoom: 1,              // Nivel mínimo de zoom
-      maxZoom: 19,             // Nivel máximo de zoom
-      errorTileUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', // Tile transparente en caso de error
-      crossOrigin: true        // Permitir CORS
+      attribution: props.attribution + (mapSource === 'offline' ? ' | Offline Mode' : ''),
+      subdomains: 'abc',
+      minZoom: 1,
+      maxZoom: 19,
+      errorTileUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+      crossOrigin: true
     });
-    
-    newLayer.addTo(map);
+
+    map.addLayer(newLayer);
     setCustomTileLayer(newLayer);
+    console.log('[OfflineTileLayer] Custom offline tile layer added to map');
+  };
+
+  // Implementación de TileLayer personalizada con manejo de tiles offline/online y .mbtiles
+  useEffect(() => {
+    console.log(`[OfflineTileLayer] Setting up custom tile layer with mapSource=${mapSource}`);
     
-    // Añadir un evento para detectar cuando se completa la carga de tiles
-    const tileLoadListener = () => {
-      console.log('[OfflineTileLayer] All tiles loaded successfully');
-    };
-    
-    newLayer.on('load', tileLoadListener);
-    
-    return () => {
-      if (newLayer) {
-        newLayer.off('load', tileLoadListener);
-        map.removeLayer(newLayer);
-      }
-    };
-  }, [mapSource, tripId, url, map]);
+    // Si ya existe una capa, eliminarla primero
+    if (customTileLayer) {
+      map.removeLayer(customTileLayer);
+    }
+
+    if (mapSource === 'offline' && mbtilesAvailable) {
+      // Usar MBTiles si está disponible
+      console.log('[OfflineTileLayer] Using MBTiles layer');
+      setupMBTilesLayer();
+      return;
+    } else if (mapSource === 'offline' && offlineAvailable) {
+      // Usar el sistema de tiles offline existente
+      console.log('[OfflineTileLayer] Using custom offline tile layer');
+      setupCustomOfflineLayer();
+      return;
+    } else {
+      // Usar tiles online
+      console.log('[OfflineTileLayer] Using online tile layer');
+      setupOnlineLayer();
+      return;
+    }
+  }, [mapSource, tripId, url, map, mbtilesAvailable, offlineAvailable]);
   
   return (
     <>
@@ -235,12 +359,13 @@ const OfflineTileLayer = ({ url, tripId, preferredSource, onChangeMapSource, onA
       <div className="leaflet-bottom leaflet-left" style={{ zIndex: 1000, margin: '0 0 10px 10px' }}>
         <div className={`leaflet-control px-2 py-1 rounded-lg shadow-md flex items-center text-xs ${
           mapSource === 'offline'
-            ? 'bg-blue-600 text-white'
+            ? (mbtilesAvailable ? 'bg-green-600 text-white' : 'bg-blue-600 text-white')
             : 'bg-gray-700 text-white'
         }`}>
           {mapSource === 'offline' ? (
             <>
-              <FaSignal className="mr-1" /> Mapas offline
+              <FaSignal className="mr-1" /> 
+              {mbtilesAvailable ? 'MBTiles offline' : 'Mapas offline'}
             </>
           ) : (
             <>
@@ -251,18 +376,28 @@ const OfflineTileLayer = ({ url, tripId, preferredSource, onChangeMapSource, onA
       </div>
       
       {/* Indicador de mapas offline */}
-      {showIndicator && (offlineAvailable) && (
+      {showIndicator && (offlineAvailable || mbtilesAvailable) && (
         <div className="leaflet-bottom leaflet-right" style={{ zIndex: 1000 }}>
           <div className="leaflet-control bg-green-600 text-white px-2 py-1 rounded-lg shadow-md flex items-center">
-            <FaSignal className="mr-1" /> Mapas disponibles offline
+            <FaSignal className="mr-1" /> 
+            {mbtilesAvailable ? 'MBTiles disponibles' : 'Mapas disponibles offline'}
           </div>
         </div>
       )}
       
-      {/* Indicador de error de carga */}
-      {mapSource === 'online' && (
-        <div className="leaflet-top leaflet-center" style={{ zIndex: 1000, position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', pointerEvents: 'none', opacity: 0 }} 
-             className="map-error-message">
+      {/* Indicador de error de carga - Mostrar SOLO cuando hay error real */}
+      {showMapError && (
+        <div
+          className="leaflet-top leaflet-center"
+          style={{
+            zIndex: 1000,
+            position: 'absolute',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            pointerEvents: 'none'
+          }}
+        >
           <div className="leaflet-control bg-red-600 text-white px-4 py-2 rounded-lg shadow-md text-center">
             <MdWarning className="inline-block mr-2" size={24} /> 
             Error al cargar los mapas. Comprueba tu conexión a internet.
@@ -272,22 +407,5 @@ const OfflineTileLayer = ({ url, tripId, preferredSource, onChangeMapSource, onA
     </>
   );
 };
-
-// Añadir estilos para la animación de error
-const styleElement = document.createElement('style');
-styleElement.innerHTML = `
-  .map-error-message {
-    animation: fadeInOut 5s ease-in-out forwards;
-    opacity: 0;
-  }
-  
-  @keyframes fadeInOut {
-    0% { opacity: 0; }
-    10% { opacity: 1; }
-    90% { opacity: 1; }
-    100% { opacity: 0; }
-  }
-`;
-document.head.appendChild(styleElement);
 
 export default OfflineTileLayer;

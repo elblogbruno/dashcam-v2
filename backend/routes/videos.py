@@ -231,52 +231,67 @@ async def bulk_upload_videos(
     
     return {"results": results}
 
-# Ruta para obtener miniaturas de videos
+# Ruta para obtener miniaturas de videos (incluye externos)
 @router.get("/thumbnail/{path:path}")
 async def get_video_thumbnail(path: str):
     """
-    Genera y sirve una miniatura para un archivo de video
+    Genera y sirve una miniatura para un archivo de video, incluyendo externos.
     
     Args:
-        path: Ruta relativa al archivo de video (igual que en la ruta /videos/{path})
+        path: Ruta relativa o absoluta al archivo de video.
     """
     try:
-        # Normalizar la ruta: eliminar path relativo y data/videos si existen
-        if path.startswith("../"):
-            path = path.replace("../", "", 1)
-        
-        if path.startswith("data/videos/"):
-            path = path.replace("data/videos/", "", 1)
-        
-        # Componer la ruta completa al archivo de video
-        full_path = os.path.join(config.data_path, "videos", path)
-        
+        # Si la ruta es absoluta y el archivo existe, úsala directamente
+        if os.path.isabs(path) and os.path.isfile(path):
+            full_path = path
+            # Guardar miniaturas de externos en un subdirectorio especial
+            thumbnails_dir = os.path.join(config.data_path, "thumbnails", "external")
+            os.makedirs(thumbnails_dir, exist_ok=True)
+            thumbnail_name = f"{os.path.splitext(os.path.basename(path))[0]}.jpg"
+            thumbnail_path = os.path.join(thumbnails_dir, thumbnail_name)
+        else:
+            # Normalizar la ruta: eliminar path relativo y data/videos si existen
+            if path.startswith("../"):
+                path = path.replace("../", "", 1)
+            # Si es un video externo (en uploads), buscar en uploads
+            if path.startswith("uploads/") or "/uploads/" in path:
+                # Quitar cualquier prefijo innecesario
+                uploads_path = path
+                if uploads_path.startswith("uploads/"):
+                    uploads_path = uploads_path[len("uploads/"):]
+                elif "/uploads/" in uploads_path:
+                    uploads_path = uploads_path.split("/uploads/", 1)[1]
+                full_path = os.path.join(config.upload_path, uploads_path)
+                thumbnails_dir = os.path.join(config.data_path, "thumbnails", "external")
+                os.makedirs(thumbnails_dir, exist_ok=True)
+                thumbnail_name = f"{os.path.splitext(os.path.basename(path))[0]}.jpg"
+                thumbnail_path = os.path.join(thumbnails_dir, thumbnail_name)
+            else:
+                if path.startswith("data/videos/"):
+                    path = path.replace("data/videos/", "", 1)
+                # Componer la ruta completa al archivo de video
+                full_path = os.path.join(config.data_path, "videos", path)
+                thumbnails_dir = os.path.join(config.data_path, "thumbnails")
+                os.makedirs(thumbnails_dir, exist_ok=True)
+                thumbnail_name = f"{os.path.splitext(os.path.basename(path))[0]}.jpg"
+                thumbnail_path = os.path.join(thumbnails_dir, thumbnail_name)
+
         logger.info(f"Intentando generar miniatura para: {full_path}")
-        
+
         # Verificar si el archivo existe
         if not os.path.isfile(full_path):
             logger.error(f"Archivo de video no encontrado para miniatura: {full_path}")
             raise HTTPException(status_code=404, detail="Archivo de video no encontrado")
-        
-        # Crear directorio para miniaturas si no existe
-        thumbnails_dir = os.path.join(config.data_path, "thumbnails")
-        os.makedirs(thumbnails_dir, exist_ok=True)
-        
-        # Ruta para la miniatura
-        thumbnail_path = os.path.join(
-            thumbnails_dir,
-            f"{os.path.splitext(os.path.basename(path))[0]}.jpg"
-        )
-        
+
         # Generar miniatura si no existe
         if not os.path.exists(thumbnail_path):
             generated_path = generate_thumbnail(full_path, thumbnail_path)
             if not generated_path:
                 raise HTTPException(status_code=500, detail="No se pudo generar la miniatura")
-        
+
         # Devolver la imagen de miniatura
         return FileResponse(thumbnail_path, media_type="image/jpeg")
-        
+
     except Exception as e:
         logger.error(f"Error sirviendo miniatura para {path}: {str(e)}")
         if isinstance(e, HTTPException):

@@ -1,0 +1,276 @@
+/* Estilos para el reproductor de video al estilo Nest Doorbell */
+
+/* Contenedor principal del reproductor de video */
+.video-player-container {
+  background-color: var(--nest-background);
+  border-radius: 12px;
+  overflow: hidden;
+  position: relative;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+
+/* Contenedor de video compartido para modo normal y PiP */
+.video-container {
+  width: 100%;
+  position: relative;
+  background-color: var(--nest-background);
+}
+
+/* Video principal */
+.video-container video {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+/* Contenedor para video secundario (PiP) */
+.secondary-video-container {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  width: 30%;
+  max-width: 180px;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.5);
+  border: 2px solid var(--nest-border);
+  z-index: 5;
+}
+
+.secondary-video-container video {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+/* Controles del reproductor con el estilo Nest */
+.video-controls-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(to top, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.5) 60%, transparent 100%);
+  padding: 24px 16px 12px;
+  z-index: 10;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.video-player-container:hover .video-controls-bar,
+.video-controls-bar:hover {
+  opacity: 1;
+}
+
+/* Contenedor de controles con diseño flex */
+.player-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 8px 12px;
+}
+
+.controls-left,
+.controls-right {
+  display: flex;
+  align-items: center;
+}
+
+/* Botones de control de video */
+.video-controls-bar button {
+  background: rgba(255,255,255,0.2);
+  border: none;
+  color: white;
+  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin: 0 6px;
+}
+
+.video-controls-bar button:hover {
+  background: rgba(255,255,255,0.3);
+  transform: scale(1.05);
+}
+
+.video-controls-bar button:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--nest-accent);
+}
+
+/* Estilos específicos para botones */
+.play-button {
+  background-color: var(--nest-selected) !important;
+}
+
+/* Visualización del tiempo */
+.time-display {
+  color: var(--nest-text-primary);
+  font-size: 0.875rem;
+  margin: 0 8px;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 1px 1px 1px rgba(0,0,0,0.5);
+}
+
+/* Barra de progreso */
+.progress-container {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 3px;
+  background: rgba(255,255,255,0.3);
+  z-index: 15;
+  cursor: pointer;
+  transition: height 0.2s;
+}
+
+.progress-container:hover {
+  height: 6px;
+}
+
+.progress-bar {
+  height: 100%;
+  background-color: var(--nest-selected);
+  transition: width 0.1s linear;
+}
+
+/* Punto de progreso */
+.progress-container:hover::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translate(50%, -50%);
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background-color: var(--nest-selected);
+}
+
+/* Indicador de carga */
+.loading-indicator {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: white;
+  z-index: 20;
+}
+
+/* Estilo para cuando el video está en pantalla completa */
+.fullscreen-video {
+  object-fit: contain;
+  width: 100vw;
+  height: 100vh;
+  max-height: 100vh;
+}
+
+/* Animación del botón de reproducir/pausar */
+@keyframes pulseButton {
+  0% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.1); opacity: 0.8; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.play-button-large {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(0,0,0,0.6);
+  color: white;
+  border: 2px solid white;
+  border-radius: 50%;
+  width: 64px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: pulseButton 2s infinite;
+  z-index: 20;
+}
+
+/* Estado vacío del reproductor */
+.empty-player {
+  background: var(--nest-card-bg);
+  height: 240px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  color: var(--nest-text-secondary);
+  border-radius: 12px;
+  border: 1px solid var(--nest-border);
+}
+
+.empty-player svg {
+  color: var(--nest-accent);
+  margin-bottom: 16px;
+}
+
+/* Mostrar controles en dispositivos móviles */
+@media (max-width: 768px) {
+  .video-controls-bar {
+    opacity: 1;
+    padding: 16px 8px 8px;
+  }
+  
+  .video-controls-bar button {
+    width: 32px;
+    height: 32px;
+  }
+  
+  .secondary-video-container {
+    bottom: 40px;
+    right: 8px;
+  }
+}
+
+/* Botón para alternar cámaras en vista PiP */
+.switch-camera-button {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: rgba(0,0,0,0.6);
+  color: white;
+  border: none;
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 20;
+  transition: all 0.2s;
+}
+
+.switch-camera-button:hover {
+  background: var(--nest-selected);
+}
+
+/* Estilo para botón de pantalla completa */
+.fullscreen-button {
+  position: relative;
+  z-index: 20;
+}
+
+/* Ajustes para dispositivos móviles */
+@media (max-width: 640px) {
+  .time-display {
+    font-size: 0.75rem;
+  }
+  
+  .video-controls-bar {
+    padding-bottom: 8px;
+  }
+  
+  .player-controls {
+    padding: 4px 8px;
+  }
+}

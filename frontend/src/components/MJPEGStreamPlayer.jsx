@@ -931,7 +931,7 @@ function MJPEGStreamPlayer({ streamUrl, width = '100%', height = '100%', classNa
             cores: navigator.hardwareConcurrency || 4,
             
             // Optimizaciones de calidad y latencia
-            quality: hasSlowConnection || isLowPerformance ? 'low' : 'high',
+            quality: hasSlowConnection || isLowPerformance ? 'low' : 'medium',
             fps: hasSlowConnection ? 15 : (isLowPerformance ? 20 : 30),
             compression: hasSlowConnection ? 'high' : (isLowPerformance ? 'medium' : 'low'),
             

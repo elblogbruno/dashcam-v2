@@ -16,11 +16,17 @@ logger = logging.getLogger(__name__)
 
  
 try:
+    # Configurar entorno gpiozero antes de importar
+    os.environ['GPIOZERO_PIN_FACTORY'] = 'native'
+    
     import gpiozero
     import spidev
-    logger.info("LED Controller running in HARDWARE MODE")
-except ImportError:
-    logger.warning("Failed to import hardware libraries")
+    import gc
+    logger.info("LED Controller running in HARDWARE MODE with native pin factory")
+except ImportError as e:
+    logger.warning(f"Failed to import hardware libraries: {e}")
+    gpiozero = None
+    spidev = None
  
 
 # Configuración de LED para ReSpeaker 2mic HAT
@@ -74,8 +80,13 @@ class LEDController:
         # Si ya está inicializado, limpiar primero para evitar errores de pin en uso
         if self.initialized:
             self.cleanup()
+        
+        try:
+            # Verificar y configurar pin factory
+            from gpiozero import Device
+            current_factory = str(Device.pin_factory)
+            logger.info(f"Usando pin factory: {current_factory}")
             
-        try: 
             # Modo de hardware real
             logger.info(f"Initializing real LED controller with brightness {brightness}")
             # Encender alimentación a los LEDs
@@ -88,37 +99,49 @@ class LEDController:
             self.initialized = True
             return True
         except Exception as e:
-            logger.error(f"Error inicializando LEDs: {e}")
+            logger.error(f"Error inicializando LEDs: {e}", exc_info=True)
             return False
     
     def cleanup(self):
         """Limpiar y apagar los LEDs"""
         if not self.initialized:
             return
+        
+        logger.info("Iniciando limpieza de recursos LED")
             
         if self.animation_thread and self.animation_thread.is_alive():
+            logger.info("Deteniendo animación en curso")
             self.stop_animation.set()
             self.animation_thread.join(1.0)
             
         if self.leds:
             try:
                 # Apagar todos los LEDs
+                logger.info("Apagando todos los LEDs")
                 self.set_color((0, 0, 0))
                 self.leds.cleanup()
                 self.leds = None
             except Exception as e:
-                logger.error(f"Error limpiando LEDs: {e}")
+                logger.error(f"Error limpiando LEDs: {e}", exc_info=True)
             
         if self.led_power:
             try:
+                logger.info(f"Apagando y liberando GPIO {LEDS_GPIO}")
                 self.led_power.off()
+                
+                # Verificamos que no haya referencias circulares antes de cerrar
+                import gc
+                gc.collect()
+                
+                # Liberamos el recurso GPIO de manera segura
                 self.led_power.close()  # Liberar el recurso GPIO
                 self.led_power = None
             except Exception as e:
-                logger.error(f"Error limpiando GPIO: {e}")
+                logger.error(f"Error limpiando GPIO: {e}", exc_info=True)
             
         self.initialized = False
         self.running_animation = None
+        logger.info("Limpieza de recursos LED completada")
     
     def set_color(self, rgb, led_index=None):
         """Configurar un color para todos los LEDs o uno específico"""
@@ -370,9 +393,24 @@ class APA102:
     def cleanup(self):
         """Libera el dispositivo SPI; llame a este método al final"""
         try:
-            self.spi.close()  # Cerrar puerto SPI
+            # Intentamos apagar todos los LEDs antes de cerrar
+            try:
+                # Enviar un frame de 0s para apagar todos los LEDs
+                self.clock_start_frame()
+                data = [0] * (self.num_led * 4)  # 4 bytes por LED (inicio + RGB)
+                while data:
+                    self.spi.xfer2(data[:32])
+                    data = data[32:]
+                self.clock_end_frame()
+            except Exception:
+                pass  # Ignoramos errores al intentar apagar los LEDs
+                
+            # Cerrar puerto SPI
+            if hasattr(self, 'spi') and self.spi:
+                logging.info("Cerrando dispositivo SPI")
+                self.spi.close()
         except Exception as e:
-            logging.error(f"Error en cleanup de SPI: {e}")
+            logging.error(f"Error en cleanup de SPI: {e}", exc_info=True)
 
 
 # Endpoints para controlar los LEDs

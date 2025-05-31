@@ -1,0 +1,13 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"command": "cd /root/dashcam-v2/frontend && npm run dev",
+			"group": "test",
+			"isBackground": true,
+			"label": "Test Frontend Without WebRTC",
+			"problemMatcher": [],
+			"type": "shell"
+		}
+	]
+}

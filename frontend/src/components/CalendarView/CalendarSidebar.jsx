@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import Calendar from 'react-calendar';
 import { format } from 'date-fns';
-import { FaCalendarDay, FaClock, FaTimes } from 'react-icons/fa';
+import { FaCalendarDay, FaClock, FaTimes, FaChevronLeft, FaChevronRight } from 'react-icons/fa';
 import 'react-calendar/dist/Calendar.css';
 import './Calendar.css';
 
@@ -14,64 +14,76 @@ const CalendarSidebar = ({
   isMobileOpen = false,
   onMobileClose = () => {}
 }) => {
-  // Function to get tile content for calendar
+  /**
+   * Genera el contenido personalizado para cada celda del calendario
+   * @param {Date} date - Fecha de la celda
+   * @param {string} view - Vista actual del calendario
+   * @returns {JSX.Element|null} Contenido a renderizar o null
+   */
   const getTileContent = ({ date, view }) => {
-    // Only add content to month view
+    // Solo añadir contenido en la vista mensual
     if (view !== 'month') return null;
     
+    // Formatear la fecha para buscar en los datos del calendario
     const dateStr = format(date, 'yyyy-MM-dd');
     const dayData = calendarData[dateStr];
     
+    // Si no hay datos para este día, no mostrar nada
     if (!dayData) return null;
     
+    // Verificar si hay eventos para mostrar
     const hasTrips = dayData.trips > 0;
     const hasExternalVideos = dayData.external_videos > 0;
+    const totalEvents = (dayData.trips || 0) + (dayData.external_videos || 0);
     
+    // Si no hay eventos, no mostrar nada
     if (!hasTrips && !hasExternalVideos) return null;
 
     return (
       <div className="flex flex-col items-center mt-1">
-        {hasTrips && (
-          <div className="flex items-center">
-            <div className="w-2 h-2 rounded-full bg-dashcam-500 mr-1"></div>
-            <span className="text-xs">{dayData.trips}</span>
-          </div>
+        {/* Indicador visual de eventos */}
+        {(hasTrips || hasExternalVideos) && (
+          <div className="event-dot"></div>
         )}
-        {hasExternalVideos && (
-          <div className="flex items-center mt-0.5">
-            <div className="w-2 h-2 rounded-full bg-green-500 mr-1"></div>
-            <span className="text-xs">{dayData.external_videos}</span>
-          </div>
+        {/* Mostrar contador solo cuando hay múltiples eventos */}
+        {totalEvents > 5 && (
+          <span className="text-xs mt-1 text-nest-text-secondary">
+            {totalEvents}
+          </span>
         )}
       </div>
     );
   };
 
   return (
-    <div className={`calendar-sidebar transition-all duration-300 ease-in-out
+    <div className={`calendar-sidebar transition-all duration-300 ease-in-out shadow-lg rounded-xl relative
                     ${isMobileOpen ? 'mobile-calendar-open' : 'hidden md:block'}`}>
-      <div className="card overflow-hidden shadow-xl rounded-xl border border-gray-200 bg-white hover:shadow-2xl transition-shadow duration-300 max-w-lg mx-auto md:mx-0">
-        {/* Añadir botón de cierre en móvil */}
-        {isMobileOpen && (
-          <button 
-            onClick={onMobileClose}
-            className="absolute top-4 right-4 z-10 p-2 bg-white bg-opacity-80 rounded-full text-gray-600 hover:text-red-500 md:hidden focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-dashcam-500 shadow-md"
-            aria-label="Cerrar calendario"
-          >
-            <FaTimes />
-          </button>
-        )}
-
-        <div className="bg-gradient-to-r from-dashcam-800 to-dashcam-600 text-white p-4 font-semibold text-lg">
-          <div className="flex items-center justify-between">
+      <div className="card max-w-lg mx-auto md:mx-0 bg-white rounded-xl overflow-hidden">
+        <div className="calendar-header bg-gradient-to-r from-dashcam-600 to-dashcam-700 text-white py-4 px-5">
+          <div className="flex items-center justify-between w-full">
             <div className="flex items-center">
-              <FaCalendarDay className="mr-2" /> 
-              <span>Calendario</span>
+              <FaCalendarDay className="mr-2 text-dashcam-100" /> 
+              <span className="font-semibold">Calendario</span>
             </div>
-            <span className="text-sm opacity-80">{format(date, 'MMMM yyyy')}</span>
+            <div className="flex items-center">
+              <span className="text-dashcam-100 font-medium mr-6">{format(date, 'MMMM yyyy')}</span>
+              
+              {/* Botón de cierre reposicionado */}
+              {isMobileOpen && (
+                <button 
+                  onClick={onMobileClose}
+                  className="close-button bg-dashcam-800 hover:bg-dashcam-900 text-white 
+                            rounded-full flex items-center justify-center transition-colors shadow-md"
+                  aria-label="Cerrar calendario"
+                  style={{ width: '28px', height: '28px' }}
+                >
+                  <FaTimes size={14} />
+                </button>
+              )}
+            </div>
           </div>
         </div>
-        <div className="p-4">
+        <div className="p-5">
           <Calendar 
             onChange={(newDate) => {
               setDate(newDate);
@@ -82,34 +94,36 @@ const CalendarSidebar = ({
             }} 
             value={date}
             tileContent={getTileContent}
-            className="w-full border-0"
+            className="w-full border-0 shadow-sm rounded-lg overflow-hidden"
             tileClassName={({ date, view }) => {
               const dateStr = format(date, 'yyyy-MM-dd');
               const dayData = calendarData[dateStr];
               if (dayData && (dayData.trips > 0 || dayData.external_videos > 0)) {
-                return 'has-events bg-dashcam-50'; 
+                return 'has-events bg-dashcam-50 hover:bg-dashcam-100 transition-colors'; 
               }
-              return null;
+              return 'hover:bg-gray-50 transition-colors';
             }}
+            prevLabel={<FaChevronLeft className="text-dashcam-600" />}
+            nextLabel={<FaChevronRight className="text-dashcam-600" />}
           />
           
           {/* Zona horaria */}
-          <div className="timezone-adjustment mt-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
-            <h3 className="text-sm font-medium text-gray-700 mb-2 flex items-center">
-              <FaClock className="mr-1 text-dashcam-600" /> Ajuste de zona horaria
+          <div className="timezone-adjustment mt-5 p-4 bg-gradient-to-r from-neutral-50 to-neutral-100 rounded-xl border border-gray-200 shadow-sm">
+            <h3 className="text-sm font-medium text-gray-700 mb-3 flex items-center">
+              <FaClock className="mr-2 text-dashcam-600" /> Ajuste de zona horaria
             </h3>
             <div className="timezone-control flex items-center justify-center">
               <button 
-                className="timezone-btn bg-dashcam-100 hover:bg-dashcam-200 text-dashcam-800 w-8 h-8 rounded-l-lg flex items-center justify-center transition-colors"
+                className="timezone-btn bg-dashcam-500 hover:bg-dashcam-600 text-white w-10 h-10 rounded-l-lg flex items-center justify-center transition-all shadow-sm"
                 onClick={() => setTimeZoneOffset(prev => Math.max(prev - 1, -12))}
               >
                 -
               </button>
-              <span className="timezone-value bg-white px-4 py-1 border-t border-b border-gray-200 font-medium">
+              <span className="timezone-value bg-white px-5 py-2 border-t border-b border-gray-200 font-medium shadow-inner text-dashcam-800">
                 {timeZoneOffset >= 0 ? '+' : ''}{timeZoneOffset}h
               </span>
               <button 
-                className="timezone-btn bg-dashcam-100 hover:bg-dashcam-200 text-dashcam-800 w-8 h-8 rounded-r-lg flex items-center justify-center transition-colors"
+                className="timezone-btn bg-dashcam-500 hover:bg-dashcam-600 text-white w-10 h-10 rounded-r-lg flex items-center justify-center transition-all shadow-sm"
                 onClick={() => setTimeZoneOffset(prev => Math.min(prev + 1, 12))}
               >
                 +
@@ -117,17 +131,17 @@ const CalendarSidebar = ({
             </div>
           </div>
           
-          {/* Legend */}
-          <div className="mt-4 flex flex-col items-center justify-center bg-gray-50 p-3 rounded-lg border border-gray-200">
-            <div className="text-sm text-gray-700 font-medium mb-2">Leyenda</div>
-            <div className="flex items-center justify-center space-x-4">
+          {/* Leyenda */}
+          <div className="mt-5 flex flex-col items-center justify-center bg-gradient-to-r from-neutral-50 to-neutral-100 p-4 rounded-xl border border-gray-200 shadow-sm">
+            <div className="text-sm text-gray-700 font-medium mb-3">Leyenda</div>
+            <div className="flex items-center justify-center space-x-6">
               <div className="flex items-center">
-                <div className="w-3 h-3 rounded-full bg-dashcam-500 mr-1 shadow-sm"></div>
-                <span className="text-xs">Viajes</span>
+                <div className="w-4 h-4 rounded-full bg-dashcam-500 mr-2 shadow-sm ring-2 ring-dashcam-100"></div>
+                <span className="text-xs font-medium text-dashcam-800">Viajes</span>
               </div>
               <div className="flex items-center">
-                <div className="w-3 h-3 rounded-full bg-green-500 mr-1 shadow-sm"></div>
-                <span className="text-xs">Externos</span>
+                <div className="w-4 h-4 rounded-full bg-green-500 mr-2 shadow-sm ring-2 ring-green-100"></div>
+                <span className="text-xs font-medium text-green-800">Externos</span>
               </div>
             </div>
           </div>

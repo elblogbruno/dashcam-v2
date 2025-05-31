@@ -12,83 +12,92 @@ import NotificationTester from './pages/NotificationTester'
 import MicLEDTester from './pages/MicLEDTester'
 import MapDiagnosticPanel from './components/Maps/MapDiagnosticPanel'
 import Navigation from './components/Navigation'
+import StatusBar from './components/StatusBar'
 import { NotificationCenter } from './components/Notifications'
 import { NavigationProvider } from './contexts/NavigationContext'
 import { showInfo, showSuccess, showError } from './services/notificationService'
+import webSocketManager from './services/WebSocketManager'
 
 function App() {
   const [isConnected, setIsConnected] = useState(false)
   const [recordingStatus, setRecordingStatus] = useState(false)
-  const [socket, setSocket] = useState(null)
   const location = useLocation()
+  
+  // Estado para tema oscuro/claro
+  const [darkMode, setDarkMode] = useState(() => {
+    // Comprobar preferencias guardadas
+    const savedMode = localStorage.getItem('dashcam-dark-mode');
+    if (savedMode !== null) {
+      return savedMode === 'true';
+    }
+    // Si no hay preferencia guardada, usar preferencia del sistema
+    return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  });
   
   // Determinar si la ruta actual es la página del mapa
   const isMapPage = location.pathname === '/map'
 
-  // Setup WebSocket connection for real-time updates
-  useEffect(() => {
-    const MAX_RECONNECT_ATTEMPTS = 10;
-    const BASE_RECONNECT_DELAY = 1000; // 1 segundo inicial
-    let reconnectAttempts = 0;
-    let reconnectTimeout = null;
+  // Función para alternar entre tema oscuro y claro
+  const toggleDarkMode = () => {
+    const newDarkMode = !darkMode;
+    setDarkMode(newDarkMode);
+    localStorage.setItem('dashcam-dark-mode', newDarkMode.toString());
     
-    function connectWebSocket() {
-      // Limpiar cualquier timeout pendiente
-      if (reconnectTimeout) {
-        clearTimeout(reconnectTimeout);
-        reconnectTimeout = null;
+    // Aplicar clase al elemento HTML para cambios de CSS
+    if (newDarkMode) {
+      document.documentElement.classList.add('dark-mode');
+    } else {
+      document.documentElement.classList.remove('dark-mode');
+    }
+  };
+
+  // Aplicar tema oscuro en el DOM cuando cambie el estado
+  useEffect(() => {
+    if (darkMode) {
+      document.documentElement.classList.add('dark-mode');
+    } else {
+      document.documentElement.classList.remove('dark-mode');
+    }
+    
+    // Escuchar cambios en las preferencias del sistema
+    const darkModeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    
+    const handleSystemThemeChange = (event) => {
+      // Solo cambiar automáticamente si no hay preferencia guardada
+      if (localStorage.getItem('dashcam-dark-mode') === null) {
+        setDarkMode(event.matches);
       }
-      
-      // Crear nueva conexión WebSocket
-      const ws = new WebSocket(`ws://${window.location.hostname}:8000/ws`);
-      
-      ws.onopen = () => {
-        console.log('WebSocket conectado correctamente');
-        setIsConnected(true);
-        setSocket(ws);
-        // Resetear los intentos de reconexión cuando se conecta correctamente
-        reconnectAttempts = 0;
-      };
-      
-      ws.onclose = (event) => {
-        console.log(`WebSocket desconectado con código: ${event.code}, razón: ${event.reason}`);
-        setIsConnected(false);
-        
-        // No intentar reconectar si el cierre fue limpio (código 1000)
-        if (event.code === 1000) {
-          console.log('Cierre limpio del WebSocket, no se intentará reconectar');
-          return;
-        }
-        
-        // Intentar reconectar con backoff exponencial
-        if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-          const delay = BASE_RECONNECT_DELAY * Math.pow(1.5, reconnectAttempts);
-          console.log(`Intentando reconexión ${reconnectAttempts + 1}/${MAX_RECONNECT_ATTEMPTS} en ${delay}ms`);
+    };
+    
+    darkModeMediaQuery.addEventListener('change', handleSystemThemeChange);
+    
+    return () => {
+      darkModeMediaQuery.removeEventListener('change', handleSystemThemeChange);
+    };
+  }, [darkMode]);
+
+  // Setup WebSocket connection for real-time updates using centralized manager
+  useEffect(() => {
+    // Configurar listener para manejar mensajes del WebSocket
+    const handleWebSocketEvent = (eventType, data) => {
+      switch (eventType) {
+        case 'connected':
+          setIsConnected(true);
+          break;
           
-          reconnectTimeout = setTimeout(() => {
-            reconnectAttempts++;
-            connectWebSocket();
-          }, delay);
-        } else {
-          console.error(`Se alcanzó el máximo de intentos de reconexión (${MAX_RECONNECT_ATTEMPTS})`);
-          showError('No se pudo conectar al servidor. Por favor, recarga la página o verifica tu conexión.', {
-            title: 'Error de conexión',
-            timeout: 0 // No se oculta automáticamente
-          });
-        }
-      };
-      
-      ws.onerror = (error) => {
-        console.error('Error en WebSocket:', error);
-        // No hacemos nada aquí, el evento onclose se disparará después
-      };
-      
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data)
+        case 'disconnected':
+          setIsConnected(false);
+          break;
+          
+        case 'error':
+          setIsConnected(false);
+          console.error('Error en WebSocket:', data);
+          break;
+          
+        case 'message':
           // Update recording status if included in the message
           if (data.recording !== undefined) {
-            setRecordingStatus(data.recording)
+            setRecordingStatus(data.recording);
           }
         
           // Procesar notificaciones del sistema
@@ -118,75 +127,82 @@ function App() {
                 break;
             }
           }
-        } catch (e) {
-          console.error('Error al procesar mensaje del WebSocket:', e)
-        }
-      };
-      
-      return ws;
-    }
+          break;
+          
+        case 'maxReconnectAttemptsReached':
+          showError('No se pudo conectar al servidor. Por favor, recarga la página o verifica tu conexión.', {
+            title: 'Error de conexión',
+            timeout: 0 // No se oculta automáticamente
+          });
+          break;
+      }
+    };
     
-    // Iniciar la conexión WebSocket
-    const wsConnection = connectWebSocket();
+    // Registrar listener con el WebSocket Manager
+    webSocketManager.addListener('app', handleWebSocketEvent);
     
-    // Limpieza al desmontar el componente
+    // Conectar al WebSocket si no está ya conectado
+    webSocketManager.connect().catch(error => {
+      console.error('Error conectando WebSocket:', error);
+    });
+    
+    // Actualizar estado inicial
+    setIsConnected(webSocketManager.isConnected());
+    
+    // Cleanup al desmontar el componente
     return () => {
-      if (reconnectTimeout) {
-        clearTimeout(reconnectTimeout);
-      }
-      if (wsConnection) {
-        wsConnection.close(1000, "Componente desmontado");
-      }
-    }
+      webSocketManager.removeListener('app');
+      // No desconectamos aquí porque otros componentes pueden estar usando la conexión
+    };
   }, [])
 
   return (
     <NavigationProvider>
-      <div className="flex flex-col min-h-screen max-w-full">
-        {/* Status bar - ocultar en la página de mapa ya que tiene su propia barra */}
-        {!isMapPage && (
-          <div className="bg-dashcam-800 text-white py-2 px-4 flex justify-between items-center z-50">
-            <h1 className="text-xl font-bold">Smart Dashcam</h1>
-            <div className="flex items-center space-x-3">
-              <div className="flex items-center">
-                <div className={`w-3 h-3 rounded-full mr-1 ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}></div>
-                <span className="text-sm">{isConnected ? 'Connected' : 'Disconnected'}</span>
-              </div>
-              <div className="flex items-center">
-                <div className={`w-3 h-3 rounded-full mr-1 ${recordingStatus ? 'bg-red-500 animate-pulse' : 'bg-gray-500'}`}></div>
-                <span className="text-sm">{recordingStatus ? 'Recording' : 'Standby'}</span>
+      <div className="flex min-h-screen max-w-full pb-16 md:pb-0 relative desktop-layout">
+        {/* Navigation for desktop - positioned at the left */}
+        <div className="z-50 hidden md:block desktop-sidebar">
+          <Navigation />
+        </div>
+
+        {/* Main content container with appropriate spacing for desktop sidebar */}
+        <div className="w-full desktop-content">
+          {/* Status bar - visible en todas las páginas, oculta solo en el mapa en desktop */}
+          <StatusBar 
+            isConnected={isConnected}
+            recordingStatus={recordingStatus}
+            isMapPage={isMapPage}
+            darkMode={darkMode}
+            onToggleDarkMode={toggleDarkMode}
+          />
+        
+          {/* Main content - usar estructura diferente para la página del mapa */}
+          {isMapPage ? (
+            <div className="map-page-container h-full w-full overflow-hidden md:h-screen">
+              <RealTimeMap />
+            </div>
+          ) : (
+            <div className="flex-grow overflow-auto w-full relative content-scrollable momentum-scroll desktop-main-container mobile-main-content">
+              <div className="content-wrapper w-full px-4 py-3 pb-20 md:pb-8"> 
+                <Routes>
+                  <Route path="/" element={<Dashboard darkMode={darkMode} />} />
+                  <Route path="/calendar" element={<Calendar />} />
+                  {/* Ruta del mapa renderizada fuera de este contenedor */}
+                  <Route path="/trips" element={<TripPlanner />} />
+                  <Route path="/landmarks-manager" element={<LandmarksManager />} />
+                  <Route path="/uploader" element={<BulkUploader />} />
+                  <Route path="/settings" element={<Settings />} />
+                  <Route path="/storage" element={<UnifiedStorageManager />} />
+                  <Route path="/notifications" element={<NotificationTester />} />
+                  <Route path="/mic-led-tester" element={<MicLEDTester />} />
+                  <Route path="/map-diagnostic" element={<MapDiagnosticPanel />} />
+                </Routes>
               </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
         
-        {/* Main content - usar estructura diferente para la página del mapa */}
-        {isMapPage ? (
-          <div className="map-page-container">
-            <RealTimeMap />
-          </div>
-        ) : (
-          <div className="flex-grow overflow-auto w-full relative">
-            <div className="content-wrapper w-full"> 
-              <Routes>
-                <Route path="/" element={<Dashboard />} />
-                <Route path="/calendar" element={<Calendar />} />
-                {/* Ruta del mapa renderizada fuera de este contenedor */}
-                <Route path="/trips" element={<TripPlanner />} />
-                <Route path="/landmarks-manager" element={<LandmarksManager />} />
-                <Route path="/uploader" element={<BulkUploader />} />
-                <Route path="/settings" element={<Settings />} />
-                <Route path="/storage" element={<UnifiedStorageManager />} />
-                <Route path="/notifications" element={<NotificationTester />} />
-                <Route path="/mic-led-tester" element={<MicLEDTester />} />
-                <Route path="/map-diagnostic" element={<MapDiagnosticPanel />} />
-              </Routes>
-            </div>
-          </div>
-        )}
-        
-        {/* Navigation bar - siempre visible, incluso en la página de mapa, pero con z-index alto */}
-        <div className="z-50 relative">
+        {/* Navigation bar - solo visible en móvil (oculto en desktop) */}
+        <div className="z-50 md:hidden">
           <Navigation />
         </div>
         
@@ -194,7 +210,7 @@ function App() {
         <NotificationCenter />
       </div>
     </NavigationProvider>
-  )
+  );
 }
 
-export default App
+export default App;

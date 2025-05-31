@@ -5,6 +5,7 @@ import threading
 import logging
 import queue
 from datetime import datetime
+from shutdown_control import should_continue_loop, register_thread
 
 logger = logging.getLogger(__name__)
 
@@ -53,11 +54,13 @@ class GPSReader:
         self.update_thread = threading.Thread(target=self._update_loop)
         self.update_thread.daemon = True
         self.update_thread.start()
+        register_thread(self.update_thread)
         
         # Iniciar hilo procesador de datos
         self.processor_thread = threading.Thread(target=self._process_data_loop)
         self.processor_thread.daemon = True
         self.processor_thread.start()
+        register_thread(self.processor_thread)
 
     def _init_gpsd(self):
         """Inicializa conexión usando gpsd"""
@@ -130,7 +133,8 @@ class GPSReader:
 
     def _update_loop(self):
         """Hilo principal de actualización de datos GPS"""
-        while self.running:
+        logger.info("GPS update loop started")
+        while should_continue_loop("gps_update"):
             try:
                 if not self.connected:
                     self._attempt_reconnect()
@@ -148,10 +152,13 @@ class GPSReader:
                 logger.error(f"Error in GPS update loop: {str(e)}")
                 self._handle_error()
                 time.sleep(1)
+        
+        logger.info("GPS update loop terminated")
 
     def _process_data_loop(self):
         """Hilo separado para procesar datos GPS"""
-        while self.running:
+        logger.info("GPS data processing loop started")
+        while should_continue_loop("gps_processor"):
             try:
                 # Consumir de la cola con timeout para no bloquear
                 try:
@@ -164,6 +171,8 @@ class GPSReader:
             except Exception as e:
                 logger.error(f"Error in GPS data processing: {str(e)}")
                 time.sleep(0.5)
+        
+        logger.info("GPS data processing loop terminated")
 
     def _read_gpsd(self):
         """Lee datos desde gpsd"""

@@ -24,29 +24,24 @@ const CameraSelector = ({ selectedCamera, onCameraChange }) => {
   ];
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-      <div className="bg-dashcam-50 p-2 border-b border-gray-200">
-        <h3 className="text-sm font-medium text-dashcam-700">Cámaras</h3>
-      </div>
-      <div className={`p-2 ${isMobile ? 'flex justify-center' : ''}`}>
-        <div className={`flex ${isMobile ? 'flex-row space-x-4' : 'flex-col space-y-2'}`}>
-          {options.map((option) => (
-            <button
-              key={option.id}
-              className={`
-                flex items-center p-2 rounded-lg transition-colors
-                ${selectedCamera === option.id ? 'bg-dashcam-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}
-                ${isMobile ? 'px-3 py-1.5' : 'w-full justify-center'}
-              `}
-              onClick={() => onCameraChange(option.id)}
-            >
-              <span className="mr-2">{option.icon}</span>
-              <span className={`${isMobile ? 'text-xs' : 'text-sm'}`}>{option.label}</span>
-            </button>
-          ))}
+    <div className="w-full">
+      <div className="flex justify-center gap-2 w-full">
+        {options.map((option) => (
+          <button
+            key={option.id}
+            className={`px-4 py-2 rounded-full flex items-center justify-center gap-2 transition-all ${
+              selectedCamera === option.id 
+                ? 'bg-nest-selected text-white' 
+                : 'bg-opacity-10 bg-white text-nest-text-primary border border-nest-border'
+            }`}
+            onClick={() => onCameraChange(option.id)}
+          >
+            <span>{option.icon}</span>
+            <span className={isMobile ? 'text-xs' : 'text-sm'}>{option.label}</span>
+          </button>
+        ))}
         </div>
-      </div>
-    </div>
+      </div> 
   );
 };
 

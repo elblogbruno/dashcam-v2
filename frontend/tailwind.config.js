@@ -6,7 +6,39 @@ export default {
   ],
   theme: {
     extend: {
+      fontFamily: {
+        sans: ['Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'Helvetica Neue', 'Arial', 'sans-serif'],
+      },
+      scale: {
+        '115': '1.15',
+      },
+      animation: {
+        'fadeIn': 'fadeIn 0.3s ease-out',
+        'slideInUp': 'slideInUp 0.3s ease-out',
+        'pulse': 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+      },
+      keyframes: {
+        fadeIn: {
+          '0%': { opacity: 0 },
+          '100%': { opacity: 1 },
+        },
+        slideInUp: {
+          '0%': { transform: 'translateY(10px)', opacity: 0 },
+          '100%': { transform: 'translateY(0)', opacity: 1 },
+        },
+      },
       colors: {
+        // Los colores de Nest Doorbell
+        'nest-background': '#202124',
+        'nest-card-bg': '#2e3033',
+        'nest-text-primary': '#ffffff',
+        'nest-text-secondary': 'rgba(255, 255, 255, 0.7)',
+        'nest-accent': '#8ab4f8',
+        'nest-border': 'rgba(255, 255, 255, 0.1)',
+        'nest-event-indicator': '#8ab4f8',
+        'nest-selected': '#4285f4',
+        'nest-timeline-bg': '#282a2d',
+        'nest-event-bg': '#2e3033',
         dashcam: {
           50: '#f0f9ff',
           100: '#e0f2fe',

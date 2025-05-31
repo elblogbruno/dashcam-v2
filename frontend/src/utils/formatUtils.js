@@ -9,13 +9,32 @@
  * @returns {string} - Representación legible de tamaño de almacenamiento
  */
 export function formatBytes(bytes, decimals = 2) {
-  if (!bytes || bytes === 0) return '0 Bytes';
+  // Comprobar si el valor es inválido o cero
+  if (bytes === undefined || bytes === null || isNaN(bytes) || bytes === 0) {
+    return '0 Bytes';
+  }
 
-  const k = 1024;
-  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  try {
+    // Asegurarse que bytes es un número
+    bytes = Number(bytes);
+    if (isNaN(bytes)) return '0 Bytes';
 
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(decimals)) + ' ' + sizes[i];
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
+    
+    // Verificar que bytes sea un número positivo antes de aplicar logaritmo
+    if (bytes <= 0) return '0 Bytes';
+    
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    
+    // Prevenir índice fuera de rango
+    if (i >= sizes.length) return 'Tamaño muy grande';
+    
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(decimals)) + ' ' + sizes[i];
+  } catch (error) {
+    console.error('Error al formatear bytes:', error);
+    return '0 Bytes';
+  }
 }
 
 /**

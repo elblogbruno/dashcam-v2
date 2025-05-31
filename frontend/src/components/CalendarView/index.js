@@ -4,6 +4,8 @@ import VideoTimeline from './VideoTimeline';
 import CameraSelector from './CameraSelector';
 import SelectedClipInfo from './SelectedClipInfo';
 import VideoFilters from './VideoFilters';
+import VerticalTimelineWithAutoplay from './VerticalTimelineWithAutoplay';
+import AutoplayNestTimeline from './AutoplayNestTimeline';
 
 export {
   CalendarSidebar,
@@ -11,5 +13,7 @@ export {
   VideoTimeline,
   CameraSelector,
   SelectedClipInfo,
-  VideoFilters
+  VideoFilters,
+  VerticalTimelineWithAutoplay,
+  AutoplayNestTimeline
 };

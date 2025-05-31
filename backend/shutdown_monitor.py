@@ -4,6 +4,7 @@ import logging
 import threading
 import subprocess
 import platform
+from shutdown_control import should_continue_loop, register_thread
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -22,44 +23,87 @@ class ShutdownMonitor:
     def _check_platform(self):
         """Check platform and available GPIO libraries"""
         system = platform.system()
+        logger.info(f"Detectado sistema operativo: {system}")
         
         if system == "Linux":
             # Check for Raspberry Pi and GPIO libraries
+            logger.info("Verificando bibliotecas GPIO disponibles...")
+            
             try:
                 # Try to import RPi.GPIO first
                 import RPi.GPIO as GPIO
+                # Verificar versión
+                gpio_version = getattr(GPIO, "VERSION", "desconocida")
+                logger.info(f"Encontrada biblioteca RPi.GPIO versión {gpio_version}")
+                
                 self.gpio_lib = "RPi.GPIO"
                 self.GPIO = GPIO
-                logger.info("Using RPi.GPIO for shutdown monitoring")
+                logger.info(f"Utilizando RPi.GPIO para monitoreo de apagado en pin {self.gpio_pin} (BCM)")
                 return
-            except (ImportError, ModuleNotFoundError):
+            except (ImportError, ModuleNotFoundError) as e:
+                logger.info(f"RPi.GPIO no disponible: {e}")
+                
                 try:
                     # Try gpiozero as alternative
                     from gpiozero import Button
+                    import gpiozero
+                    # Verificar versión
+                    gpiozero_version = getattr(gpiozero, "__version__", "desconocida")
+                    logger.info(f"Encontrada biblioteca gpiozero versión {gpiozero_version}")
+                    
+                    # Configurar explícitamente el backend y modo GPIO si está disponible
+                    import os
+                    os.environ['GPIOZERO_PIN_FACTORY'] = 'native'
+                    logger.info("Configurado GPIOZERO_PIN_FACTORY=native")
+                    
                     self.gpio_lib = "gpiozero"
                     self.power_button = Button(self.gpio_pin)
-                    logger.info("Using gpiozero for shutdown monitoring")
+                    
+                    # Verificar pin factory actual
+                    from gpiozero import Device
+                    pin_factory = str(Device.pin_factory)
+                    logger.info(f"Utilizando gpiozero con pin factory: {pin_factory} para monitoreo en pin {self.gpio_pin}")
                     return
-                except (ImportError, ModuleNotFoundError):
-                    logger.warning("No GPIO library found. Using mock mode for shutdown monitoring.")
+                except (ImportError, ModuleNotFoundError) as e:
+                    logger.warning(f"gpiozero no disponible: {e}")
+                except Exception as e:
+                    logger.warning(f"Error inicializando gpiozero: {str(e)}")
         
         # If we get here, no GPIO library is available or not on Linux
         self.gpio_lib = None
         self.mock_mode = True
-        logger.warning(f"No GPIO support on {system}. Using mock shutdown monitoring mode.")
+        logger.warning(f"No se ha detectado soporte GPIO en {system}. Usando modo de simulación para monitoreo de apagado.")
         
+    def _configure_gpio_environment(self):
+        """Configurar entorno para GPIO antes de iniciar el monitoreo"""
+        if self.gpio_lib == "gpiozero":
+            try:
+                # Configurar variables de entorno para gpiozero
+                import os
+                # Usar el backend nativo por defecto para evitar problemas con RPi.GPIO
+                os.environ['GPIOZERO_PIN_FACTORY'] = 'native'
+                logger.info("Configurado entorno para gpiozero con pin factory: native")
+            except Exception as e:
+                logger.error(f"Error configurando entorno gpiozero: {str(e)}")
+    
     def start_monitoring(self):
         """Start monitoring for power loss"""
         if self.running:
             logger.warning("Shutdown monitor is already running")
             return False
+        
+        # Configurar entorno GPIO
+        self._configure_gpio_environment()
             
         self.running = True
         
         # Start monitoring in a separate thread
-        self.monitor_thread = threading.Thread(target=self._monitor_power)
+        self.monitor_thread = threading.Thread(target=self._monitor_power, name="ShutdownMonitorThread")
         self.monitor_thread.daemon = True
         self.monitor_thread.start()
+        
+        # Registrar el thread en el sistema de control
+        register_thread(self.monitor_thread)
         
         logger.info("Started shutdown monitoring")
         return True
@@ -115,15 +159,27 @@ class ShutdownMonitor:
         elif self.gpio_lib == "gpiozero":
             # Using gpiozero library
             try:
+                # Aseguramos que gpiozero se inicialice correctamente
+                logger.info(f"Configurando gpiozero para monitorear pin {self.gpio_pin}")
+                
+                # Re-inicializar el botón si es necesario
+                if not hasattr(self, 'power_button') or self.power_button is None:
+                    from gpiozero import Button
+                    self.power_button = Button(self.gpio_pin)
+                
                 # Set up pin monitoring with callback
                 self.power_button.when_pressed = self._power_button_pressed
+                logger.info("Monitoreo con gpiozero configurado correctamente")
                 
                 # Keep thread alive
-                while self.running:
+                while self.running and should_continue_loop("shutdown_monitor"):
                     time.sleep(1)
                     
             except Exception as e:
                 logger.error(f"Error in gpiozero monitoring: {str(e)}")
+                # Si hay un error con gpiozero, volvemos al modo simulado
+                self.mock_mode = True
+                self._mock_monitor()
                 
     def _power_button_pressed(self):
         """Callback for gpiozero when power button is pressed (power loss)"""
@@ -134,7 +190,7 @@ class ShutdownMonitor:
         """Mock power monitoring for testing"""
         logger.info("Mock power monitoring active. Use 'touch /tmp/trigger_shutdown' to simulate power loss.")
         
-        while self.running:
+        while self.running and should_continue_loop("shutdown_monitor"):
             # Check for existence of trigger file
             if os.path.exists("/tmp/trigger_shutdown"):
                 logger.info("Mock power loss detected! Triggering safe shutdown...")
@@ -181,11 +237,16 @@ class ShutdownMonitor:
         self.stop_monitoring()
         
         # Additional cleanup for GPIO if using RPi.GPIO
-        if hasattr(self, 'GPIO') and self.gpio_lib == "RPi.GPIO":
+        if self.gpio_lib == "RPi.GPIO" and hasattr(self, 'GPIO'):
             try:
+                # Aseguramos primero que el modo esté configurado antes de limpiar
+                if not hasattr(self.GPIO, '_mode') or self.GPIO._mode is None:
+                    self.GPIO.setmode(self.GPIO.BCM)
                 self.GPIO.cleanup()
-            except:
-                pass
+            except Exception as e:
+                logger.error(f"Error en la limpieza de GPIO: {str(e)}")
+        
+        # Para gpiozero, no es necesario hacer limpieza manual ya que lo hace automáticamente
 
     def stop(self):
         """Alias for stop_monitoring for API consistency"""

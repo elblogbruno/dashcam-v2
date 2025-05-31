@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { format } from 'date-fns';
-import { FaCalendarDay, FaVideo, FaFileDownload, FaMapMarkerAlt, FaCarSide, FaMobileAlt, FaClock, FaRoad, FaFilter, FaTags, FaCalendarAlt } from 'react-icons/fa';
+import { FaCalendarDay, FaVideo, FaFileDownload, FaMapMarkerAlt, FaCarSide, FaMobileAlt, FaClock, FaRoad, FaFilter, FaTags, FaCalendarAlt, FaPlayCircle } from 'react-icons/fa';
 import 'react-calendar/dist/Calendar.css';
 
 // Importamos componentes
@@ -11,11 +11,17 @@ import {
   VideoTimeline, 
   CameraSelector,
   SelectedClipInfo,
-  VideoFilters
+  VideoFilters,
+  AutoplayNestTimeline
 } from '../components/CalendarView';
 
-// Importamos CSS
-import '../components/CalendarView/Calendar.css';
+// Importamos el gestor de reproducción automática
+import { AutoplayTimelineManager } from '../components/CalendarView/AutoplayTimeline';
+
+// Importamos estilos consolidados para el calendario
+import '../components/CalendarView/calendar_core.css';
+import '../components/CalendarView/video_player.css';
+import '../components/CalendarView/responsive_fixes.css';
 
 function CalendarView() {
   // Estados
@@ -32,6 +38,14 @@ function CalendarView() {
   const [selectedClip, setSelectedClip] = useState(null);
   const [calendarOpen, setCalendarOpen] = useState(false);
   
+  // Estado para el autoplay
+  const [isAutoplayEnabled, setIsAutoplayEnabled] = useState(true);
+  const [scrollPosition, setScrollPosition] = useState(0);
+  
+  // Referencias para componentes DOM
+  const timelineRef = useRef(null);
+  const autoplayManagerRef = useRef(null);
+  
   // Nuevos estados para filtros
   const [filters, setFilters] = useState({
     showTrips: true,
@@ -41,6 +55,28 @@ function CalendarView() {
   });
   const [allTags, setAllTags] = useState([]);
   const [sourceOptions, setSourceOptions] = useState(['all', 'dashcam', 'external']);
+
+  // Función para preparar clips y asegurar que tienen los campos necesarios
+  const prepareVideoClips = (clips) => {
+    return clips.map(clip => {
+      // Asegurarse que el clip tenga un timestamp válido
+      if (!clip.timestamp) {
+        // Si no tiene timestamp, intentamos extraerlo del nombre del archivo
+        if (clip.road_video_file) {
+          const matches = clip.road_video_file.match(/(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})/);
+          if (matches && matches[1]) {
+            const dateStr = matches[1].replace(/_/g, ' ').replace(/-/g, ':');
+            clip.timestamp = new Date(`${dateStr}`).toISOString();
+          }
+        }
+        // Si aún no tiene timestamp, usamos la fecha actual
+        if (!clip.timestamp) {
+          clip.timestamp = new Date().toISOString();
+        }
+      }
+      return clip;
+    });
+  };
 
   // Función para obtener la URL correcta de un video
   const getVideoUrl = (videoPath) => {
@@ -73,7 +109,7 @@ function CalendarView() {
     
     // Para videos externos
     if (normalizedPath.startsWith('external/')) {
-      return `/api/videos/thumbnail/${normalizedPath.replace('external/', '')}`;
+      return `/api/videos/thumbnail/${normalizedPath}`;
     }
     
     // Para videos locales
@@ -86,6 +122,17 @@ function CalendarView() {
     // Limpiar video secundario al reproducir uno nuevo
     setSecondaryVideo(null);
   };
+
+  // Añadir clase al body para estilos específicos de calendario
+  useEffect(() => {
+    // Añadir la clase 'calendar-page' al body cuando se monte el componente
+    document.body.classList.add('calendar-page');
+    
+    // Eliminar la clase cuando se desmonte el componente
+    return () => {
+      document.body.classList.remove('calendar-page');
+    };
+  }, []);
 
   // Fetch calendar data on mount
   useEffect(() => {
@@ -145,8 +192,9 @@ function CalendarView() {
       // Imprimir videos externos para depuración
       console.log("Videos externos:", response.data.external_videos);
       
-      // Manejar los clips de video
-      setVideoClips(response.data.video_clips || []);
+      // Preparar y luego establecer clips de video
+      const preparedClips = prepareVideoClips(response.data.video_clips || []);
+      setVideoClips(preparedClips);
     } catch (error) {
       console.error('Error fetching trips:', error);
       setSelectedDayTrips([]);
@@ -278,329 +326,290 @@ function CalendarView() {
     }
   };
 
+  // Renderizado del componente
   return (
-    <div className="bg-gray-50 min-h-screen overflow-hidden pb-20">
-      <div className="flex justify-between items-center p-4 bg-white border-b shadow-sm">
-        <h1 className="text-xl font-medium text-dashcam-800 flex items-center">
-          <FaCalendarDay className="mr-2" /> 
-          <span className="hidden sm:inline">Calendario de Grabaciones</span>
-          <span className="sm:hidden">Calendario</span>
-        </h1>
+    <div className="nest-layout-container">
+      {/* Panel principal con el reproductor de video */}
+      <div className="nest-video-panel">
+        {/* Video Player ocupando espacio principal */}
+        <div className="nest-video-container w-full h-full">
+          <VideoPlayer 
+            videoSrc={selectedVideo}
+            secondaryVideoSrc={secondaryVideo}
+            isPictureInPicture={activeCamera === 'both' && secondaryVideo !== null}
+            onClose={handleClosePlayer}
+            isFullPlayer={true}
+            autoPlay={isAutoplayEnabled}
+          />
+        </div>
         
-        {/* Botón para mostrar calendario en móvil */}
-        <button 
-          onClick={() => setCalendarOpen(true)}
-          className="md:hidden bg-dashcam-100 hover:bg-dashcam-200 text-dashcam-800 px-3 py-2 rounded-lg flex items-center focus:outline-none focus:ring-2 focus:ring-dashcam-500 focus:ring-offset-2"
-        >
-          <FaCalendarAlt className="mr-1" /> 
-          <span className="text-sm">{format(date, 'dd/MM/yyyy')}</span>
-        </button>
+        {/* Información del clip seleccionado */}
+        {selectedClip && (
+          <SelectedClipInfo 
+            selectedClip={selectedClip}
+            getVideoUrl={getVideoUrl}
+            onClose={() => setSelectedClip(null)}
+          />
+        )}
+        
+        {/* Selector de cámara con estilo Nest */}
+        <div className="px-4 py-3">
+          <CameraSelector 
+            selectedCamera={activeCamera} 
+            onCameraChange={handleCameraChange} 
+          />
+        </div>
       </div>
       
-      <div className="calendar-view">
-        {/* Sidebar con calendario - ahora maneja clics en el backdrop */}
-        <CalendarSidebar 
-          date={date}
-          setDate={setDate}
-          calendarData={calendarData}
-          timeZoneOffset={timeZoneOffset}
-          setTimeZoneOffset={setTimeZoneOffset}
-          isMobileOpen={calendarOpen}
-          onMobileClose={() => setCalendarOpen(false)}
-        />
-        
-        {/* Contenido principal */}
-        <div className="calendar-main w-full overflow-hidden">
-          {/* Información del día seleccionado */}
-          <div className="card p-0 overflow-hidden shadow-md rounded-xl border border-gray-200 bg-white hover:shadow-lg transition-shadow duration-300 w-full">
-            <div className="bg-gradient-to-r from-dashcam-700 to-dashcam-600 text-white p-2 flex justify-between items-center">
-              <h2 className="text-base sm:text-lg font-semibold flex items-center">
-                <FaClock className="mr-2" />
-                <span className="hidden xs:inline">{format(date, 'MMMM d, yyyy')}</span>
-                <span className="xs:hidden">{format(date, 'dd/MM/yyyy')}</span>
-              </h2>
-              <div className="flex space-x-1 sm:space-x-2">
-                {externalVideos.length > 0 && (
-                  <div className="bg-green-500 text-white text-xs py-1 px-1 sm:px-2 rounded-md flex items-center whitespace-nowrap">
-                    <FaMobileAlt className="mr-0.5 sm:mr-1" />
-                    <span>{externalVideos.length}</span>
-                  </div>
-                )}
-                {(selectedDayTrips.length > 0) && (
-                  <button 
-                    className="px-2 sm:px-3 py-1 bg-dashcam-500 hover:bg-dashcam-600 text-white rounded-lg transition-all duration-200 flex items-center text-xs sm:text-sm font-medium shadow-md hover:shadow-lg transform hover:translate-y-[-1px]"
-                    onClick={() => generateSummary(format(date, 'yyyy-MM-dd'))}
-                    disabled={isLoading}
-                  >
-                    {isLoading ? (
-                      <span className="whitespace-nowrap">Procesando...</span>
-                    ) : (
-                      <>
-                        <span className="hidden sm:inline">Generar Resumen</span>
-                        <span className="sm:hidden">Generar</span>
-                      </>
-                    )}
-                  </button>
-                )}
-              </div>
-            </div>
+      {/* Panel de cabecera que contiene la fecha y los selectores */}
+      <div className="nest-header-panel">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-medium text-nest-text-primary">{format(date, 'EEEE, d MMMM')}</h2>
+            <div className="text-sm text-nest-text-secondary">{videoClips.length + externalVideos.length} eventos</div>
+          </div>
           
-            <div className="p-1 sm:p-2 overflow-x-hidden">
-              {/* Añadir el componente de filtros */}
-              {(externalVideos.length > 0 || selectedDayTrips.length > 0) && (
-                <VideoFilters 
-                  filters={filters}
-                  onFilterChange={handleFilterChange}
-                  allTags={allTags}
-                  sourceOptions={sourceOptions}
-                />
-              )}
-              
-              {isLoading ? (
-                <div className="py-4 text-center text-gray-500 animate-pulse">
-                  <div className="loader"></div>
-                  <p className="mt-2">Cargando grabaciones...</p>
+          <button 
+            onClick={() => setCalendarOpen(true)} 
+            className="bg-transparent border-none flex items-center gap-1">
+            <span className="text-nest-text-secondary">Cambiar día</span>
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+              <path fillRule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z"/>
+            </svg>
+          </button>
+        </div>
+        
+        {/* Sidebar con calendario - ahora flota sobre el contenido */}
+        {calendarOpen && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 z-40 flex items-center justify-center md:justify-end p-4" 
+               onClick={handleBackdropClick}>
+            <CalendarSidebar 
+              date={date}
+              setDate={setDate}
+              calendarData={calendarData}
+              timeZoneOffset={timeZoneOffset}
+              setTimeZoneOffset={setTimeZoneOffset}
+              isMobileOpen={calendarOpen}
+              onMobileClose={() => setCalendarOpen(false)}
+            />
+          </div>
+        )}
+      </div>
+      
+      {/* Panel lateral con línea de tiempo vertical y eventos */}
+      <div className="nest-timeline-panel">
+        <div className="p-3 border-b border-nest-border flex justify-between items-center">
+          <div className="flex items-center">
+            <FaClock className="text-nest-accent mr-2" />
+            <span className="text-nest-text-primary font-medium">Eventos</span>
+          </div>
+          <div className="flex gap-2">
+            {externalVideos.length > 0 && (
+              <div className="bg-nest-selected text-white text-xs py-1 px-2 rounded-full flex items-center whitespace-nowrap">
+                <FaMobileAlt className="mr-1" />
+                <span>{externalVideos.length}</span>
+              </div>
+            )}
+            {(selectedDayTrips.length > 0) && (
+              <button 
+                className="px-3 py-1 bg-nest-accent bg-opacity-90 hover:bg-opacity-100 text-white rounded-full transition-all duration-200 flex items-center text-xs"
+                onClick={() => generateSummary(format(date, 'yyyy-MM-dd'))}
+                disabled={isLoading}
+              >
+                {isLoading ? "Procesando..." : "Resumen"}
+              </button>
+            )}
+          </div>
+        </div>
+        
+        {/* Filtros de video */}
+        {(externalVideos.length > 0 || selectedDayTrips.length > 0) && (
+          <div className="p-3 border-b border-nest-border">
+            <VideoFilters 
+              filters={filters}
+              onFilterChange={handleFilterChange}
+              allTags={allTags}
+              sourceOptions={sourceOptions}
+            />
+          </div>
+        )}
+        
+        {isLoading ? (
+          <div className="nest-loading">
+            <div className="nest-spinner"></div>
+            <div>Cargando eventos...</div>
+          </div>
+        ) : (
+          <>
+            {videoClips.length === 0 && 
+             (!filters.showTrips || selectedDayTrips.length === 0) && 
+             (!filters.showExternalVideos || filteredExternalVideos.length === 0) ? (
+              <div className="nest-empty-view">
+                <FaVideo />
+                <div className="text-center">
+                  <p className="text-gray-500">No hay grabaciones para esta fecha {filters.tags.length > 0 || filters.videoSource !== 'all' ? 'con estos filtros' : ''}</p>
+                  <p className="text-gray-400 text-xs mt-1">Intenta seleccionar otro día o modificar los filtros</p>
                 </div>
-              ) : (
-                <div className="w-full overflow-hidden">
-                  {videoClips.length === 0 && 
-                   (!filters.showTrips || selectedDayTrips.length === 0) && 
-                   (!filters.showExternalVideos || filteredExternalVideos.length === 0) ? (
-                    <div className="py-4 text-center">
-                      <div className="text-gray-400 text-4xl mb-2">
-                        <FaVideo />
-                      </div>
-                      <p className="text-gray-500">No hay grabaciones para esta fecha {filters.tags.length > 0 || filters.videoSource !== 'all' ? 'con estos filtros' : ''}</p>
-                      <p className="text-gray-400 text-xs mt-1">Intenta seleccionar otro día o modificar los filtros</p>
-                    </div>
-                  ) : (
-                    <>
-                      {/* Fila para controles y reproductor de video */}
-                      <div className="flex flex-col w-full">
-                        {/* Reproductor de video y selector de cámara */}
-                        <div className="flex flex-col md:flex-row mb-3 gap-3 w-full">
-                          <div className="flex-grow w-full">
-                            <VideoPlayer 
-                              videoSrc={selectedVideo}
-                              secondaryVideoSrc={secondaryVideo}
-                              isPictureInPicture={activeCamera === 'both' && secondaryVideo !== null}
-                              isFullPlayer={false}
-                            />
+              </div>
+            ) : (
+              <div className="nest-timeline-content">
+                {/* Implementación del timeline vertical con autoplay al estilo Nest */}
+                {filters.showTrips && videoClips.length > 0 && (
+                  <AutoplayNestTimeline
+                    videoClips={videoClips}
+                    onSelectClip={handleSelectClip}
+                    getThumbnailUrl={getThumbnailUrl}
+                    autoplayEnabled={isAutoplayEnabled}
+                    emptyMessage="No hay grabaciones de video para esta fecha"
+                  />
+                )}
+                
+                {/* Trip recordings */}
+                {filters.showTrips && selectedDayTrips.length > 0 && (
+                  <div className="nest-section">
+                    <h3 className="nest-section-title">
+                      <FaCarSide className="nest-section-icon" />
+                      Viajes ({selectedDayTrips.length})
+                    </h3>
+                    <div className="nest-trips-grid">
+                      {selectedDayTrips.map((trip) => (
+                        <div key={trip.id} className="nest-trip-card">
+                          <div className="nest-trip-header">
+                            <div className="nest-trip-time">
+                              <FaClock className="nest-trip-icon" />
+                              {format(new Date(trip.start_time), 'h:mm a')}
+                              {trip.end_time && ` - ${format(new Date(trip.end_time), 'h:mm a')}`}
+                            </div>
+                            {trip.distance_km && (
+                              <div className="nest-trip-distance">
+                                <FaRoad className="nest-trip-icon-sm" />
+                                {trip.distance_km !== undefined ? trip.distance_km.toFixed(1) : '0.0'} km
+                              </div>
+                            )}
                           </div>
-                          
-                          {/* Selector de cámara - responsive */}
-                          <div className="w-full md:w-56 md:flex-shrink-0 flex flex-col gap-3">
-                            <CameraSelector 
-                              selectedCamera={activeCamera}
-                              onCameraChange={handleCameraChange}
-                            />
-                            
-                            {/* Información del clip seleccionado - solo en pantallas medianas y grandes */}
-                            <div className="hidden md:block flex-grow" style={{ minHeight: "280px" }}>
-                              <SelectedClipInfo 
-                                selectedClip={selectedClip}
-                                getVideoUrl={getVideoUrl}
-                              />
+                                  
+                                                            <div className="nest-trip-actions">
+                            <div>
+                              {trip.landmarks && trip.landmarks.length > 0 && (
+                                <div className="nest-trip-landmarks">
+                                  <FaMapMarkerAlt className="nest-landmark-icon" />
+                                  {trip.landmarks.length}
+                                </div>
+                              )}
+                            </div>
+                            <div className="nest-trip-buttons">
+                              {(trip.video_files && Array.isArray(trip.video_files) && trip.video_files.length > 0) ? (
+                                <button 
+                                  className="nest-button nest-button-video"
+                                  onClick={() => playVideo(trip.video_files[0])}
+                                >
+                                  <FaVideo className="nest-button-icon" /> Video
+                                </button>
+                              ) : (
+                                <span className="nest-no-video">No hay videos</span>
+                              )}
+                              {trip.summary_file && (
+                                <button 
+                                  className="nest-button nest-button-summary"
+                                  onClick={() => playVideo(trip.summary_file)}
+                                >
+                                  <FaFileDownload className="nest-button-icon" /> Resumen
+                                </button>
+                              )}
                             </div>
                           </div>
                         </div>
-                        
-                        {/* Información del clip seleccionado - visible en móvil */}
-                        {selectedClip && (
-                          <div className="md:hidden mb-3 w-full">
-                            <SelectedClipInfo 
-                              selectedClip={selectedClip}
-                              getVideoUrl={getVideoUrl}
-                              isMobile={true}
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                {/* Videos externos con estilo Nest */}
+                {filters.showExternalVideos && filteredExternalVideos.length > 0 && (
+                  <div className="nest-section">
+                    <h3 className="nest-section-title nest-section-title-external">
+                      <FaMobileAlt className="nest-section-icon" />
+                      Videos Externos ({filteredExternalVideos.length})
+                    </h3>
+                    <div className="nest-external-video-grid">
+                      {filteredExternalVideos.map((video) => (
+                        <div key={video.id} className="nest-external-video-card">
+                          <div className="nest-external-video-thumbnail">
+                            <img 
+                              src={getThumbnailUrl(video.file_path)}
+                              alt="Vista previa"
+                              className="nest-external-thumbnail-image"
+                              onError={(e) => {e.target.src = 'https://placehold.co/600x400'; e.target.onerror = null;}}
                             />
-                          </div>
-                        )}
-                        
-                        {filters.showTrips && videoClips.length > 0 && (
-                          <div className="flex items-start mb-3 w-full">
-                            <div className="w-full">
-                              <VideoTimeline 
-                                videoClips={videoClips}
-                                selectedDay={format(date, 'dd/MM/yyyy')}
-                                timeZoneOffset={timeZoneOffset}
-                                onSelectClip={handleSelectClip}
-                              />
+                            <div className="nest-external-play-overlay" onClick={() => playVideo(`external/${video.id}`)}>
+                              <FaPlayCircle className="nest-external-play-icon" />
+                            </div>
+                            <div className="nest-external-source-badge">
+                              <FaMobileAlt className="nest-external-source-icon" />
+                              <span>{video.source || 'Externo'}</span>
                             </div>
                           </div>
-                        )}
-                      
-                        {/* Trip recordings */}
-                        {filters.showTrips && selectedDayTrips.length > 0 && (
-                          <div className="mt-3 w-full">
-                            <h3 className="text-base font-semibold mb-2 text-dashcam-700 flex items-center border-b pb-1">
-                              <FaCarSide className="mr-2" />
-                              Viajes ({selectedDayTrips.length})
-                            </h3>
-                            <div className="grid grid-cols-1 gap-2 max-h-36 overflow-auto w-full">
-                              {selectedDayTrips.map((trip) => (
-                                <div key={trip.id} className="border border-gray-200 rounded-lg p-0 overflow-hidden hover:shadow-md transition-all duration-300 bg-white transform hover:translate-y-[-1px]">
-                                  <div className="bg-gradient-to-r from-gray-50 to-white p-1.5 sm:p-2 flex justify-between items-center border-b">
-                                    <div className="font-semibold text-dashcam-800 flex items-center text-xs sm:text-sm">
-                                      <FaClock className="mr-1 text-dashcam-600" />
-                                      {format(new Date(trip.start_time), 'h:mm a')}
-                                      {trip.end_time && ` - ${format(new Date(trip.end_time), 'h:mm a')}`}
-                                    </div>
-                                    {trip.distance_km && (
-                                      <div className="text-xs bg-dashcam-50 text-dashcam-800 flex items-center py-0.5 px-1 sm:px-2 rounded-full">
-                                        <FaRoad className="mr-0.5 sm:mr-1 text-dashcam-600" />
-                                        {trip.distance_km !== undefined ? trip.distance_km.toFixed(1) : '0.0'} km
-                                      </div>
-                                    )}
-                                  </div>
-                                  
-                                  <div className="p-1.5 flex justify-between items-center">
-                                    <div>
-                                      {trip.landmarks && trip.landmarks.length > 0 && (
-                                        <div className="text-xs text-gray-600 flex items-center">
-                                          <FaMapMarkerAlt className="mr-1 text-red-500 text-xs" />
-                                          {trip.landmarks.length}
-                                        </div>
-                                      )}
-                                    </div>
-                                    <div className="flex space-x-2">
-                                      {(trip.video_files && Array.isArray(trip.video_files) && trip.video_files.length > 0) ? (
-                                        <button 
-                                          className="text-dashcam-600 hover:text-dashcam-800 flex items-center text-xs bg-gray-100 hover:bg-gray-200 px-2 py-0.5 rounded-md transition-colors duration-200"
-                                          onClick={() => playVideo(trip.video_files[0])}
-                                        >
-                                          <FaVideo className="mr-1" /> Video
-                                        </button>
-                                      ) : (
-                                        <span className="text-xs text-gray-500">No hay videos</span>
-                                      )}
-                                      {trip.summary_file && (
-                                        <button 
-                                          className="text-dashcam-600 hover:text-dashcam-800 flex items-center text-xs bg-gray-100 hover:bg-gray-200 px-2 py-0.5 rounded-md transition-colors duration-200"
-                                          onClick={() => playVideo(trip.summary_file)}
-                                        >
-                                          <FaFileDownload className="mr-1" /> Resumen
-                                        </button>
-                                      )}
-                                    </div>
-                                  </div>
+                          
+                          <div className="nest-external-video-content">
+                            <div className="nest-external-video-header">
+                              <h4 className="nest-external-video-title">
+                                {video.original_filename || `Video-${video.id}`}
+                              </h4>
+                              {video.upload_time && (
+                                <div className="nest-external-video-time">
+                                  <FaClock className="nest-external-time-icon" />
+                                  {format(new Date(video.upload_time), 'h:mm a')}
                                 </div>
-                              ))}
+                              )}
                             </div>
-                          </div>
-                        )}
-                        
-                        {/* External videos - mejor diseño para móvil */}
-                        {filters.showExternalVideos && filteredExternalVideos.length > 0 && (
-                          <div className="mt-3 w-full">
-                            <h3 className="text-base font-semibold mb-2 text-green-700 flex items-center border-b pb-1">
-                              <FaMobileAlt className="mr-2" />
-                              Videos Externos ({filteredExternalVideos.length})
-                            </h3>
-                            <div className="grid grid-cols-1 xs:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3 w-full">
-                              {filteredExternalVideos.map((video) => (
-                                <div key={video.id} className="border border-gray-200 rounded-lg overflow-hidden hover:shadow-md transition-all duration-300 bg-white w-full">
-                                  <div className="bg-green-50 p-1.5 sm:p-2 border-b flex justify-between items-center">
-                                    <div className="font-semibold text-green-800 flex items-center text-xs sm:text-sm">
-                                      <FaMobileAlt className="mr-1 text-green-600" />
-                                      {video.source || 'Externo'}
-                                    </div>
-                                    {video.upload_time && (
-                                      <div className="text-xs text-gray-600">
-                                        {format(new Date(video.upload_time), 'h:mm a')}
-                                      </div>
-                                    )}
-                                  </div>
-                                  
-                                  <div className="p-0 flex flex-col">
-                                    {/* Miniatura del video externo */}
-                                    <div className="relative group cursor-pointer"
-                                         onClick={() => playVideo(`external/${video.id}`)}>
-                                      <img 
-                                        src={`/api/videos/thumbnail/external/${video.id}`}
-                                        alt="Vista previa"
-                                        className="w-full h-20 xs:h-24 sm:h-32 object-cover cursor-pointer group-hover:opacity-90 transition-opacity"
-                                        onError={(e) => {e.target.src = 'https://placehold.co/600x400'; e.target.onerror = null;}}
-                                      />
-                                      <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <div className="bg-black bg-opacity-50 rounded-full p-3">
-                                          <FaVideo className="text-white text-xl" />
-                                        </div>
-                                      </div>
-                                      
-                                      {/* Play button siempre visible en móvil */}
-                                      <div className="absolute inset-0 flex items-center justify-center sm:hidden">
-                                        <div className="bg-black bg-opacity-30 rounded-full p-2">
-                                          <FaVideo className="text-white text-lg" />
-                                        </div>
-                                      </div>
-                                    </div>
-                                    
-                                    <div className="p-2">
-                                      {/* Nombre del archivo original - truncado en móvil */}
-                                      <div className="text-xs sm:text-sm font-medium text-gray-800 truncate">
-                                        {video.original_filename || `Video-${video.id}`}
-                                      </div>
-                                      
-                                      {/* Etiquetas - optimizado para móvil */}
-                                      {video.tags && (
-                                        <div className="mt-1 flex flex-wrap gap-1">
-                                          <FaTags className="text-xs text-gray-400 mr-1 mt-1" />
-                                          <div className="flex flex-wrap gap-1 max-w-full overflow-hidden">
-                                            {video.tags.split(',').slice(0, 3).map((tag, idx) => (
-                                              <span key={idx} className="bg-gray-100 text-gray-600 text-xs px-1.5 py-0.5 rounded truncate max-w-[80px]">
-                                                {tag.trim()}
-                                              </span>
-                                            ))}
-                                            {video.tags.split(',').length > 3 && (
-                                              <span className="text-xs text-gray-500">+{video.tags.split(',').length - 3}</span>
-                                            )}
-                                          </div>
-                                        </div>
-                                      )}
-                                      
-                                      <div className="mt-2 flex justify-between items-center">
-                                        <div className="flex space-x-1">
-                                          {video.lat && video.lon && (
-                                            <div className="text-xs bg-blue-50 text-blue-700 py-0.5 px-1 rounded flex items-center">
-                                              <FaMapMarkerAlt className="mr-0.5 text-blue-500" />
-                                              <span className="hidden xs:inline">GPS</span>
-                                            </div>
-                                          )}
-                                        </div>
-                                        <button 
-                                          className="text-green-600 hover:text-green-800 flex items-center text-xs bg-green-50 hover:bg-green-100 px-2 py-1 rounded-md transition-colors duration-200"
-                                          onClick={() => playVideo(`external/${video.id}`)}
-                                        >
-                                          <FaVideo className="mr-1" /> <span className="hidden xs:inline">Reproducir</span><span className="xs:hidden">Ver</span>
-                                        </button>
-                                      </div>
-                                    </div>
-                                  </div>
+                            
+                            {/* Etiquetas mejoradas */}
+                            {video.tags && (
+                              <div className="nest-external-tags-section">
+                                <div className="nest-external-tags-wrapper">
+                                  {video.tags.split(',').slice(0, 3).map((tag, idx) => (
+                                    <span key={idx} className="nest-external-tag">
+                                      {tag.trim()}
+                                    </span>
+                                  ))}
+                                  {video.tags.split(',').length > 3 && (
+                                    <span className="nest-external-tag-more">
+                                      +{video.tags.split(',').length - 3} más
+                                    </span>
+                                  )}
                                 </div>
-                              ))}
+                              </div>
+                            )}
+                            
+                            <div className="nest-external-video-footer">
+                              <div className="nest-external-video-meta">
+                                {video.lat && video.lon && (
+                                  <div className="nest-external-location-badge">
+                                    <FaMapMarkerAlt className="nest-external-location-icon" />
+                                    <span>Ubicación GPS</span>
+                                  </div>
+                                )}
+                              </div>
+                              
+                              <button 
+                                className="nest-external-play-button"
+                                onClick={() => playVideo(`external/${video.id}`)}
+                              >
+                                <FaPlayCircle className="nest-external-play-button-icon" /> 
+                                <span>Reproducir</span>
+                              </button>
                             </div>
                           </div>
-                        )}
-                      </div>
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </>
+        )}
       </div>
-
-      {/* Video player modal - solo se muestra cuando se reproduce en modo completo */}
-      {selectedVideo && false && (
-        <VideoPlayer 
-          videoSrc={selectedVideo}
-          secondaryVideoSrc={secondaryVideo}
-          isPictureInPicture={activeCamera === 'both' && secondaryVideo !== null}
-          onClose={handleClosePlayer}
-          isFullPlayer={true}
-        />
-      )}
     </div>
   );
 }

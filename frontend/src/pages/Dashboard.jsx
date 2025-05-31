@@ -5,8 +5,10 @@ import {
   FaBars, FaTimes, FaDesktop, FaMobileAlt, FaRaspberryPi, 
   FaCar, FaMap, FaCalendarAlt, FaHdd, FaMapMarkerAlt, 
   FaRoute, FaArrowRight, FaTachometerAlt, FaStop, FaPlay,
-  FaClock, FaThermometerHalf, FaMemory, FaMicrochip, FaMicrophone, FaMicrophoneSlash
+  FaClock, FaThermometerHalf, FaMemory, FaMicrochip, FaMicrophone, FaMicrophoneSlash,
+  FaInfoCircle
 } from 'react-icons/fa'
+import webSocketManager from '../services/WebSocketManager'
 
 // Importar los componentes individuales del Dashboard
 import {
@@ -74,7 +76,7 @@ const RequestController = {
   }
 };
 
-function Dashboard() {
+function Dashboard({ darkMode }) {
   const navigate = useNavigate();
   const [location, setLocation] = useState({ lat: 0, lon: 0, speed: 0 })
   const [landmark, setLandmark] = useState(null)
@@ -169,14 +171,15 @@ function Dashboard() {
 
   // Manejador de errores de streaming
   const handleStreamError = (cameraType, error) => {
-    console.error(`Error de streaming ${streamingMode === 0 ? 'MJPEG' : 'WebRTC'} para cámara ${cameraType}:`, error);
+    console.error(`Error de streaming ${streamingMode === 0 ? 'MJPEG' : 'HTTP'} para cámara ${cameraType}:`, error);
     setWebrtcErrors(prev => ({
       ...prev,
       [cameraType]: true
     }));
     
     // Si el modo actual falla, volver al método de fallback (HTTP)
-    if (streamingMode === 0 || streamingMode === 1) {
+    // Solo hacer fallback a HTTP si estamos en MJPEG (0)
+    if (streamingMode === 0) {
       console.log(`Fallback a streaming HTTP para cámara ${cameraType}`);
       // Cambiar temporalmente al modo HTTP para esta sesión
       setStreamingMode(2);
@@ -387,83 +390,93 @@ function Dashboard() {
     }
   }, [])
 
-  // Setup WebSocket for real-time updates
+  // Setup WebSocket for real-time updates using centralized manager
   useEffect(() => {
-    let ws = null;
-    
-    // Retrasar la conexión WebSocket para no competir con otras solicitudes iniciales
-    const wsTimeout = setTimeout(() => {
-      try {
-        ws = new WebSocket(`ws://${window.location.hostname}:8000/ws`);
-        
-        ws.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data);
-            
-            // Check if this is the new status_update message type
-            if (data.type === 'status_update') {
-              // Update location and speed
-              if (data.location) {
-                setLocation(data.location);
-              }
-              
-              // Update nearby landmark
-              if (data.landmark) {
-                setLandmark(data.landmark);
-              }
-              
-              // Update recording status
-              if (data.recording !== undefined) {
-                setIsRecording(data.recording);
-              }
-              
-              // Update microphone status
-              if (data.mic_enabled !== undefined) {
-                setIsMicEnabled(data.mic_enabled);
-              }
-              
-              // Update camera status
-              if (data.camera_status) {
-                setCameraStatus(data.camera_status);
-              }
-              
-              // Update system stats with timestamp
-              if (data.system_stats) {
-                updateSystemStatus(data.system_stats);
-              }
-            } 
-            else {
-              // Handle legacy message format
-              if (data.location) {
-                setLocation(data.location);
-              }
-              
-              if (data.landmark) {
-                setLandmark(data.landmark);
-              }
-              
-              if (data.recording !== undefined) {
-                setIsRecording(data.recording);
-              }
-              
-              if (data.mic_enabled !== undefined) {
-                setIsMicEnabled(data.mic_enabled);
-              }
+    // Configurar listener para manejar mensajes del WebSocket
+    const handleWebSocketEvent = (eventType, data) => {
+      switch (eventType) {
+        case 'connected':
+          console.log('Dashboard: WebSocket conectado');
+          break;
+          
+        case 'disconnected':
+          console.log('Dashboard: WebSocket desconectado');
+          break;
+          
+        case 'error':
+          console.error('Dashboard: Error en WebSocket:', data);
+          break;
+          
+        case 'message':
+          // Check if this is the new status_update message type
+          if (data.type === 'status_update') {
+            // Update location and speed
+            if (data.location) {
+              setLocation(data.location);
             }
-          } catch (e) {
-            console.error('Error parsing WebSocket message:', e);
+            
+            // Update nearby landmark
+            if (data.landmark) {
+              setLandmark(data.landmark);
+            }
+            
+            // Update recording status
+            if (data.recording !== undefined) {
+              setIsRecording(data.recording);
+            }
+            
+            // Update microphone status
+            if (data.mic_enabled !== undefined) {
+              setIsMicEnabled(data.mic_enabled);
+            }
+            
+            // Update camera status
+            if (data.camera_status) {
+              setCameraStatus(data.camera_status);
+            }
+            
+            // Update system stats with timestamp
+            if (data.system_stats) {
+              updateSystemStatus(data.system_stats);
+            }
+          } 
+          else {
+            // Handle legacy message format
+            if (data.location) {
+              setLocation(data.location);
+            }
+            
+            if (data.landmark) {
+              setLandmark(data.landmark);
+            }
+            
+            if (data.recording !== undefined) {
+              setIsRecording(data.recording);
+            }
+            
+            if (data.mic_enabled !== undefined) {
+              setIsMicEnabled(data.mic_enabled);
+            }
           }
-        };
-      } catch (e) {
-        console.error('Error setting up WebSocket:', e);
+          break;
+          
+        default:
+          console.log('Dashboard: Evento WebSocket no manejado:', eventType, data);
+          break;
       }
-    }, 4000); // Retrasar 4 segundos
+    };
     
+    // Registrar listener con el WebSocket Manager
+    webSocketManager.addListener('dashboard', handleWebSocketEvent);
+    
+    // Conectar al WebSocket si no está ya conectado
+    webSocketManager.connect().catch(error => {
+      console.error('Error conectando WebSocket desde Dashboard:', error);
+    });
+    
+    // Cleanup al desmontar el componente
     return () => {
-      clearTimeout(wsTimeout);
-      if (ws) {
-        ws.close();
-      }
+      webSocketManager.removeListener('dashboard');
     };
   }, []);
   
@@ -835,31 +848,31 @@ function Dashboard() {
     return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`
   }
 
-  // Función para cambiar entre modos de streaming (MJPEG, WebRTC, HTTP)
+  // Función para cambiar entre modos de streaming (MJPEG, HTTP) - WebRTC DISABLED
   const toggleStreamingMode = () => {
-    // Rotar entre MJPEG (0) -> WebRTC (1) -> HTTP (2) -> MJPEG (0)
-    const newMode = (streamingMode + 1) % 3;
+    // Rotar entre MJPEG (0) -> HTTP (2) -> MJPEG (0) (saltando WebRTC)
+    const newMode = streamingMode === 0 ? 2 : 0; // Solo alternar entre MJPEG y HTTP
     
     // Limpieza específica según el modo anterior
-    // Si estábamos en WebRTC y cambiamos a otro modo, cerrar conexiones WebRTC
-    if (streamingMode === 1) {
-      // Limpiar cualquier conexión WebRTC existente
-      console.log('Cerrando conexiones WebRTC existentes...');
-      // Reset errores WebRTC al cambiar de modo
-      setWebrtcErrors({
-        road: false,
-        interior: false
-      });
-      
-      // Solicitar al servidor que cierre las conexiones WebRTC
-      try {
-        axiosInstance.post('/api/webrtc/close_connections').catch(err => {
-          console.error('Error cerrando conexiones WebRTC:', err);
-        });
-      } catch (e) {
-        console.error('Error enviando solicitud para cerrar WebRTC:', e);
-      }
-    }
+    // Si estábamos en WebRTC y cambiamos a otro modo, cerrar conexiones WebRTC - DISABLED
+    // if (streamingMode === 1) {
+    //   // Limpiar cualquier conexión WebRTC existente
+    //   console.log('Cerrando conexiones WebRTC existentes...');
+    //   // Reset errores WebRTC al cambiar de modo
+    //   setWebrtcErrors({
+    //     road: false,
+    //     interior: false
+    //   });
+    //   
+    //   // Solicitar al servidor que cierre las conexiones WebRTC
+    //   try {
+    //     axiosInstance.post('/api/webrtc/close_connections').catch(err => {
+    //       console.error('Error cerrando conexiones WebRTC:', err);
+    //     });
+    //   } catch (e) {
+    //     console.error('Error enviando solicitud para cerrar WebRTC:', e);
+    //   }
+    // }
     
     // Actualizar estado
     setStreamingMode(newMode);
@@ -983,35 +996,56 @@ function Dashboard() {
   };
 
   return (
-    <div className="p-2 sm:p-4 h-screen flex flex-col">
-      {/* Controles principales en la parte superior */}
-      <div className="flex justify-end mb-2 gap-2">
-        {/* Botón para alternar entre los modos de streaming */}
-        <StreamingModeSelector 
-          streamingMode={streamingMode} 
-          onToggleStreamingMode={toggleStreamingMode}
-          showStats={showPerformanceStats}
-          onToggleStats={togglePerformanceStats}
-        />
+    <div className={`p-3 sm:p-4 h-screen flex flex-col transition-colors duration-200 ${
+      darkMode 
+        ? 'bg-gray-900 text-white' 
+        : 'bg-gray-100 text-gray-900'
+    }`}>
+      <div className="flex justify-between items-center mb-4">
+        <h1 className={`text-xl sm:text-2xl font-bold flex items-center ${
+          darkMode ? 'text-blue-400' : 'text-dashcam-800'
+        }`}>
+          <FaTachometerAlt className={`mr-2 ${
+            darkMode ? 'text-blue-500' : 'text-dashcam-500'
+          }`} /> 
+          Dashboard
+        </h1>
         
-        {/* Toggle between normal and simplified view - solo visible en Raspberry Pi */}
-        {isRaspberryPi && (
-          <button 
-            onClick={toggleSimplifiedView}
-            className="flex items-center bg-gray-200 hover:bg-gray-300 text-gray-800 px-3 py-1 rounded-md text-sm"
-          >
-            {simplifiedView ? (
-              <>
-                <FaDesktop className="mr-1" /> Vista Normal
-              </>
-            ) : (
-              <>
-                <FaMobileAlt className="mr-1" /> Vista Simplificada
-              </>
-            )}
-            <FaRaspberryPi className="ml-2 text-red-600" />
-          </button>
-        )}
+        {/* Barra de acciones rápidas */}
+        <div className="flex items-center space-x-2">
+          {/* Botón para alternar entre los modos de streaming */}
+          <StreamingModeSelector 
+            streamingMode={streamingMode} 
+            onToggleStreamingMode={toggleStreamingMode}
+            showStats={showPerformanceStats}
+            onToggleStats={togglePerformanceStats}
+          />
+          
+          {/* Toggle between normal and simplified view - solo visible en Raspberry Pi */}
+          {isRaspberryPi && (
+            <button 
+              onClick={toggleSimplifiedView}
+              className={`flex items-center px-3 py-1 rounded-md text-sm transition-colors ${
+                darkMode 
+                  ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' 
+                  : 'bg-gray-200 hover:bg-gray-300 text-gray-800'
+              }`}
+              aria-label={simplifiedView ? 'Cambiar a vista normal' : 'Cambiar a vista simplificada'}
+              title={simplifiedView ? 'Cambiar a vista normal' : 'Cambiar a vista simplificada'}
+            >
+              {simplifiedView ? (
+                <>
+                  <FaDesktop className="mr-1" /> <span className="hidden sm:inline">Vista Normal</span>
+                </>
+              ) : (
+                <>
+                  <FaMobileAlt className="mr-1" /> <span className="hidden sm:inline">Vista Simplificada</span>
+                </>
+              )}
+              <FaRaspberryPi className="ml-2 text-red-600" />
+            </button>
+          )}
+        </div>
       </div>
       
       {simplifiedView ? (
@@ -1043,14 +1077,16 @@ function Dashboard() {
           handleTouchStart={handleTouchStart}
           handleTouchEnd={handleTouchEnd}
           formatBytes={formatBytes}
+          darkMode={darkMode}
         />
       ) : (
-        /* VISTA NORMAL - MEJORADA PARA RESPONSIVIDAD */
-        <div>
+        /* VISTA NORMAL - OPTIMIZADA PARA ESPACIO HORIZONTAL */
+        <div className="flex-1 overflow-y-auto">
           {/* System alerts */}
           <AlertBanner 
             errors={cameraStatus.errors} 
             onRefreshCameras={() => manualRefreshCamera('all')} 
+            darkMode={darkMode}
           />
           
           {/* Active planned trip card */}
@@ -1058,78 +1094,107 @@ function Dashboard() {
             <ActiveTripBanner 
               activeTrip={activeTrip} 
               onStartNavigation={startNavigation} 
+              darkMode={darkMode}
             />
           )}
           
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 sm:gap-4 mb-3 sm:mb-4">
-            {/* Main camera view */}
-            <CameraView 
-              cameraType="road"
-              streamingMode={streamingMode}
-              cameraStatus={cameraStatus}
-              cameraImages={cameraImages}
-              isRefreshing={isRefreshing}
-              onRefresh={manualRefreshCamera}
-              onError={handleStreamError}
-              title="Cámara Frontal"
-              showSpeedOverlay={true}
-              speedData={location}
-              landmarkData={landmark}
-              isRecording={isRecording}
-              showStats={showPerformanceStats}
-            />
+          {/* Layout optimizado para pantallas anchas - uso de grid y flex para mejor organización */}
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 mb-4">
+            {/* Lado izquierdo: Cámaras (ocupando 3/4 en dispositivos grandes) */}
+            <div className="lg:col-span-3 grid gap-4">
+              {/* Primera fila: Cámaras */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Main camera view */}
+                <CameraView 
+                  cameraType="road"
+                  streamingMode={streamingMode}
+                  cameraStatus={cameraStatus}
+                  cameraImages={cameraImages}
+                  isRefreshing={isRefreshing}
+                  onRefresh={manualRefreshCamera}
+                  onError={handleStreamError}
+                  title="Cámara Frontal"
+                  showSpeedOverlay={true}
+                  speedData={location}
+                  landmarkData={landmark}
+                  isRecording={isRecording}
+                  showStats={showPerformanceStats}
+                  darkMode={darkMode}
+                />
+                
+                {/* Interior camera view */}
+                <CameraView 
+                  cameraType="interior"
+                  streamingMode={streamingMode}
+                  cameraStatus={cameraStatus}
+                  cameraImages={cameraImages}
+                  isRefreshing={isRefreshing}
+                  onRefresh={manualRefreshCamera}
+                  onError={handleStreamError}
+                  title="Cámara Interior"
+                  showSpeedOverlay={false}
+                  showStats={showPerformanceStats}
+                  darkMode={darkMode}
+                />
+              </div>
+              
+              {/* Segunda fila: Estado del sistema e información de ubicación */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* System health */}
+                <SystemStatus 
+                  systemStatus={systemStatus}
+                  formatBytes={formatBytes}
+                  darkMode={darkMode}
+                />
+                
+                {/* Location information */}
+                <LocationInfo 
+                  location={location}
+                  landmark={landmark}
+                  darkMode={darkMode}
+                />
+              </div>
+            </div>
             
-            {/* Interior camera view */}
-            <CameraView 
-              cameraType="interior"
-              streamingMode={streamingMode}
-              cameraStatus={cameraStatus}
-              cameraImages={cameraImages}
-              isRefreshing={isRefreshing}
-              onRefresh={manualRefreshCamera}
-              onError={handleStreamError}
-              title="Cámara Interior"
-              showSpeedOverlay={false}
-              showStats={showPerformanceStats}
-            />
+            {/* Lado derecho: Panel de control (ocupando 1/4 en dispositivos grandes) */}
+            <div className="lg:col-span-1 flex flex-col gap-3">
+              {/* Recording controls - con mayor altura para mejor visibilidad */}
+              <div className="flex-grow" style={{ display: 'flex', flexDirection: 'column', minHeight: '450px' }}>
+                <RecordingControls 
+                  isRecording={isRecording}
+                  isMicEnabled={isMicEnabled}
+                  activeTrip={activeTrip}
+                  onStartRecording={startRecording}
+                  onStopRecording={stopRecording}
+                  onToggleMicrophone={toggleMicrophone}
+                  onStartNavigation={startNavigation}
+                  darkMode={darkMode}
+                />
+              </div>
+              
+              {/* Trip stats - con un tamaño más compacto */}
+              <div className="flex-shrink-0">
+                <TripStats 
+                  tripStats={tripStats} 
+                  darkMode={darkMode}
+                />
+              </div>
+            </div>
           </div>
           
-          {/* Controls & Quick stats row */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-2 sm:gap-4 mb-3 sm:mb-4">
-            {/* Recording controls */}
-            <RecordingControls 
-              isRecording={isRecording}
-              isMicEnabled={isMicEnabled}
-              activeTrip={activeTrip}
-              onStartRecording={startRecording}
-              onStopRecording={stopRecording}
-              onToggleMicrophone={toggleMicrophone}
-              onStartNavigation={startNavigation}
-            />
-            
-            {/* Trip stats */}
-            <TripStats tripStats={tripStats} />
-            
-            {/* Quick navigation */}
-            <QuickNavigation />
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 sm:gap-4 mb-3 sm:mb-4">
-            {/* System health */}
-            <SystemStatus 
-              systemStatus={systemStatus}
-              formatBytes={formatBytes}
-            />
-            
-            {/* Location information */}
-            <LocationInfo 
-              location={location}
-              landmark={landmark}
-            />
-          </div>
-          
-          <div className="text-xs text-gray-500 text-right mt-2"> 
-            Versión del Sistema: {systemStatus.version || 'Desconocida'}
+          <div className={`text-xs text-right mt-3 ${
+            darkMode ? 'text-gray-400' : 'text-gray-500'
+          }`}>
+            <span className="mr-2">
+              <FaInfoCircle className="inline mr-1" />
+              Versión del Sistema: {systemStatus.version || 'Desconocida'}
+            </span>
+            {systemStatus.uptime && (
+              <span>
+                <FaClock className="inline mr-1" />
+                Tiempo activo: {systemStatus.uptime}
+              </span>
+            )}
           </div>
         </div>
       )}

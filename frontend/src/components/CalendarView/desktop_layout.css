@@ -1,0 +1,29 @@
+/* Ajustes específicos para el layout de desktop con navegación lateral */
+
+@media (min-width: 768px) {
+  /* Cuando estamos en la página de calendario */
+  body.calendar-page {
+    overflow-x: hidden;
+  }
+  
+  /* Asegurar que todos los contenedores respeten el espacio de navegación */
+  body.calendar-page .nest-layout-container {
+    margin-left: 80px;
+    width: calc(100vw - 80px);
+    max-width: calc(100vw - 80px);
+    position: relative;
+    left: 0;
+  }
+  
+  /* Evitar que elementos con position fixed interfieran */
+  body.calendar-page .fixed {
+    left: 80px;
+    width: calc(100vw - 80px);
+  }
+  
+  /* Ajustar modales y overlays */
+  body.calendar-page .fixed.inset-0 {
+    left: 0;
+    width: 100vw;
+  }
+}

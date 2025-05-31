@@ -1,0 +1,37 @@
+/* 
+ * Este archivo contiene ajustes específicos para la aplicación
+ * que garantizan la compatibilidad entre la barra de estado y el contenido
+ */
+
+/* En dispositivos móviles, añadimos margen superior para el contenido de la página Calendar */
+@media (max-width: 767px) {
+  body.calendar-page .desktop-content {
+    /* Ajuste para evitar que el contenido quede detrás de la barra de estado */
+    padding-top: 0 !important;
+  }
+  
+  body.calendar-page .content-wrapper {
+    /* Eliminar padding en la página del calendario */
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  
+  body.calendar-page .safe-area-top {
+    /* Garantizar que la barra de estado ocupe el ancho completo y tenga z-index correcto */
+    width: 100% !important;
+    z-index: 50 !important;
+    position: fixed !important;
+    top: 0 !important;
+  }
+  
+  /* Ajuste para el reproductor de video en la página de calendario */
+  body.calendar-page .video-player-container {
+    margin-top: 0 !important;
+  }
+  
+  /* Asegurar que toda la página del calendario tenga el estilo correcto */
+  body.calendar-page .content-scrollable {
+    padding-top: 0 !important;
+    margin-top: 0 !important;
+  }
+}

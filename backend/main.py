@@ -9,6 +9,9 @@ import sys
 import logging
 from datetime import datetime
 from typing import Set, Dict, Optional
+from fastapi_profiler import PyInstrumentProfilerMiddleware
+from shutdown_control import should_continue_loop, register_task, shutdown_controller
+
 
 # Configurar logging más detallado
 logging.basicConfig(
@@ -55,6 +58,9 @@ try:
     from routes import landmark_images
     from routes import offline_maps
     from routes import geocode
+    
+    # Import WebRTC manager for proper shutdown - DISABLED
+    # from routes.webrtc_modules.webrtc_helper import webrtc_manager
     logger.info("Rutas importadas correctamente")
 except Exception as e:
     logger.error(f"Error importando rutas: {e}", exc_info=True)
@@ -72,6 +78,20 @@ try:
         allow_methods=["*"],  # Allows all methods
         allow_headers=["*"],  # Allows all headers
     )
+
+    # Add PyInstrument profiler middleware for performance monitoring
+    # logger.info("Añadiendo middleware PyInstrumentProfilerMiddleware...")
+    # app.add_middleware(
+    #     PyInstrumentProfilerMiddleware,
+    #     server_app=app,  # Required to output the profile on server shutdown
+    #     profiler_output_type="html",
+    #     is_print_each_request=False,  # Set to True to show request profile on
+    #                                 # stdout on each request
+    #     open_in_browser=False,  # Set to true to open your web-browser automatically
+    #                             # when the server shuts down
+    #     html_file_name="example_profile.html"  # Filename for output
+    # )
+    
     logger.info("Middleware CORS configurado")
 
     # Inicializa los componentes con manejo de excepciones
@@ -132,7 +152,7 @@ def set_global_recording_state(state: bool):
     global is_recording
     is_recording = state
     logger.info(f"Global recording state set to: {state}")
-
+    
 # Initialize route modules with the necessary components
 try:
     logger.info("Configurando módulos de rutas...")
@@ -147,6 +167,7 @@ try:
     import routes.cameras as cameras_routes  # Importar el nuevo módulo de rutas de cámaras
     import routes.camera_reset as camera_reset_routes  # Importar el módulo de reinicio de cámaras
     import routes.kml_parser as kml_parser_routes  # Importar el nuevo módulo de rutas de KML
+    import routes.file_explorer as file_explorer_routes  # Importar el módulo de explorador de archivos
     
     # Set up shared components in the route modules
     recording_routes.camera_manager = camera_manager
@@ -173,9 +194,9 @@ try:
     # Configurar el módulo de reinicio de cámaras
     camera_reset_routes.camera_manager = camera_manager
     
-    # Configurar el módulo de WebRTC
-    import routes.webrtc as webrtc_routes
-    webrtc_routes.camera_manager = camera_manager
+    # Configurar el módulo de WebRTC - DISABLED
+    # import routes.webrtc as webrtc_routes
+    # webrtc_routes.camera_manager = camera_manager
     
     # Configurar el módulo de streaming MJPEG
     import routes.mjpeg_stream as mjpeg_stream_routes
@@ -200,6 +221,9 @@ try:
     
     # Initialize KML parser routes
     kml_parser_routes.landmark_checker = landmark_checker
+    
+    # Initialize file explorer routes
+    file_explorer_routes.disk_manager = disk_manager
     kml_parser_routes.planned_trips = trip_planner_routes.planned_trips
     kml_parser_routes.config = config
     
@@ -271,23 +295,52 @@ def initialize_settings_subscriptions():
     )
     logger.info("Suscripciones de configuración inicializadas")
 
-# WebSocket connections for real-time updates
+# WebSocket connections for real-time updates with connection deduplication
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
+    
+    # Check for duplicate connections from the same client
+    client_info = f"{websocket.client.host}:{websocket.client.port}"
+    
+    # Remove any stale connections from the same client
+    stale_connections = []
+    for existing_ws in list(connected_clients):
+        try:
+            # Try to ping existing connection to check if it's alive
+            await existing_ws.ping()
+        except Exception:
+            # Connection is stale, mark for removal
+            stale_connections.append(existing_ws)
+    
+    # Remove stale connections
+    for stale_ws in stale_connections:
+        connected_clients.discard(stale_ws)
+        logger.info(f"Removed stale WebSocket connection")
+    
+    # Add new connection
     connected_clients.add(websocket)
-    logger.info(f"Nueva conexión WebSocket. Total de clientes: {len(connected_clients)}")
+    logger.info(f"Nueva conexión WebSocket desde {client_info}. Total de clientes: {len(connected_clients)}")
     
     try:
-        while True:
-            # Keep the connection alive
-            await websocket.receive_text()
+        while should_continue_loop("websocket"):
+            # Keep the connection alive with heartbeat handling
+            try:
+                message = await asyncio.wait_for(websocket.receive_text(), timeout=30.0)
+                # Handle heartbeat or other client messages
+                if message == "ping":
+                    await websocket.send_text("pong")
+            except asyncio.TimeoutError:
+                # Send a ping to check if connection is still alive
+                await websocket.ping()
     except Exception as e:
-        logger.info(f"Cliente WebSocket desconectado: {str(e)}")
-        # Client disconnected
+        logger.info(f"Cliente WebSocket desde {client_info} desconectado: {str(e)}")
+    finally:
+        # Ensure cleanup when connection ends
         try:
             if websocket in connected_clients:
-                connected_clients.remove(websocket)
+                connected_clients.discard(websocket)
+                logger.info(f"WebSocket connection from {client_info} cleaned up. Remaining: {len(connected_clients)}")
         except Exception as ex:
             logger.warning(f"Error al eliminar WebSocket de connected_clients: {str(ex)}")
 
@@ -295,12 +348,17 @@ async def websocket_endpoint(websocket: WebSocket):
 @app.on_event("startup")
 async def startup_event():
     logger.info("Evento de inicio ejecutándose...")
+    
+    # Configurar el controlador de cierre
+    shutdown_controller.setup_signal_handlers()
+    
     # Initialize settings subscriptions
     initialize_settings_subscriptions()
     
     # Start background tasks
     logger.info("Iniciando tarea de actualización de ubicación...")
-    asyncio.create_task(update_location_task())
+    location_task = asyncio.create_task(update_location_task())
+    register_task(location_task, "location_updates")
     
     # Start the shutdown monitor in a separate thread
     logger.info("Iniciando monitor de apagado...")
@@ -308,16 +366,17 @@ async def startup_event():
     
     # Check for planned trips that should start automatically
     logger.info("Verificando viajes programados para hoy...")
-    asyncio.create_task(check_scheduled_trips())
+    trips_task = asyncio.create_task(check_scheduled_trips())
+    register_task(trips_task, "scheduled_trips")
     
-    # Initialize WebRTC module
-    logger.info("Inicializando módulo WebRTC...")
-    try:
-        from routes.webrtc import initialize_webrtc
-        await initialize_webrtc()
-        logger.info("✅ Módulo WebRTC inicializado correctamente")
-    except Exception as e:
-        logger.error(f"❌ Error inicializando WebRTC: {e}", exc_info=True)
+    # Initialize WebRTC module - DISABLED
+    # logger.info("Inicializando módulo WebRTC...")
+    # try:
+    #     from routes.webrtc import initialize_webrtc
+    #     await initialize_webrtc()
+    #     logger.info("✅ Módulo WebRTC inicializado correctamente")
+    # except Exception as e:
+    #     logger.error(f"❌ Error inicializando WebRTC: {e}", exc_info=True)
     
     logger.info("Evento de inicio completado")
 
@@ -356,7 +415,7 @@ async def update_location_task():
     global current_location, active_landmark, is_recording, landmark_announcements, last_announcement_time
     logger.info("Tarea de actualización de ubicación iniciada")
     
-    while True:
+    while should_continue_loop("location"):
         try:
             # Update GPS location
             location = gps_reader.get_location()
@@ -400,7 +459,7 @@ async def update_location_task():
                 from routes.system import get_system_stats
                 system_stats = get_system_stats()
                     
-                # Broadcast updates to all connected clients
+                # Broadcast updates to all connected clients with improved error handling
                 message = {
                     "type": "status_update",
                     "location": current_location,
@@ -410,16 +469,39 @@ async def update_location_task():
                     "system_stats": system_stats
                 }
                 
+                # Send messages to clients with connection validation
+                clients_to_remove = []
+                successful_sends = 0
+                
                 for client in list(connected_clients):
                     try:
-                        await client.send_json(message)
+                        # Check if client is still connected before sending
+                        if client.client_state.name == "DISCONNECTED":
+                            clients_to_remove.append(client)
+                            continue
+                            
+                        await asyncio.wait_for(client.send_json(message), timeout=1.0)
+                        successful_sends += 1
+                    except asyncio.TimeoutError:
+                        logger.warning(f"Timeout enviando mensaje a cliente WebSocket")
+                        clients_to_remove.append(client)
                     except Exception as e:
                         logger.warning(f"Error enviando actualización a cliente WebSocket: {str(e)}")
-                        connected_clients.remove(client)
+                        clients_to_remove.append(client)
+                
+                # Remove failed clients
+                for client in clients_to_remove:
+                    connected_clients.discard(client)
+                
+                if clients_to_remove:
+                    logger.info(f"Removed {len(clients_to_remove)} failed WebSocket connections. Active: {len(connected_clients)}")
+                    
         except Exception as e:
             logger.error(f"Error en tarea de actualización de ubicación: {str(e)}", exc_info=True)
             
         await asyncio.sleep(1)  # Update every second
+    
+    logger.info("🛑 Tarea de actualización de ubicación terminada")
 
 try:
     # Mount the static frontend files
@@ -443,6 +525,13 @@ try:
     os.makedirs(thumbnails_dir, exist_ok=True)
     app.mount("/thumbnails", StaticFiles(directory=thumbnails_dir), name="thumbnails")
     logger.info(f"Directorio de miniaturas montado desde: {thumbnails_dir}")
+    
+    # Mount offline maps directory for MBTiles access
+    logger.info("Montando directorio de mapas offline...")
+    offline_maps_dir = os.path.join(config.data_path, "offline_maps")
+    os.makedirs(offline_maps_dir, exist_ok=True)
+    app.mount("/data/offline_maps", StaticFiles(directory=offline_maps_dir), name="offline_maps")
+    logger.info(f"Directorio de mapas offline montado desde: {offline_maps_dir}")
 except Exception as e:
     logger.error(f"Error montando archivos estáticos: {e}", exc_info=True)
 
@@ -450,6 +539,17 @@ except Exception as e:
 @app.on_event("shutdown")
 async def shutdown_event():
     logger.info("Evento de apagado ejecutándose...")
+    
+    # Solicitar cierre ordenado del sistema
+    shutdown_controller.request_shutdown()
+    
+    # Cancelar todas las tasks registradas
+    logger.info("Cancelando todas las tasks asyncio registradas...")
+    await shutdown_controller.cancel_all_tasks(timeout=3.0)
+    
+    # Detener todos los threads registrados
+    logger.info("Deteniendo todos los threads registrados...")
+    shutdown_controller.stop_all_threads(timeout=2.0)
     
     # Cerrar los clientes WebSocket de forma ordenada
     for websocket in list(connected_clients):
@@ -522,40 +622,60 @@ async def shutdown_event():
     except Exception as e:
         logger.error(f"Error al limpiar HDDCopyModule: {e}")
     
+    # Cleanup WebRTC manager explicitly - DISABLED
+    # try:
+    #     logger.info("Cerrando WebRTC manager...")
+    #     if webrtc_manager:
+    #         await webrtc_manager.shutdown()
+    #         logger.info("✅ WebRTC manager cerrado correctamente")
+    # except Exception as e:
+    #     logger.error(f"Error al cerrar WebRTC manager: {e}")
+    
     logger.info("Evento de apagado completado")
 
 async def close_all_streaming_connections():
     """Cierra todas las conexiones de streaming (WebRTC y MJPEG) al iniciar el servidor"""
     try:
-        # Cerrar conexiones WebRTC
-        logger.info("Cerrando todas las conexiones WebRTC existentes...")
-        import routes.webrtc as webrtc_routes
-        response = await webrtc_routes.close_webrtc_connections()
-        logger.info(f"Resultado de limpieza WebRTC: {response}")
+        # Cerrar conexiones WebRTC - DISABLED
+        # logger.info("Cerrando todas las conexiones WebRTC existentes...")
+        # import routes.webrtc as webrtc_routes
+        # response = await webrtc_routes.close_webrtc_connections()
+        # logger.info(f"Resultado de limpieza WebRTC: {response}")
         
         # Cerrar también las conexiones MJPEG explícitamente
         logger.info("Reiniciando el sistema de streaming MJPEG...")
         import routes.mjpeg_stream as mjpeg_stream_routes
         
-        # Limpiar todas las conexiones MJPEG activas
+        # Marcar todos los clientes MJPEG como inactivos primero
+        # Esto evita que el worker intente enviar frames mientras estamos cerrando
+        for client_id, client_info in list(mjpeg_stream_routes.client_streams.items()):
+            if client_id in mjpeg_stream_routes.client_streams:
+                # Marcar cliente como inactivo mediante actualización de actividad antigua
+                client_info["last_activity"] = 0
+        
+        # Esperar brevemente para que el cambio de estado sea efectivo
+        await asyncio.sleep(0.1)
+        
+        # Contadores para seguimiento de limpieza
         clients_to_clean = 0
+        clients_removed = 0
         
         try:
-            logger.info(f"Limpiando {len(mjpeg_stream_routes.client_streams)} clientes MJPEG activos...")
+            logger.info(f"Limpiando {len(mjpeg_stream_routes.client_streams)} conexiones MJPEG activas...")
             
-            # Crear una lista de clientes para limpiar
-            clients_to_remove = list(mjpeg_stream_routes.client_streams.keys())
-            
-            for client_id in clients_to_remove:
+            # Llamar a la función de limpieza interna del módulo mjpeg_stream
+            for client_id in list(mjpeg_stream_routes.client_streams.keys()):
                 try:
-                    await mjpeg_stream_routes.cleanup_client(client_id, "reinicio del servidor")
-                    clients_to_clean += 1
+                    # Usar la función de limpieza existente
+                    await mjpeg_stream_routes.cleanup_client(client_id, reason="cierre de servidor")
+                    clients_removed += 1
                 except Exception as e:
                     logger.error(f"Error limpiando cliente MJPEG {client_id}: {e}")
+                clients_to_clean += 1
             
-            logger.info(f"Limpiados {clients_to_clean} clientes MJPEG")
+            logger.info(f"Limpiadas {clients_removed}/{clients_to_clean} conexiones de clientes MJPEG")
         except Exception as e:
-            logger.error(f"Error durante limpieza de clientes MJPEG: {e}")
+            logger.error(f"Error durante limpieza de colas MJPEG: {e}")
         
         # Resetear las estructuras de datos para eliminar clientes MJPEG antiguos
         mjpeg_stream_routes.active_clients = {"road": 0, "interior": 0}
@@ -563,8 +683,8 @@ async def close_all_streaming_connections():
         mjpeg_stream_routes.stats["clients_connected"] = 0
         mjpeg_stream_routes.stats["start_time"] = time.time()
         
-        # Reiniciar el worker de captura de frames 
-        logger.info("Iniciando un nuevo worker de captura MJPEG...")
+        # Reiniciar el sistema MJPEG 
+        logger.info("Reiniciando el sistema de streaming MJPEG...")
         # Cancelar cualquier worker anterior si existe
         try:
             for task in asyncio.all_tasks():
@@ -573,11 +693,15 @@ async def close_all_streaming_connections():
         except Exception as e:
             logger.warning(f"Error al intentar cancelar tareas MJPEG existentes: {e}")
         
+        # Llamamos primero a shutdown y luego inicializamos de nuevo
+        await mjpeg_stream_routes.shutdown_mjpeg()
+        await asyncio.sleep(0.2)  # Esperamos un momento para asegurar limpieza
+        
         # Iniciar un nuevo worker limpio
         asyncio.create_task(mjpeg_stream_routes.initialize_mjpeg())
         
         logger.info("Limpieza completa de los sistemas de streaming")
-        logger.info("Conexiones MJPEG reiniciadas correctamente")
+        logger.info("Sistema MJPEG reiniciado correctamente")
     except Exception as e:
         logger.error(f"Error cerrando conexiones de streaming: {e}", exc_info=True)
         

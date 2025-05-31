@@ -8,7 +8,7 @@ import {
 } from 'react-icons/fa';
 import { Link } from 'react-router-dom';
 import MJPEGCamera from '../MJPEGCamera';
-import WebRTCCamera from '../WebRTCCamera';
+// import WebRTCCamera from '../WebRTCCamera'; // DISABLED
 
 /**
  * Versión simplificada del Dashboard para pantallas pequeñas o táctiles
@@ -32,7 +32,7 @@ function SimplifiedView({
   onToggleNavbar,
   onToggleView,
   onManualRefreshCamera,
-  onHandleWebRTCError,
+  // onHandleWebRTCError, // DISABLED
   onStartRecording,
   onStopRecording,
   onToggleMicrophone,
@@ -73,8 +73,8 @@ function SimplifiedView({
     switch(streamingMode) {
       case 0:
         return 'MJPEG (baja latencia)';
-      case 1:
-        return 'WebRTC (tiempo real)';
+      // case 1:
+      //   return 'WebRTC (tiempo real)'; // DISABLED
       case 2:
         return 'HTTP (estable)';
       default:
@@ -101,15 +101,16 @@ function SimplifiedView({
                     cameraType="road" 
                     height="100%" 
                     className="w-full"
-                    onError={(error) => onHandleWebRTCError('road', error)}
+                    onError={(error) => console.error('MJPEG error:', error)}
                   />
                 ) : streamingMode === 1 ? (
-                  <WebRTCCamera 
-                    cameraType="road" 
-                    height="100%" 
-                    className="w-full"
-                    onError={(error) => onHandleWebRTCError('road', error)}
-                  />
+                  <div className="relative w-full h-full flex items-center justify-center">
+                    <div className="text-center p-4">
+                      <div className="text-yellow-500 text-3xl mb-2">⚠️</div>
+                      <p className="text-white text-sm">WebRTC deshabilitado</p>
+                      <p className="text-gray-400 text-xs">Use MJPEG en su lugar</p>
+                    </div>
+                  </div>
                 ) : (
                   <div className="relative h-full">
                     {cameraImages.road ? (
@@ -189,15 +190,16 @@ function SimplifiedView({
                     cameraType="interior" 
                     height="100%" 
                     className="w-full"
-                    onError={(error) => onHandleWebRTCError('interior', error)}
+                    onError={(error) => console.error('MJPEG error:', error)}
                   />
                 ) : streamingMode === 1 ? (
-                  <WebRTCCamera 
-                    cameraType="interior" 
-                    height="100%" 
-                    className="w-full"
-                    onError={(error) => onHandleWebRTCError('interior', error)}
-                  />
+                  <div className="relative w-full h-full flex items-center justify-center">
+                    <div className="text-center p-4">
+                      <div className="text-yellow-500 text-3xl mb-2">⚠️</div>
+                      <p className="text-white text-sm">WebRTC deshabilitado</p>
+                      <p className="text-gray-400 text-xs">Use MJPEG en su lugar</p>
+                    </div>
+                  </div>
                 ) : (
                   <div className="relative h-full">
                     {cameraImages.interior ? (
@@ -588,7 +590,7 @@ SimplifiedView.propTypes = {
   onToggleNavbar: PropTypes.func.isRequired,
   onToggleView: PropTypes.func.isRequired,
   onManualRefreshCamera: PropTypes.func.isRequired,
-  onHandleWebRTCError: PropTypes.func.isRequired,
+  // onHandleWebRTCError: PropTypes.func.isRequired, // DISABLED
   onStartRecording: PropTypes.func.isRequired,
   onStopRecording: PropTypes.func.isRequired,
   onToggleMicrophone: PropTypes.func.isRequired,

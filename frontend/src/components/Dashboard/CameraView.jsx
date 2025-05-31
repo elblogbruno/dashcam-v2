@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import PropTypes from 'prop-types';
-import { FaCamera, FaSync, FaTachometerAlt, FaMapMarkerAlt } from 'react-icons/fa';
+import { FaCamera, FaSync, FaTachometerAlt, FaMapMarkerAlt, FaExclamationTriangle, FaExpand, FaCompress } from 'react-icons/fa';
 import MJPEGCamera from '../MJPEGCamera';
-import WebRTCCamera from '../WebRTCCamera';
+// import WebRTCCamera from '../WebRTCCamera'; // DISABLED
 import PerformanceToggle from '../PerformanceToggle';
 
 /**
  * Componente que muestra una vista de cámara con diferentes opciones de streaming
+ * Versión mejorada con soporte para expandir/contraer y mejor aprovechamiento de espacio
  */
 function CameraView({ 
   cameraType, 
@@ -21,179 +22,164 @@ function CameraView({
   speedData = null,
   landmarkData = null,
   isRecording = false,
-  showStats = false
+  showStats = false,
+  darkMode = false
 }) {
+  // Estado para modo expandido
+  const [expanded, setExpanded] = useState(false);
+  
   // Estado local para mostrar/ocultar estadísticas
   const [localShowStats, setLocalShowStats] = useState(showStats);
+
+  // Función para alternar el modo expandido
+  const toggleExpand = () => {
+    setExpanded(!expanded);
+  };
 
   // Convertir modo de streaming a texto para mostrar
   const getStreamingModeText = () => {
     switch(streamingMode) {
       case 0:
-        return 'MJPEG (baja latencia)';
-      case 1:
-        return 'WebRTC (tiempo real)';
+        return 'MJPEG';
+      // case 1:
+      //   return 'WebRTC'; // DISABLED
       case 2:
-        return 'HTTP (estable)';
+        return 'HTTP';
       default:
         return 'Desconocido';
     }
   };
 
-  // Manejar errores de streaming
-  const handleStreamError = (error) => {
-    if (onError) {
-      onError(cameraType, error);
-    }
-  };
+  // Verificar si la cámara está disponible
+  const isCameraAvailable = cameraType === 'road' ? cameraStatus.road_camera : cameraStatus.interior_camera;
+  
+  // Determinar clase para el contenedor basado en el estado expandido
+  const containerClass = expanded ? 
+    "fixed inset-0 z-50 p-4 bg-black bg-opacity-90 flex items-center justify-center" : 
+    `${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-lg shadow-md overflow-hidden h-full flex flex-col`;
+  
+  // Determinar clase para el título
+  const titleClass = expanded ? 
+    "absolute top-4 left-4 text-white text-lg font-bold z-10" : 
+    `${darkMode ? 'bg-gray-700 text-gray-200' : 'bg-gray-100 text-dashcam-800'} px-4 py-2 font-medium flex justify-between items-center`;
+  
+  // Determinar clase para el contenedor de acciones
+  const actionsClass = expanded ? 
+    "absolute top-4 right-4 flex space-x-2 z-10" : 
+    "flex space-x-2";
 
-  // Alternar estadísticas de rendimiento
-  const toggleStats = () => {
-    setLocalShowStats(!localShowStats);
-  };
-
-  // Función para reiniciar la cámara desde el servidor
-  const resetCamera = async () => {
-    try {
-      const response = await fetch(`/api/cameras/reset/${cameraType}`, {
-        method: 'POST',
-      });
-      
-      if (response.ok) {
-        const result = await response.json();
-        alert(`Cámara ${cameraType === 'road' ? 'frontal' : 'interior'} reiniciada: ${result.message}`);
-      } else {
-        alert(`Error al reiniciar la cámara ${cameraType === 'road' ? 'frontal' : 'interior'}`);
-      }
-    } catch (error) {
-      console.error(`Error al reiniciar la cámara ${cameraType}:`, error);
-      alert(`Error de conexión al reiniciar la cámara`);
-    }
-  };
-
-  // Renderizar la cámara según el modo de streaming
-  const renderCamera = () => {
-    const cameraEnabled = cameraType === 'road' ? cameraStatus.road_camera : cameraStatus.interior_camera;
-
-    if (!cameraEnabled) {
-      return (
-        <div className="w-full h-full bg-gray-800 flex items-center justify-center flex-col text-white p-4">
-          <div className="text-xl sm:text-2xl text-red-400 mb-2 sm:mb-4 text-center">
-            Cámara {cameraType === 'road' ? 'frontal' : 'interior'} no disponible
-          </div>
-          <div className="text-sm sm:text-xl text-gray-400 mb-2 sm:mb-4 text-center">
-            Verifique la conexión de la cámara
-          </div>
+  return (
+    <div className={`${containerClass} ${expanded ? '' : 'relative'}`}>
+      {/* Título y controles */}
+      <div className={titleClass}>
+        <div className="flex items-center">
+          <FaCamera className="mr-2" />
+          {title}
+        </div>
+        
+        <div className={actionsClass}>
+          {/* Botón para expandir/contraer la vista */}
+          <button 
+            onClick={toggleExpand}
+            className={`p-1 rounded-md ${darkMode ? 'hover:bg-gray-600 text-gray-300' : 'hover:bg-gray-200 text-gray-700'}`}
+            title={expanded ? "Salir de pantalla completa" : "Pantalla completa"}
+          >
+            {expanded ? <FaCompress /> : <FaExpand />}
+          </button>
+          
+          {/* Botón para actualizar la cámara */}
           <button 
             onClick={() => onRefresh(cameraType)}
-            className="bg-gray-600 hover:bg-gray-700 text-white px-3 py-2 rounded-md text-sm sm:text-lg flex items-center mr-2"
+            className={`p-1 rounded-md ${darkMode ? 'hover:bg-gray-600 text-gray-300' : 'hover:bg-gray-200 text-gray-700'} ${isRefreshing[cameraType] ? 'animate-spin' : ''}`}
+            disabled={isRefreshing[cameraType]}
+            title="Actualizar vista"
           >
-            <FaSync className="mr-2" /> Intentar de nuevo
-          </button>
-          <button
-            onClick={resetCamera}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-md text-sm sm:text-lg flex items-center"
-          >
-            <FaCamera className="mr-2" /> Reiniciar cámara
+            <FaSync />
           </button>
         </div>
-      );
-    }
-
-    switch(streamingMode) {
-      case 0: // MJPEG
-        return (
-          <MJPEGCamera 
-            cameraType={cameraType} 
-            height="100%" 
-            className="w-full"
-            onError={handleStreamError}
-            showStats={localShowStats}
-          />
-        );
-      case 1: // WebRTC
-        return (
-          <WebRTCCamera 
-            cameraType={cameraType} 
-            height="100%" 
-            className="w-full"
-            onError={handleStreamError}
-            showStats={localShowStats}
-          />
-        );
-      case 2: // HTTP
-      default:
-        return (
-          <div className="relative h-full">
-            {cameraImages[cameraType] ? (
+      </div>
+      
+      {/* Contenido principal - cámaras */}
+      <div className={`${expanded ? 'w-full h-full' : 'flex-1 relative'}`}>
+        {!isCameraAvailable ? (
+          // Mensaje cuando la cámara no está disponible
+          <div className={`w-full h-full flex flex-col items-center justify-center ${darkMode ? 'bg-gray-900 text-gray-300' : 'bg-gray-100 text-gray-700'}`}>
+            <FaExclamationTriangle className="text-yellow-500 text-4xl mb-3" />
+            <p className="text-center">Cámara {cameraType === 'road' ? 'frontal' : 'interior'} no disponible</p>
+            <button 
+              onClick={() => onRefresh(cameraType)} 
+              className={`mt-3 px-4 py-2 rounded-md flex items-center ${darkMode ? 'bg-blue-600 hover:bg-blue-700' : 'bg-blue-500 hover:bg-blue-600'} text-white`}
+            >
+              <FaSync className="mr-2" /> Reintentar
+            </button>
+          </div>
+        ) : streamingMode === 0 ? (
+          // MJPEG Streaming
+          <div className="relative w-full h-full">
+            <MJPEGCamera
+              cameraType={cameraType}
+              onError={() => onError(cameraType, new Error("MJPEG stream error"))}
+              className={`w-full h-full object-cover ${expanded ? 'max-h-screen' : ''}`}
+            />
+            {/* Overlay para velocidad */}
+            {showSpeedOverlay && speedData && (
+              <div className="absolute bottom-2 right-2 bg-black bg-opacity-50 text-white px-3 py-1 rounded-md flex flex-col items-end">
+                <div className="flex items-center">
+                  <FaTachometerAlt className="mr-1" />
+                  <span className="font-bold">{Math.round(speedData.speed)} km/h</span>
+                </div>
+                {landmarkData && (
+                  <div className="flex items-center text-xs mt-1">
+                    <FaMapMarkerAlt className="mr-1 text-red-500" />
+                    <span>{landmarkData.name}</span>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        ) : streamingMode === 1 ? (
+          // WebRTC Streaming - DISABLED
+          <div className="relative w-full h-full flex items-center justify-center">
+            <div className="text-center p-4">
+              <FaExclamationTriangle className="mx-auto mb-2 text-yellow-500 text-2xl" />
+              <p className="text-sm text-gray-500">WebRTC deshabilitado</p>
+              <p className="text-xs text-gray-400">Use MJPEG en su lugar</p>
+            </div>
+          </div>
+        ) : (
+          // HTTP Streaming (imágenes estáticas)
+          <div className="relative w-full h-full flex justify-center items-center bg-gray-900">
+            {isRefreshing[cameraType] ? (
+              <div className="text-center">
+                <FaSync className="animate-spin text-2xl text-gray-400 mx-auto mb-2" />
+                <p className="text-sm text-gray-400">Cargando imagen...</p>
+              </div>
+            ) : cameraImages[cameraType] ? (
               <img 
                 src={cameraImages[cameraType]} 
-                alt={`${cameraType === 'road' ? 'Road' : 'Interior'} View`} 
-                className="w-full h-full object-contain"
+                alt={`${cameraType} camera`} 
+                className={`object-contain ${expanded ? 'max-h-screen w-auto' : 'max-w-full max-h-full'}`}
               />
             ) : (
-              <div className="w-full h-full bg-gray-800 flex items-center justify-center flex-col text-white">
-                <FaCamera className="text-3xl sm:text-5xl mb-2 sm:mb-4" />
-                <div className="text-sm sm:text-xl text-gray-400 mb-2 sm:mb-4">
-                  Cargando cámara {cameraType === 'road' ? 'frontal' : 'interior'}...
-                </div>
+              <div className="text-center">
+                <FaExclamationTriangle className="text-yellow-500 text-3xl mx-auto mb-2" />
+                <p className="text-sm text-gray-400">No hay imagen disponible</p>
               </div>
             )}
             
-            <button 
-              onClick={() => onRefresh(cameraType)}
-              disabled={isRefreshing[cameraType]}
-              className="absolute top-4 left-4 bg-black bg-opacity-50 text-white p-2 rounded-full"
-              title={`Actualizar cámara ${cameraType === 'road' ? 'frontal' : 'interior'}`}
-            >
-              <FaSync className={`text-lg ${isRefreshing[cameraType] ? 'animate-spin' : ''}`} />
-            </button>
-            
-            <button 
-              onClick={resetCamera}
-              className="absolute top-4 left-16 bg-black bg-opacity-50 text-white p-2 rounded-full"
-              title={`Reiniciar cámara ${cameraType === 'road' ? 'frontal' : 'interior'}`}
-            >
-              <FaCamera className="text-lg" />
-            </button>
-          </div>
-        );
-    }
-  };
-
-  return (
-    <div className="bg-white rounded-lg shadow-md overflow-hidden">
-      <div className="relative h-36 sm:h-48 md:h-56 lg:h-64 bg-black flex justify-center items-center">
-        {/* Indicador del modo de streaming */}
-        <div className="absolute top-2 right-2 z-10 bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded-md flex items-center">
-          <FaCamera className="mr-1" /> 
-          {getStreamingModeText()}
-        </div>
-        
-        {/* Botón para activar estadísticas de rendimiento (solo disponible en MJPEG y WebRTC) */}
-        {(streamingMode === 0 || streamingMode === 1) && (
-          <div className="absolute top-2 left-2 z-10">
-            <PerformanceToggle 
-              showStats={localShowStats}
-              onToggle={toggleStats}
-            />
-          </div>
-        )}
-        
-        {/* Cámara según modo de streaming */}
-        {renderCamera()}
-        
-        {/* Overlay para velocidad y punto de interés */}
-        {showSpeedOverlay && speedData && (
-          <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-50 text-white p-2 sm:p-4 flex justify-between z-10">
-            <div className="flex items-center text-base sm:text-xl">
-              <FaTachometerAlt className="mr-1 sm:mr-2" />
-              <span>{Math.round(speedData.speed)} km/h</span>
-            </div>
-            {landmarkData && (
-              <div className="flex items-center text-base sm:text-xl">
-                <FaMapMarkerAlt className="mr-1 sm:mr-2 text-red-500" />
-                <span className="truncate max-w-[120px] sm:max-w-full">{landmarkData.name}</span>
+            {/* Overlay para velocidad */}
+            {showSpeedOverlay && speedData && (
+              <div className="absolute bottom-2 right-2 bg-black bg-opacity-50 text-white px-3 py-1 rounded-md flex flex-col items-end">
+                <div className="flex items-center">
+                  <FaTachometerAlt className="mr-1" />
+                  <span className="font-bold">{Math.round(speedData.speed)} km/h</span>
+                </div>
+                {landmarkData && (
+                  <div className="flex items-center text-xs mt-1">
+                    <FaMapMarkerAlt className="mr-1 text-red-500" />
+                    <span>{landmarkData.name}</span>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -201,37 +187,44 @@ function CameraView({
         
         {/* Indicador de grabación */}
         {isRecording && (
-          <div className="absolute top-4 right-4 flex items-center bg-red-600 text-white px-2 sm:px-3 py-1 sm:py-2 rounded-full animate-pulse z-10 text-sm sm:text-lg">
-            <span className="h-2 w-2 sm:h-3 sm:w-3 bg-white rounded-full mr-1 sm:mr-2"></span>
-            <span>REC</span>
+          <div className="absolute top-2 left-2 flex items-center">
+            <div className="w-3 h-3 rounded-full bg-red-600 animate-pulse mr-1"></div>
+            <span className="text-xs text-white bg-black bg-opacity-50 px-1 rounded">REC</span>
           </div>
         )}
       </div>
       
-      {title && (
-        <div className="p-2 sm:p-3 border-t border-gray-200">
-          <h3 className="font-medium text-gray-800 text-sm sm:text-base">{title}</h3>
+      {/* Footer con información del modo */}
+      {!expanded && (
+        <div className={`${darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-700'} px-3 py-1 text-xs flex justify-between items-center`}>
+          <div>
+            Modo: {getStreamingModeText()}
+          </div>
+          
+          {showStats && (
+            <PerformanceToggle />
+          )}
         </div>
       )}
     </div>
   );
 }
 
-// Definir props y sus tipos
 CameraView.propTypes = {
-  cameraType: PropTypes.oneOf(['road', 'interior']).isRequired,
+  cameraType: PropTypes.string.isRequired,
   streamingMode: PropTypes.number.isRequired,
   cameraStatus: PropTypes.object.isRequired,
   cameraImages: PropTypes.object.isRequired,
   isRefreshing: PropTypes.object.isRequired,
   onRefresh: PropTypes.func.isRequired,
-  onError: PropTypes.func,
-  title: PropTypes.string,
+  onError: PropTypes.func.isRequired,
+  title: PropTypes.string.isRequired,
   showSpeedOverlay: PropTypes.bool,
   speedData: PropTypes.object,
   landmarkData: PropTypes.object,
   isRecording: PropTypes.bool,
-  showStats: PropTypes.bool
+  showStats: PropTypes.bool,
+  darkMode: PropTypes.bool
 };
 
 export default CameraView;

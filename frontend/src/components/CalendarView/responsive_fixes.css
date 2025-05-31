@@ -1,0 +1,250 @@
+/* 
+ * RESPONSIVE_FIXES.CSS
+ * Ajustes para dispositivos móviles y correcciones de superposición
+ */
+
+/* Ajustes específicos para dispositivos móviles */
+@media (max-width: 767px) {
+  :root {
+    --status-bar-height: 56px; /* Altura de la barra de estado en móvil */
+  }
+  
+  /* Ajuste de margen superior para evitar superposición con la barra de estado */
+  body.calendar-page .nest-layout-container {
+    margin-top: var(--status-bar-height) !important;
+    /* padding-top: 16px !important; */
+  }
+  
+  /* Miniaturas más pequeñas en dispositivos móviles */
+  .nest-event-thumbnail,
+  .external-video-thumbnail,
+  .nest-thumbnail-container {
+    padding-bottom: 35% !important;
+  }
+  
+  /* Ajustes para la barra de estado */
+  body.calendar-page .desktop-header {
+    position: fixed !important;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 1000;
+  }
+  
+  /* Eliminar padding en la página del calendario */
+  body.calendar-page .content-wrapper {
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  
+  /* Mejorar la disposición de videos externos */
+  .nest-video-grid {
+    grid-template-columns: 1fr !important;
+    padding: 0 12px;
+  }
+  
+  /* Ajustes específicos para el reproductor de video */
+  /* Eliminar espacios negros en el reproductor de video */
+  .nest-video-container {
+    margin: 0;
+    padding: 0;
+    border-radius: 0;
+    overflow: hidden;
+  }
+  
+  .video-player-container {
+    border: none !important;
+    border-radius: 0 !important;
+    margin: 0 !important;
+  }
+  
+  .video-player-embedded {
+    border-radius: 0;
+    overflow: hidden;
+  }
+  
+  /* Optimizar visualización del video */
+  video {
+    width: 100%; 
+    height: 100%;
+    background: transparent !important;
+  }
+}dia (max-width: 767px) {
+  :root {
+    --status-bar-height: 56px; /* Altura de la barra de estado en móvil */
+  }
+  
+  /* Ajuste de margen superior para evitar superposición con la barra de estado */
+  body.calendar-page .nest-layout-container {
+    margin-top: var(--status-bar-height) !important;
+    /* padding-top: 16px !important; */
+  }
+  
+  /* Miniaturas más pequeñas en dispositivos móviles */
+  .nest-event-thumbnail,
+  .external-video-thumbnail,
+  .nest-thumbnail-container {
+    padding-bottom: 35% !important;
+  }
+  
+  /* Ajustes para la barra de estado */
+  body.calendar-page .desktop-header {
+    position: fixed !important;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 1000;
+  }
+  
+  /* Eliminar padding en la página del calendario */
+  body.calendar-page .content-wrapper {
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  
+  /* Mejorar la disposición de videos externos */
+  .nest-video-grid {
+    grid-template-columns: 1fr !important;
+    padding: 0 12px;
+  }
+  
+  /* Ajustes específicos para el reproductor de video */
+  /* Eliminar espacios negros en el reproductor de video */
+  .nest-video-container {
+    margin: 0;
+    padding: 0;
+    border-radius: 0;
+    overflow: hidden;
+  }
+  
+  .video-player-container {
+    border: none !important;
+    border-radius: 0 !important;
+    margin: 0 !important;
+  }
+  
+  .video-player-embedded {
+    border-radius: 0;
+    overflow: hidden;
+  }
+  
+  /* Optimizar visualización del video */
+  video {
+    width: 100%; 
+    height: 100%;
+    background: transparent !important;
+  }
+  
+  /* Mejorar contraste de los controles del video */
+  .video-controls-bar {
+    background: linear-gradient(to top, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.5) 50%, rgba(0,0,0,0) 100%);
+    padding: 20px 12px 10px 12px;
+  }
+}
+
+/* Ajustes generales para todas las resoluciones */
+body.calendar-page .desktop-content {
+  padding: 0 !important;
+}
+
+body.calendar-page .content-wrapper {
+  max-width: 100% !important;
+  width: 100% !important;
+}
+
+/* Asegurar que no hay espacios en blanco alrededor */
+.app-container {
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  width: 100% !important;
+}
+
+.content-wrapper {
+  padding: 0 !important;
+  margin: 0 !important;
+  max-width: 100vw !important;
+  overflow-x: hidden !important;
+}
+
+/* Mejorar disposición en dispositivos medianos */
+@media (min-width: 768px) and (max-width: 1023px) {
+  /* Ajustes específicos para tablets */
+  .nest-video-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .nest-event-thumbnail,
+  .external-video-thumbnail,
+  .nest-thumbnail-container {
+    padding-bottom: 38%;
+  }
+}
+
+/* Mejorar disposición en dispositivos grandes */
+@media (min-width: 1024px) {
+  .nest-video-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  
+  .nest-layout-container {
+    grid-template-columns: 65% 35%;
+  }
+}
+
+/* Mejoras generales para la visualización y corrección de bugs */
+.video-with-transition {
+  transition: opacity 0.4s ease-in-out;
+}
+
+.video-loading {
+  opacity: 0.4;
+}
+
+/* Asegurar que todos los controles del video sean visibles */
+.video-controls-bar {
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.player-controls {
+  display: flex !important;
+}
+
+/* Estilos específicos para el modal de preview de videos */
+.preview-modal-video {
+  width: auto !important;
+  height: auto !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+  object-fit: contain !important;
+  position: static !important;
+}
+
+/* Corregir visualización de thumbs en timeline */
+@media (max-width: 767px) {
+  .nest-timeline-event {
+    padding-left: 25px;
+  }
+  
+  .nest-timeline-dot {
+    left: 16px;
+    width: 8px;
+    height: 8px;
+  }
+
+  .nest-timeline-line {
+    left: 16px;
+    width: 1.5px;
+  }
+}
+
+/* Estilos específicos para el modal de preview de videos */
+.preview-modal-video {
+  width: auto !important;
+  height: auto !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+  object-fit: contain !important;
+  position: static !important;
+}

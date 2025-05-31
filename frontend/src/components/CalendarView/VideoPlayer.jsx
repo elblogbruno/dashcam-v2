@@ -1,12 +1,15 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { FaExpand, FaCompress, FaPlay, FaPause, FaVolumeUp, FaVolumeMute, FaVideo, FaThLarge } from 'react-icons/fa';
-
+ 
 const VideoPlayer = ({ 
   videoSrc, 
   onClose, 
   isPictureInPicture = false,
   secondaryVideoSrc = null,
-  isFullPlayer = true // Si es true, se muestra como modal. Si es false, se muestra embebido
+  isFullPlayer = true, // Si es true, se muestra como modal. Si es false, se muestra embebido
+  onLoadStart = null,  // Callback cuando el video comienza a cargar
+  onLoadComplete = null, // Callback cuando el video está listo
+  autoPlay = true      // Reproducción automática por defecto
 }) => {
   const videoRef = useRef(null);
   const secondaryVideoRef = useRef(null);
@@ -17,6 +20,9 @@ const VideoPlayer = ({
   const [isMuted, setIsMuted] = useState(false);
   const [showControls, setShowControls] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [isLoading, setIsLoading] = useState(false);
+  const [transitionOpacity, setTransitionOpacity] = useState(1);
+  const [videoRatio, setVideoRatio] = useState('landscape'); // 'landscape' o 'portrait'
 
   // Detector de cambio de tamaño para adaptar la UI
   useEffect(() => {
@@ -43,16 +49,40 @@ const VideoPlayer = ({
     };
   }, []);
 
+  // Manejar cambios de video con transiciones suaves
   useEffect(() => {
-    // Si hay un nuevo video, reiniciar estados
-    if (videoRef.current) {
-      videoRef.current.play().then(() => {
-        setIsPlaying(true);
-      }).catch(error => {
-        console.error('Error playing video:', error);
-      });
-    }
-
+    if (!videoRef.current) return;
+    
+    // Iniciar transición con fade out
+    setTransitionOpacity(0);
+    setIsLoading(true);
+    
+    if (onLoadStart) onLoadStart();
+    
+    // Esperar a que el recurso del video esté listo
+    const handleCanPlay = () => {
+      // Fade in cuando el video está listo
+      setTransitionOpacity(1);
+      setIsLoading(false);
+      
+      if (autoPlay) {
+        videoRef.current.play().then(() => {
+          setIsPlaying(true);
+          if (onLoadComplete) onLoadComplete();
+        }).catch(error => {
+          console.error('Error playing video:', error);
+          setIsLoading(false);
+        });
+      } else {
+        if (onLoadComplete) onLoadComplete();
+      }
+      
+      // Remover el evento una vez que se ejecutó
+      videoRef.current.removeEventListener('canplay', handleCanPlay);
+    };
+    
+    videoRef.current.addEventListener('canplay', handleCanPlay);
+    
     // Sincronizar videos si estamos en modo PIP
     if (isPictureInPicture && secondaryVideoRef.current && videoRef.current) {
       // Asegurarse de que ambos videos estén sincronizados
@@ -64,7 +94,13 @@ const VideoPlayer = ({
         secondaryVideoRef.current.pause();
       }
     }
-  }, [videoSrc, secondaryVideoSrc]);
+    
+    return () => {
+      if (videoRef.current) {
+        videoRef.current.removeEventListener('canplay', handleCanPlay);
+      }
+    };
+  }, [videoSrc, secondaryVideoSrc, autoPlay, onLoadStart, onLoadComplete]);
 
   // Manejar eventos del reproductor principal
   useEffect(() => {
@@ -137,6 +173,45 @@ const VideoPlayer = ({
     return () => clearTimeout(timer);
   }, [showControls]);
 
+  // Detectar la orientación del video
+  useEffect(() => {
+    const detectVideoOrientation = () => {
+      if (videoRef.current) {
+        const { videoWidth, videoHeight } = videoRef.current;
+        if (videoWidth && videoHeight) {
+          setVideoRatio(videoWidth >= videoHeight ? 'landscape' : 'portrait');
+        }
+      }
+    };
+    
+    if (videoRef.current) {
+      videoRef.current.onloadedmetadata = detectVideoOrientation;
+    }
+    
+    return () => {
+      if (videoRef.current) {
+        videoRef.current.onloadedmetadata = null;
+      }
+    };
+  }, [videoSrc]);
+
+  // Detectar cambios de orientación para ajustar video en pantalla completa
+  useEffect(() => {
+    const handleOrientationChange = () => {
+      if (isFullscreen) {
+        adjustFullscreenVideoSize();
+      }
+    };
+    
+    window.addEventListener('resize', handleOrientationChange);
+    window.addEventListener('orientationchange', handleOrientationChange);
+    
+    return () => {
+      window.removeEventListener('resize', handleOrientationChange);
+      window.removeEventListener('orientationchange', handleOrientationChange);
+    };
+  }, [isFullscreen]);
+
   // Toggle de reproducción
   const togglePlay = () => {
     if (videoRef.current) {
@@ -193,6 +268,13 @@ const VideoPlayer = ({
       } else if (container.msRequestFullscreen) {
         container.msRequestFullscreen();
       }
+      
+      // Ajustar el tamaño del video en pantalla completa
+      if (videoRef.current) {
+        setTimeout(() => {
+          adjustFullscreenVideoSize();
+        }, 100);
+      }
     } else {
       if (document.exitFullscreen) {
         document.exitFullscreen();
@@ -201,8 +283,156 @@ const VideoPlayer = ({
       } else if (document.msExitFullscreen) {
         document.msExitFullscreen();
       }
+      
+      // Restaurar el estilo original al salir de pantalla completa
+      setTimeout(() => {
+        adjustFullscreenVideoSize(); // Llamar a la función que restaura estilos
+      }, 100);
     }
     setShowControls(true);
+  };
+
+  // Ajustar el tamaño del video en pantalla completa
+  const adjustFullscreenVideoSize = () => {
+    if (!videoRef.current) return;
+    
+    const video = videoRef.current;
+    const { videoWidth, videoHeight } = video;
+    
+    if (!videoWidth || !videoHeight) return;
+    
+    // Si no estamos en pantalla completa, restaurar estilos normales
+    if (!document.fullscreenElement) {
+      video.style.objectFit = 'contain';
+      video.style.width = 'auto';
+      video.style.height = 'auto';
+      video.style.maxWidth = '100%';
+      video.style.maxHeight = '100%';
+      video.style.top = '0';
+      video.style.left = '0';
+      video.style.margin = '0';
+      video.style.position = 'relative';
+      return;
+    }
+    
+    // Obtener dimensiones de la pantalla
+    const screenWidth = window.innerWidth;
+    const screenHeight = window.innerHeight;
+    const screenRatio = screenWidth / screenHeight;
+    const videoRatio = videoWidth / videoHeight;
+    
+    // Restaurar estilos base para pantalla completa
+    video.style.margin = '0';
+    video.style.objectFit = 'contain';
+    video.style.position = 'absolute';
+    video.style.top = '0';
+    video.style.left = '0';
+    video.style.transform = 'none';
+    
+    // Detectar dispositivos móviles para ajustes adicionales
+    const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    const isLandscape = window.matchMedia("(orientation: landscape)").matches;
+    
+    // En dispositivos móviles, manejar los modos portrait/landscape de forma especial
+    if (isMobileDevice) {
+      if (isLandscape) {
+        // En landscape, priorizar el ancho
+        if (videoRatio >= 1) { // Video horizontal
+          video.style.width = '100%';
+          video.style.height = 'auto';
+          video.style.maxHeight = '100%';
+          
+          // Centrar verticalmente
+          const newHeight = (screenWidth / videoWidth) * videoHeight;
+          if (newHeight < screenHeight) {
+            const verticalMargin = (screenHeight - newHeight) / 2;
+            video.style.top = `${verticalMargin}px`;
+          }
+        } else { // Video vertical en pantalla horizontal
+          video.style.height = '100%';
+          video.style.width = 'auto';
+          video.style.maxWidth = '100%';
+          
+          // Centrar horizontalmente
+          const newWidth = (screenHeight / videoHeight) * videoWidth;
+          if (newWidth < screenWidth) {
+            const horizontalMargin = (screenWidth - newWidth) / 2;
+            video.style.left = `${horizontalMargin}px`;
+          }
+        }
+      } else { // Portrait
+        if (videoRatio <= 1) { // Video vertical
+          video.style.height = '100%';
+          video.style.width = 'auto';
+          video.style.maxWidth = '100%';
+          
+          // Centrar horizontalmente
+          const newWidth = (screenHeight / videoHeight) * videoWidth;
+          if (newWidth < screenWidth) {
+            const horizontalMargin = (screenWidth - newWidth) / 2;
+            video.style.left = `${horizontalMargin}px`;
+          }
+        } else { // Video horizontal en pantalla vertical
+          video.style.width = '100%';
+          video.style.height = 'auto';
+          video.style.maxHeight = '100%';
+          
+          // Centrar verticalmente
+          const newHeight = (screenWidth / videoWidth) * videoHeight;
+          if (newHeight < screenHeight) {
+            const verticalMargin = (screenHeight - newHeight) / 2;
+            video.style.top = `${verticalMargin}px`;
+          }
+        }
+      }
+      return;
+    }
+    
+    // Para dispositivos no móviles (escritorio)
+    if (videoRatio > screenRatio) {
+      // Video más ancho que la pantalla: ajustar por ancho
+      video.style.width = '100%';
+      video.style.height = 'auto';
+      video.style.maxHeight = '100%';
+      
+      // Centrar verticalmente
+      const newHeight = (screenWidth / videoWidth) * videoHeight;
+      if (newHeight < screenHeight) {
+        const verticalMargin = (screenHeight - newHeight) / 2;
+        video.style.top = `${verticalMargin}px`;
+      }
+    } else {
+      // Video más alto que la pantalla: ajustar por alto
+      video.style.width = 'auto';
+      video.style.height = '100%';
+      video.style.maxWidth = '100%';
+      
+      // Centrar horizontalmente
+      const newWidth = (screenHeight / videoHeight) * videoWidth;
+      if (newWidth < screenWidth) {
+        const horizontalMargin = (screenWidth - newWidth) / 2;
+        video.style.left = `${horizontalMargin}px`;
+      }
+    }
+    
+    // Consola de depuración
+    console.debug('Video ajustado en pantalla completa:', {
+      videoWidth,
+      videoHeight,
+      videoRatio,
+      screenWidth,
+      screenHeight,
+      screenRatio,
+      isMobileDevice,
+      isLandscape,
+      styles: {
+        width: video.style.width,
+        height: video.style.height,
+        top: video.style.top,
+        left: video.style.left,
+        objectFit: video.style.objectFit
+      }
+    });
   };
 
   const formatTime = (timeInSeconds) => {
@@ -212,39 +442,44 @@ const VideoPlayer = ({
     return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
   };
 
-  // Si no hay video, mostrar un placeholder amigable
+  // Si no hay video, mostrar un placeholder amigable al estilo Nest
   if (!videoSrc) {
     return (
       <div className="video-player-embedded w-full max-w-full overflow-hidden">
         <div 
-          className="relative bg-gray-100 rounded-lg overflow-hidden flex flex-col items-center justify-center"
+          className="empty-player relative overflow-hidden flex flex-col items-center justify-center bg-nest-card-bg"
           style={{ 
-            height: isMobile ? '220px' : '400px', 
-            maxHeight: isMobile ? '50vh' : 'calc(55vh - 40px)',
+            aspectRatio: '16/9',
             width: '100%',
           }}
         >
-          <FaThLarge className="text-gray-300 text-5xl mb-4" />
-          <p className="text-gray-500 font-medium text-center text-sm sm:text-base px-4">
-            Selecciona un clip o video para reproducir
-          </p>
-          <p className="text-gray-400 text-xs mt-2 text-center max-w-xs px-4">
-            Haz clic en un video de la línea de tiempo o en la lista de videos disponibles
-          </p>
+          <div className="absolute inset-0 bg-gradient-to-b from-transparent to-nest-background opacity-30 flex flex-col items-center justify-center">
+            <FaVideo className="text-nest-accent text-opacity-80 text-5xl mb-4 relative z-10" />
+            <p className="text-nest-text-primary font-medium text-center text-sm sm:text-base px-4 relative z-10">
+              Selecciona un clip para ver
+            </p>
+            <p className="text-nest-text-secondary text-xs mt-2 text-center max-w-xs px-4 relative z-10">
+              Elige un evento de la línea de tiempo o de la lista de eventos
+            </p>
+          </div>
         </div>
       </div>
     );
   }
 
-  // Versión embebida optimizada para móvil
+  // Versión embebida optimizada para móvil con estilo Nest Doorbell
   return (
     <div className="video-player-embedded w-full max-w-full overflow-hidden">
       <div 
-        className="relative bg-black rounded-lg overflow-hidden"
+        className="relative bg-black overflow-hidden video-player-container video-wrapper"
         style={{ 
-          height: isMobile ? '220px' : '400px', 
-          maxHeight: isMobile ? '50vh' : 'calc(55vh - 40px)',
-          width: '100%', // Asegurarse que nunca exceda el ancho del padre
+          width: '100%',
+          aspectRatio: isFullscreen ? 'auto' : '16/9',
+          height: isFullscreen ? '100vh' : 'auto',
+          position: 'relative',
+          margin: 0,
+          padding: 0,
+          backgroundColor: '#000'
         }}
         onClick={() => setShowControls(!showControls)}
         onTouchStart={() => setShowControls(!showControls)}
@@ -252,62 +487,86 @@ const VideoPlayer = ({
         <video 
           ref={videoRef}
           src={videoSrc} 
-          className="w-full h-full bg-black object-contain"
+          className={`video-fullsize ${isFullscreen ? 'video-fullscreen' : ''} ${videoRatio === 'landscape' ? 'video-horizontal' : 'video-vertical'}`}
+          style={{ 
+            backgroundColor: '#000', 
+            objectFit: isFullscreen ? 'contain' : 'cover',
+            position: 'absolute',
+            width: '100%',
+            height: '100%',
+            top: 0,
+            left: 0,
+            margin: 0,
+            padding: 0,
+            border: 'none',
+            outline: 'none',
+            display: 'block'
+          }}
           onClick={(e) => { e.stopPropagation(); togglePlay(); }}
-          playsInline // Importante para iOS
+          playsInline
           muted={isMuted}
+          onLoadedMetadata={() => {
+            if (isFullscreen) {
+              adjustFullscreenVideoSize();
+            }
+          }}
         >
-          Your browser does not support the video tag.
+          Tu navegador no soporta la etiqueta de video.
         </video>
         
-        {/* PIP Video adaptativo */}
         {isPictureInPicture && secondaryVideoSrc && (
-          <div className={`absolute ${isMobile ? 'bottom-2 right-2 w-1/3' : 'top-4 right-4 w-1/4'} h-1/4 border-2 border-white shadow-lg rounded overflow-hidden`}>
+          <div className={`secondary-video-container absolute ${isMobile ? 'bottom-4 right-4 w-1/3' : 'bottom-16 right-4 w-1/4'} h-1/4 border-2 border-nest-border shadow-lg rounded-lg overflow-hidden`}>
             <video 
               ref={secondaryVideoRef}
               src={secondaryVideoSrc}
-              className="w-full h-full object-cover"
+              className="w-full h-full"
+              style={{ objectFit: 'fill', position: 'absolute' }}
               muted
               playsInline
             >
-              Your browser does not support the video tag.
+              Tu navegador no soporta la etiqueta de video.
             </video>
           </div>
         )}
         
-        {/* Controles optimizados */}
         <div 
-          className={`absolute bottom-0 left-0 right-0 transition-opacity duration-300 ${showControls || !isPlaying ? 'opacity-100' : 'opacity-0'}`}
-          style={{ background: 'linear-gradient(transparent, rgba(0,0,0,0.8))' }}
+          className="video-controls-bar"
+          style={{ opacity: showControls || !isPlaying ? 1 : 0 }}
         >
-          {/* Barra de progreso táctil para móvil */}
           <div 
-            className="h-2 w-full bg-gray-700 cursor-pointer overflow-hidden px-2 mt-2"
+            className="progress-container"
             onClick={handleSeek}
           >
             <div 
-              className="h-full bg-dashcam-500 rounded-full"
+              className="progress-bar"
               style={{ width: `${(currentTime / duration) * 100}%` }}
             ></div>
           </div>
           
-          {/* Panel de controles */}
-          <div className="px-2 py-1 flex justify-between items-center">
-            <div className="flex items-center space-x-2">
+          <div className="player-controls">
+            <div className="controls-left">
               <button 
                 onClick={(e) => {e.stopPropagation(); togglePlay();}}
-                className="text-white p-1 hover:text-dashcam-300 transition-colors"
+                className="play-button"
+                aria-label={isPlaying ? "Pausar" : "Reproducir"}
               >
                 {isPlaying ? (
-                  <FaPause className={isMobile ? "text-sm" : ""} />
+                  <FaPause />
                 ) : (
-                  <FaPlay className={isMobile ? "text-sm" : ""} />
+                  <FaPlay />
                 )}
               </button>
               
+              <span className="time-display">
+                {formatTime(currentTime)} / {formatTime(duration)}
+              </span>
+            </div>
+            
+            <div className="controls-right">
               <button
                 onClick={toggleMute}
-                className="text-white hover:text-dashcam-300 transition-colors"
+                className="mute-button"
+                aria-label={isMuted ? "Activar sonido" : "Silenciar"}
               >
                 {isMuted ? (
                   <FaVolumeMute className={isMobile ? "text-sm" : ""} />
@@ -316,28 +575,24 @@ const VideoPlayer = ({
                 )}
               </button>
               
-              <span className={`text-white ${isMobile ? 'text-xs' : 'text-sm'}`}>
-                {formatTime(currentTime)} / {formatTime(duration)}
-              </span>
+              <button 
+                onClick={toggleFullscreen}
+                className="fullscreen-button"
+                aria-label={isFullscreen ? "Salir de pantalla completa" : "Pantalla completa"}
+              >
+                {isFullscreen ? (
+                  <FaCompress className={isMobile ? "text-sm" : ""} />
+                ) : (
+                  <FaExpand className={isMobile ? "text-sm" : ""} />
+                )}
+              </button>
             </div>
-            
-            <button 
-              onClick={toggleFullscreen}
-              className="text-white p-1 hover:text-dashcam-300 transition-colors"
-            >
-              {isFullscreen ? (
-                <FaCompress className={isMobile ? "text-sm" : ""} />
-              ) : (
-                <FaExpand className={isMobile ? "text-sm" : ""} />
-              )}
-            </button>
           </div>
         </div>
         
-        {/* Overlay de play grande solo cuando está pausado */}
         {!isPlaying && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-30" onClick={togglePlay}>
-            <div className={`${isMobile ? 'w-10 h-10' : 'w-14 h-14'} rounded-full bg-dashcam-600 bg-opacity-70 flex items-center justify-center`}>
+          <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-40" onClick={togglePlay}>
+            <div className={`${isMobile ? 'w-12 h-12' : 'w-16 h-16'} rounded-full bg-nest-selected bg-opacity-90 flex items-center justify-center shadow-lg transition-transform transform hover:scale-105`}>
               <FaPlay className={`text-white ${isMobile ? 'text-lg ml-0.5' : 'text-2xl ml-1'}`} />
             </div>
           </div>

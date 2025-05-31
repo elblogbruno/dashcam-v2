@@ -44,7 +44,6 @@ function Settings() {
   const [uploadDate, setUploadDate] = useState('')
   const [uploadLocation, setUploadLocation] = useState({ lat: '', lon: '' })
   const [isUploading, setIsUploading] = useState(false)
-  const [syncStatus, setSyncStatus] = useState({ inProgress: false, lastSync: null })
   
   // Camera detection state
   const [availableCameras, setAvailableCameras] = useState([])
@@ -147,23 +146,6 @@ function Settings() {
     }
   }
 
-  // Function to sync landmarks
-  const syncLandmarks = async () => {
-    try {
-      setSyncStatus({ ...syncStatus, inProgress: true })
-      const response = await axios.post('/api/landmarks/sync')
-      setSyncStatus({ 
-        inProgress: false, 
-        lastSync: new Date().toLocaleString() 
-      })
-      alert(`Synced ${response.data.count} landmarks`)
-    } catch (error) {
-      console.error('Error syncing landmarks:', error)
-      setSyncStatus({ ...syncStatus, inProgress: false })
-      alert('Failed to sync landmarks')
-    }
-  }
-  
   // Function to detect available cameras
   // const detectCameras = async () => {
   //   setIsDetectingCameras(true)
@@ -347,8 +329,13 @@ function Settings() {
   }
 
   return (
-    <div className="p-4">
-      {/* Sección de navegación rápida - eliminando el botón de cámaras */}
+    <div className="p-2 sm:p-4 bg-gray-100 min-h-screen">
+      <h1 className="text-xl sm:text-2xl font-bold text-dashcam-800 flex items-center mb-4 sm:mb-6">
+        <FaCog className="mr-2" /> 
+        Configuración
+      </h1>
+      
+      {/* Sección de navegación rápida - eliminando el botón de landmarks */}
       <div className="flex flex-wrap gap-2 mb-4">
         <button 
           onClick={() => document.getElementById('audio-section').scrollIntoView({ behavior: 'smooth' })}
@@ -367,12 +354,6 @@ function Settings() {
           className="btn btn-secondary text-sm flex items-center"
         >
           <FaWifi className="mr-1" /> WiFi
-        </button>
-        <button 
-          onClick={() => document.getElementById('landmarks-section').scrollIntoView({ behavior: 'smooth' })}
-          className="btn btn-secondary text-sm flex items-center"
-        >
-          <FaSync className="mr-1" /> Landmarks
         </button>
       </div>
       
@@ -442,6 +423,25 @@ function Settings() {
             </div>
             
             <div>
+              <label className="block mb-1 text-sm">Motor de Voz</label>
+              <select 
+                value={audioSettings.engine} 
+                onChange={(e) => setAudioSettings({...audioSettings, engine: e.target.value})}
+                className="input w-full"
+                disabled={!audioSettings.enabled}
+              >
+                <option value="pyttsx3">PyTTSX3 (Predeterminado)</option>
+                <option value="espeak">eSpeak (Linux)</option>
+                <option value="piper">Piper (Neural TTS)</option>
+              </select>
+              <p className="text-xs text-gray-500 mt-1">
+                {audioSettings.engine === 'piper' && 'Piper ofrece la mejor calidad de voz con tecnología neural'}
+                {audioSettings.engine === 'espeak' && 'eSpeak es ligero y funciona bien en sistemas Linux'}
+                {audioSettings.engine === 'pyttsx3' && 'PyTTSX3 es compatible con múltiples plataformas'}
+              </p>
+            </div>
+            
+            <div>
               <label className="block mb-1 text-sm">Volumen: {audioSettings.volume}%</label>
               <input 
                 type="range" 
@@ -450,6 +450,7 @@ function Settings() {
                 value={audioSettings.volume} 
                 onChange={(e) => setAudioSettings({...audioSettings, volume: parseInt(e.target.value)})}
                 className="w-full"
+                disabled={!audioSettings.enabled}
               />
             </div>
             
@@ -572,35 +573,6 @@ function Settings() {
               onClick={updateWifiSettings}
             >
               Guardar Configuración de WiFi
-            </button>
-          </div>
-        </div>
-      </div>
-      
-      {/* Landmarks Sync */}
-      <div id="landmarks-section" className="card mb-4 p-0 overflow-hidden">
-        <div className="bg-dashcam-700 text-white p-3">
-          <h2 className="text-lg font-medium flex items-center">
-            <FaSync className="mr-2" />
-            Base de Datos de Puntos de Interés
-          </h2>
-        </div>
-        
-        <div className="p-4">
-          <div>
-            <p className="text-sm text-gray-600 mb-3">
-              Sincroniza la base de datos local de puntos de interés con los últimos datos.
-              {syncStatus.lastSync && (
-                <span className="block mt-1">Última sincronización: {syncStatus.lastSync}</span>
-              )}
-            </p>
-            
-            <button 
-              className="btn btn-primary w-full"
-              onClick={syncLandmarks}
-              disabled={syncStatus.inProgress}
-            >
-              {syncStatus.inProgress ? 'Sincronizando...' : 'Sincronizar Puntos de Interés'}
             </button>
           </div>
         </div>

@@ -107,9 +107,9 @@ const VideoTimeline = ({ videoClips, selectedDay, timeZoneOffset, onSelectClip }
   };
 
   return (
-    <div className="video-timeline bg-white rounded-lg border border-gray-200 overflow-hidden w-full">
-      <div className="bg-dashcam-50 p-1.5 sm:p-2 border-b border-gray-200 flex justify-between items-center">
-        <h3 className="text-xs sm:text-sm font-medium text-dashcam-700 flex items-center">
+    <div className="video-timeline w-full">
+      <div className="timeline-hour-header flex justify-between items-center">
+        <h3 className="text-xs sm:text-sm font-medium flex items-center">
           <FaClock className="mr-1" />
           <span className="hidden sm:inline">{selectedDay}</span>
           <span className="sm:hidden">
@@ -118,18 +118,18 @@ const VideoTimeline = ({ videoClips, selectedDay, timeZoneOffset, onSelectClip }
         </h3>
         
         {/* Controles de zoom */}
-        <div className="flex items-center space-x-1">
+        <div className="flex items-center space-x-2">
           <button 
             onClick={handleZoomOut}
             disabled={zoomLevel <= 1}
-            className={`p-1 rounded ${zoomLevel <= 1 ? 'text-gray-400' : 'text-dashcam-600 hover:text-dashcam-800'}`}
+            className={`p-1 rounded ${zoomLevel <= 1 ? 'opacity-50' : 'hover:bg-white hover:bg-opacity-10'}`}
           >
             <FaSearchMinus size={isMobile ? 12 : 14} />
           </button>
           <button 
             onClick={handleZoomIn}
             disabled={zoomLevel >= 5}
-            className={`p-1 rounded ${zoomLevel >= 5 ? 'text-gray-400' : 'text-dashcam-600 hover:text-dashcam-800'}`}
+            className={`p-1 rounded ${zoomLevel >= 5 ? 'opacity-50' : 'hover:bg-white hover:bg-opacity-10'}`}
           >
             <FaSearchPlus size={isMobile ? 12 : 14} />
           </button>

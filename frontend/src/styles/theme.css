@@ -1,0 +1,104 @@
+/* Estilos para temas claro/oscuro */
+
+/* Variables globales para el tema */
+:root {
+  --primary-color: #3b82f6;
+  --primary-hover: #2563eb;
+  --secondary-color: #64748b;
+  --secondary-hover: #475569;
+  --success-color: #10b981;
+  --warning-color: #f59e0b;
+  --danger-color: #ef4444;
+  --info-color: #3b82f6;
+  --text-color: #1f2937;
+  --text-muted: #6b7280;
+  --border-color: #e5e7eb;
+  --bg-color: #f9fafb;
+  --card-bg: #ffffff;
+  --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  --transition-speed: 0.3s;
+}
+
+/* Tema oscuro */
+.dark-mode {
+  --primary-color: #60a5fa;
+  --primary-hover: #3b82f6;
+  --secondary-color: #94a3b8;
+  --secondary-hover: #cbd5e1;
+  --success-color: #34d399;
+  --warning-color: #fbbf24;
+  --danger-color: #f87171;
+  --info-color: #60a5fa;
+  --text-color: #f9fafb;
+  --text-muted: #d1d5db;
+  --border-color: #374151;
+  --bg-color: #111827;
+  --card-bg: #1f2937;
+  --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+/* Transiciones suaves entre temas */
+body, button, input, select, textarea, .card, .alert, .navbar {
+  transition: background-color var(--transition-speed), 
+              color var(--transition-speed), 
+              border-color var(--transition-speed),
+              box-shadow var(--transition-speed);
+}
+
+/* Estilos específicos para el tema oscuro */
+.dark-theme {
+  background-color: var(--bg-color);
+  color: var(--text-color);
+}
+
+.dark-theme button:not([class*="bg-"]) {
+  background-color: var(--secondary-color);
+  color: var(--text-color);
+}
+
+.dark-theme .card {
+  background-color: var(--card-bg);
+  box-shadow: var(--card-shadow);
+}
+
+/* Efectos hover mejorados */
+.hover-lift {
+  transition: transform 0.2s ease-out;
+}
+
+.hover-lift:hover {
+  transform: translateY(-2px);
+}
+
+/* Animaciones */
+@keyframes pulse-recording {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(1.2);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.recording-pulse {
+  animation: pulse-recording 1.5s infinite;
+}
+
+/* Mejoras visuales */
+.glass-effect {
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.dark-theme .glass-effect {
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}

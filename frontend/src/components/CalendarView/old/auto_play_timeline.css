@@ -1,0 +1,107 @@
+/* Auto-play Timeline Styles */
+.nest-timeline-event {
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.nest-event-playing .nest-event-card {
+  border: 2px solid var(--nest-selected);
+  box-shadow: 0 0 10px rgba(0, 119, 255, 0.3);
+  transform: scale(1.03);
+}
+
+.nest-event-playing .nest-timeline-dot {
+  background-color: var(--nest-selected);
+  box-shadow: 0 0 5px var(--nest-selected);
+  animation: pulse-dot 1.5s infinite;
+}
+
+@keyframes pulse-dot {
+  0% {
+    transform: translateX(-50%) scale(1);
+  }
+  50% {
+    transform: translateX(-50%) scale(1.3);
+  }
+  100% {
+    transform: translateX(-50%) scale(1);
+  }
+}
+
+/* Estilos para transiciones suaves de video */
+video.video-transition {
+  transition: opacity 0.5s ease-in-out;
+}
+
+.video-loading {
+  opacity: 0.4;
+}
+
+/* Mejoras para soporte táctil */
+.nest-event-card {
+  touch-action: manipulation; /* Mejorar respuesta táctil */
+}
+
+.nest-vertical-timeline {
+  scroll-behavior: smooth; /* Para animaciones de scrolling suaves */
+  overscroll-behavior: contain; /* Previene scrolling del body en dispositivos táctiles */
+}
+
+/* Indicador de desplazamiento */
+.nest-scroll-indicator {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: var(--nest-card-bg);
+  border: 1px solid var(--nest-border);
+  border-radius: 16px;
+  padding: 4px 12px;
+  font-size: 12px;
+  color: var(--nest-text-secondary);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.nest-scroll-indicator.visible {
+  opacity: 0.8;
+}
+
+/* Indicator de auto-reproducción */
+.autoplay-indicator {
+  display: inline-flex;
+  align-items: center;
+  color: var(--nest-text-secondary);
+  font-size: 12px;
+  margin-left: 8px;
+}
+
+.autoplay-indicator svg {
+  margin-right: 4px;
+  color: var(--nest-selected);
+  animation: blink 2s infinite ease;
+}
+
+@keyframes blink {
+  0% { opacity: 0.5; }
+  50% { opacity: 1; }
+  100% { opacity: 0.5; }
+}
+
+/* Optimizaciones para gestos táctiles */
+@media (max-width: 768px) {
+  .nest-event-card {
+    min-height: 120px; /* Altura mínima para facilitar toque */
+  }
+  
+  .nest-timeline-event {
+    padding-left: 28px; /* Ajuste para móviles */
+  }
+  
+  /* Botones más grandes para interfaz táctil */
+  .player-controls button {
+    min-width: 36px;
+    min-height: 36px;
+  }
+}

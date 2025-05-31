@@ -1,6 +1,12 @@
-import React, { useState, useEffect, useRef } from 'react'
-import { FaFileVideo, FaCheckCircle, FaTimesCircle, FaPlay, FaEllipsisV } from 'react-icons/fa'
+import React, { useState, useEffect } from 'react'
+import { FaFileVideo, FaTrash, FaTh, FaList, FaEllipsisV, FaEye } from 'react-icons/fa'
 import PropTypes from 'prop-types'
+
+import FileItem from './components/FileItem'
+import PreviewModal from './components/PreviewModal'
+import Pagination from './components/Pagination'
+import { useThumbnails } from './hooks/useThumbnails'
+import { usePreview } from './hooks/usePreview'
 
 /**
  * Componente para mostrar la lista de archivos y su estado de carga
@@ -14,325 +20,239 @@ const FileList = ({
   uploading,
   isMobile = false
 }) => {
-  // Estado local para almacenar las miniaturas generadas
-  const [thumbnails, setThumbnails] = useState({});
-  // Referencias a las URLs creadas para poder liberarlas después
-  const objectUrlsRef = useRef({});
-  // Estado para controlar menú en móvil para cada archivo
-  const [activeMenu, setActiveMenu] = useState(null);
+  // Estado para vista y paginación
+  const [viewMode, setViewMode] = useState('list')
+  const [currentPage, setCurrentPage] = useState(1)
+  const [activeMenu, setActiveMenu] = useState(null)
   
-  // Efecto para generar miniaturas cuando cambian los archivos
+  const itemsPerPage = isMobile ? 6 : 12
+  
+  // Hooks personalizados
+  const thumbnails = useThumbnails(files)
+  const { previewFile, previewUrl, openPreview, closePreview } = usePreview()
+  
+  // Calcular archivos para la página actual
+  const totalPages = Math.ceil(files.length / itemsPerPage)
+  const startIndex = (currentPage - 1) * itemsPerPage
+  const endIndex = startIndex + itemsPerPage
+  const currentFiles = files.slice(startIndex, endIndex)
+  
+  // Resetear página cuando cambian los archivos
   useEffect(() => {
-    // Para cada archivo que no tiene miniatura, intentar generarla
-    files.forEach((file, index) => {
-      if (!thumbnails[index] && file.file instanceof File) {
-        generateThumbnailForFile(file, index);
-      }
-    });
-    
-    // Limpiar las URLs de objetos al desmontar el componente
-    return () => {
-      Object.values(objectUrlsRef.current).forEach(url => {
-        if (url) URL.revokeObjectURL(url);
-      });
-      objectUrlsRef.current = {};
-    };
-  }, [files]);
-  
-  // Función para generar miniatura de un archivo de video
-  const generateThumbnailForFile = (file, index) => {
-    try {
-      // Verificar si ya hay una miniatura para este índice
-      if (thumbnails[index]) return;
-
-      // Solo procesar archivos de video conocidos
-      if (!file.file.type.startsWith('video/') && 
-          !['mp4', 'mov', 'avi', 'webm', 'insv', 'mts', 'm2ts', 'mkv'].some(ext => 
-              file.name.toLowerCase().endsWith(`.${ext}`))) {
-        console.warn("Archivo no reconocido como video:", file.name);
-        setThumbnails(prev => ({
-          ...prev,
-          [index]: null
-        }));
-        return;
-      }
-      
-      // Crear un elemento de video fuera del DOM para generar la vista previa
-      const video = document.createElement('video');
-      video.preload = 'metadata';
-      video.muted = true;
-      video.playsInline = true;
-      
-      // Crear una URL de objeto para el archivo y guardarla en la referencia
-      const objectUrl = URL.createObjectURL(file.file);
-      objectUrlsRef.current[index] = objectUrl;
-      video.src = objectUrl;
-
-      // Configurar un timeout para evitar que se quede esperando indefinidamente
-      const timeoutId = setTimeout(() => {
-        console.warn("Timeout generando miniatura para:", file.name);
-        // Usar un placeholder como fallback
-        setThumbnails(prev => ({
-          ...prev,
-          [index]: null
-        }));
-        
-        // Limpiar recursos
-        if (objectUrlsRef.current[index]) {
-          URL.revokeObjectURL(objectUrlsRef.current[index]);
-          delete objectUrlsRef.current[index];
-        }
-      }, 3000); // Reducir el timeout a 3 segundos
-      
-      // Manejo de errores general para cualquier problema con el video
-      const handleVideoError = (error) => {
-        clearTimeout(timeoutId);
-        console.error("Error con el video:", error);
-        setThumbnails(prev => ({
-          ...prev,
-          [index]: null
-        }));
-        
-        if (objectUrlsRef.current[index]) {
-          URL.revokeObjectURL(objectUrlsRef.current[index]);
-          delete objectUrlsRef.current[index];
-        }
-      };
-      
-      // Cuando se cargan los metadatos, capturar un fotograma
-      video.onloadedmetadata = () => {
-        try {
-          // Ir a 1 segundo o la mitad del video, lo que sea menor
-          const seekTime = Math.min(1, video.duration / 2);
-          video.currentTime = seekTime;
-        } catch (error) {
-          handleVideoError(error);
-        }
-      };
-      
-      // Manejar evento de seeked (cuando el video llega al tiempo solicitado)
-      video.onseeked = () => {
-        clearTimeout(timeoutId);
-        
-        try {
-          // Crear un canvas para capturar el fotograma
-          const canvas = document.createElement('canvas');
-          canvas.width = video.videoWidth || 320;
-          canvas.height = video.videoHeight || 180;
-          
-          const ctx = canvas.getContext('2d');
-          // Verificar que el video tenga dimensiones válidas
-          if (video.videoWidth > 0 && video.videoHeight > 0) {
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            
-            try {
-              // Convertir el canvas a URL de datos
-              const thumbnailUrl = canvas.toDataURL('image/jpeg', 0.7);
-              
-              // Actualizar el estado de miniaturas
-              setThumbnails(prev => ({
-                ...prev,
-                [index]: thumbnailUrl
-              }));
-            } catch (e) {
-              console.warn("Error generando URL de datos:", e);
-              setThumbnails(prev => ({
-                ...prev,
-                [index]: null
-              }));
-            }
-          } else {
-            console.warn("Dimensiones de video no válidas:", file.name);
-            setThumbnails(prev => ({
-              ...prev,
-              [index]: null
-            }));
-          }
-        } catch (error) {
-          handleVideoError(error);
-        } finally {
-          // Limpiar recursos - siempre
-          if (objectUrlsRef.current[index]) {
-            URL.revokeObjectURL(objectUrlsRef.current[index]);
-            delete objectUrlsRef.current[index];
-          }
-        }
-      };
-      
-      // Si hay error al cargar el video
-      video.onerror = handleVideoError;
-    } catch (error) {
-      console.error("Error general generando miniatura:", error);
-      setThumbnails(prev => ({
-        ...prev,
-        [index]: null
-      }));
+    if (currentPage > totalPages && totalPages > 0) {
+      setCurrentPage(totalPages)
     }
-  };
+  }, [files.length, totalPages, currentPage])
 
-  // Función para manejar toques prolongados en dispositivos móviles
+  // Función para formatear duración
+  const formatDuration = (seconds) => {
+    if (!seconds) return '0:00'
+    const hours = Math.floor(seconds / 3600)
+    const minutes = Math.floor((seconds % 3600) / 60)
+    const secs = Math.floor(seconds % 60)
+    
+    if (hours > 0) {
+      return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
+    }
+    return `${minutes}:${secs.toString().padStart(2, '0')}`
+  }
+
+  // Función para manejar toques prolongados en móvil
   const handleLongPress = (index) => {
     if (isMobile) {
-      setActiveMenu(activeMenu === index ? null : index);
+      setActiveMenu(activeMenu === index ? null : index)
     }
-  };
+  }
 
   // Vista para móvil si no hay archivos
-  if (files.length === 0) return null;
+  if (files.length === 0) return null
 
   return (
-    <div className={`card ${isMobile ? 'p-3 sm:p-4' : 'p-4'} mb-5 bg-white shadow-sm rounded-lg`}>
-      <div className="flex justify-between items-center mb-4">
-        <h2 className={`${isMobile ? 'text-base' : 'text-lg'} font-medium`}>
-          {files.length} Archivo{files.length !== 1 ? 's' : ''} 
-        </h2>
-        <div className="flex items-center">
-          {!isMobile && (
-            <button 
-              onClick={clearFiles}
-              className="btn btn-secondary text-sm transition-all hover:shadow-md"
-              disabled={uploading}
-            >
-              Limpiar Todo
-            </button>
-          )}
-          {isMobile && (
-            <button 
-              onClick={clearFiles}
-              className="text-sm text-red-600 px-3 py-1.5 rounded-md border border-red-100 bg-red-50"
-              disabled={uploading}
-            >
-              Limpiar
-            </button>
-          )}
-        </div>
-      </div>
-      
-      <div className={`space-y-3 ${isMobile ? 'max-h-64' : 'max-h-96'} overflow-y-auto pr-1 pl-0.5`}>
-        {files.map((file, index) => {
-          const isSuccess = file.status === 'success';
-          const isError = file.status === 'error';
-          const isUploading = file.status === 'uploading';
+    <>
+      <div className={`${isMobile ? 'p-4 mx-2' : 'p-6'} mb-6 bg-white shadow-lg rounded-xl border border-gray-100`}>
+        {/* Header */}
+        <div className="flex justify-between items-center mb-6">
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center">
+              <FaFileVideo className="text-white text-lg" />
+            </div>
+            <div>
+              <h2 className={`${isMobile ? 'text-lg' : 'text-xl'} font-semibold text-gray-800`}>
+                Archivos Seleccionados
+              </h2>
+              <p className="text-sm text-gray-500">
+                {files.length} archivo{files.length !== 1 ? 's' : ''} • {(files.reduce((acc, file) => acc + file.size, 0) / 1024 / 1024).toFixed(1)} MB
+                {totalPages > 1 && (
+                  <span className="ml-2">• Página {currentPage} de {totalPages}</span>
+                )}
+              </p>
+            </div>
+          </div>
           
-          return (
-            <div 
-              key={index} 
-              className={`border rounded-md ${isMobile ? 'p-3' : 'p-3'} transition-all ${
-                isSuccess ? 'bg-green-50 border-green-200' : 
-                isError ? 'bg-red-50 border-red-200' : 
-                isUploading ? 'bg-blue-50 border-blue-200' : 
-                'bg-white border-gray-200 hover:border-gray-300'
-              }`}
-              onContextMenu={(e) => {e.preventDefault(); handleLongPress(index);}}
-              onTouchStart={() => {
-                if (!isMobile) return;
-                const timer = setTimeout(() => handleLongPress(index), 500);
-                return () => clearTimeout(timer);
-              }}
+          <div className="flex items-center space-x-2">
+            {/* Controles de vista */}
+            {!isMobile && (
+              <div className="flex bg-gray-100 rounded-lg p-1 mr-2">
+                <button
+                  onClick={() => setViewMode('list')}
+                  className={`p-2 rounded-md transition-all ${
+                    viewMode === 'list' 
+                      ? 'bg-white shadow-sm text-blue-600' 
+                      : 'text-gray-600 hover:text-gray-800'
+                  }`}
+                >
+                  <FaList className="text-sm" />
+                </button>
+                <button
+                  onClick={() => setViewMode('grid')}
+                  className={`p-2 rounded-md transition-all ${
+                    viewMode === 'grid' 
+                      ? 'bg-white shadow-sm text-blue-600' 
+                      : 'text-gray-600 hover:text-gray-800'
+                  }`}
+                >
+                  <FaTh className="text-sm" />
+                </button>
+              </div>
+            )}
+            
+            <button 
+              onClick={clearFiles}
+              className={`${isMobile ? 'px-3 py-2 text-sm' : 'px-4 py-2'} 
+                bg-gray-50 hover:bg-red-50 text-gray-600 hover:text-red-600 
+                border border-gray-200 hover:border-red-200 rounded-lg 
+                transition-all duration-200 font-medium flex items-center space-x-2`}
+              disabled={uploading}
             >
-              <div className="flex justify-between items-start">
-                <div className="flex-grow flex items-start">
-                  {thumbnails[index] ? (
-                    <img 
-                      src={thumbnails[index]} 
-                      alt="Vista previa del video" 
-                      className={`${isMobile ? 'w-14 h-8' : 'w-16 h-10'} object-cover rounded mr-2 sm:mr-3 border border-gray-200`}
+              <FaTrash className="text-xs" />
+              <span>{isMobile ? 'Limpiar' : 'Limpiar Todo'}</span>
+            </button>
+            
+            {/* Botón de debug temporal */}
+            {files.length > 0 && (
+              <button 
+                onClick={() => {
+                  console.log('Debug: Force opening preview for first file:', files[0])
+                  console.log('Current preview state before:', { previewFile, previewUrl })
+                  openPreview(files[0], 0)
+                  console.log('Current preview state after:', { previewFile, previewUrl })
+                }}
+                className="px-3 py-2 text-sm bg-blue-50 hover:bg-blue-100 text-blue-600 
+                  border border-blue-200 rounded-lg transition-all duration-200 font-medium"
+              >
+                🔍 Test Modal
+              </button>
+            )}
+          </div>
+        </div>
+        
+        {/* Contenido principal */}
+        <div className={`${isMobile ? 'max-h-80' : 'max-h-96'} overflow-y-auto`}>
+          {viewMode === 'grid' ? (
+            <div className={`grid ${isMobile ? 'grid-cols-2 gap-3' : 'grid-cols-3 lg:grid-cols-4 gap-4'}`}>
+              {currentFiles.map((file, index) => {
+                const actualIndex = startIndex + index
+                return (
+                  <FileItem
+                    key={actualIndex}
+                    file={file}
+                    index={actualIndex}
+                    thumbnail={thumbnails[actualIndex]}
+                    uploadProgress={uploadProgress[actualIndex]}
+                    onPreview={openPreview}
+                    onRemove={removeFile}
+                    uploading={uploading}
+                    formatDuration={formatDuration}
+                    viewMode="grid"
+                    isMobile={isMobile}
+                  />
+                )
+              })}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {currentFiles.map((file, index) => {
+                const actualIndex = startIndex + index
+                return (
+                  <div key={actualIndex}>
+                    <FileItem
+                      file={file}
+                      index={actualIndex}
+                      thumbnail={thumbnails[actualIndex]}
+                      uploadProgress={uploadProgress[actualIndex]}
+                      onPreview={openPreview}
+                      onRemove={removeFile}
+                      uploading={uploading}
+                      formatDuration={formatDuration}
+                      viewMode="list"
+                      isMobile={isMobile}
+                      onLongPress={handleLongPress}
                     />
-                  ) : (
-                    <div className={`${isMobile ? 'w-14 h-8' : 'w-16 h-10'} bg-gray-100 rounded mr-2 sm:mr-3 flex items-center justify-center text-center`}>
-                      <FaFileVideo className="text-gray-400 text-xl" />
-                    </div>
-                  )}
-                  
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium truncate max-w-full text-sm">{file.name}</div>
-                    <div className="text-xs text-gray-500 mt-1">
-                      {(file.size / 1024 / 1024).toFixed(2)} MB
-                      {!isMobile && file.fileDate && (
-                        <span className="ml-2">
-                          • Fecha: {file.fileDate}
-                        </span>
-                      )}
-                      {!isMobile && file.duration && (
-                        <span className="ml-2">
-                          • {Math.floor(file.duration / 60)}:{(file.duration % 60).toString().padStart(2, '0')}
-                        </span>
-                      )}
-                    </div>
                     
-                    {file.status === 'error' && (
-                      <div className="text-xs text-red-600 mt-1 truncate">
-                        {file.error && file.error.includes("DEMUXER_ERROR_COULD_NOT_OPEN") 
-                          ? "Formato no soportado" 
-                          : file.error || 'Error al subir'
-                        }
+                    {/* Menú móvil */}
+                    {isMobile && activeMenu === actualIndex && (
+                      <div className="mt-4 pt-4 border-t border-gray-200 grid grid-cols-2 gap-3">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            removeFile(actualIndex)
+                            setActiveMenu(null)
+                          }}
+                          className="flex items-center justify-center space-x-2 px-4 py-3 
+                            text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 
+                            rounded-lg transition-all duration-200 text-sm font-medium"
+                        >
+                          <FaTrash />
+                          <span>Eliminar</span>
+                        </button>
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            e.preventDefault()
+                            console.log('Mobile view button clicked for file:', file.name)
+                            openPreview(file, actualIndex)
+                            setActiveMenu(null)
+                          }}
+                          className="flex items-center justify-center space-x-2 px-4 py-3 
+                            text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 
+                            rounded-lg transition-all duration-200 text-sm font-medium 
+                            disabled:opacity-50 disabled:cursor-not-allowed"
+                          disabled={!thumbnails[actualIndex]}
+                        >
+                          <FaEye />
+                          <span>Vista</span>
+                        </button>
                       </div>
                     )}
                   </div>
-                </div>
-                
-                <div className="flex items-center">
-                  {file.status === 'success' && (
-                    <FaCheckCircle className="text-green-500 mr-2" />
-                  )}
-                  {file.status === 'error' && (
-                    <FaTimesCircle className="text-red-500 mr-2" />
-                  )}
-                  {!uploading && file.status !== 'uploading' && (
-                    <>
-                      {isMobile ? (
-                        <button
-                          onClick={() => handleLongPress(index)}
-                          className="p-1.5"
-                        >
-                          <FaEllipsisV className="text-gray-400" />
-                        </button>
-                      ) : (
-                        <button 
-                          onClick={() => removeFile(index)}
-                          className="text-gray-400 hover:text-red-500 transition-colors"
-                          aria-label="Eliminar archivo"
-                        >
-                          ✕
-                        </button>
-                      )}
-                    </>
-                  )}
-                </div>
-              </div>
-              
-              {/* Menú móvil desplegable con más padding */}
-              {isMobile && activeMenu === index && (
-                <div className="mt-3 pt-3 border-t border-gray-100 grid grid-cols-2 gap-3">
-                  <button
-                    onClick={() => removeFile(index)}
-                    className="text-xs text-red-600 px-3 py-2 rounded-md border border-red-100 bg-red-50 flex items-center justify-center"
-                  >
-                    <FaTimesCircle className="mr-2" /> Eliminar
-                  </button>
-                  <button 
-                    className="text-xs text-gray-600 px-3 py-2 rounded-md border border-gray-200 bg-gray-50 flex items-center justify-center disabled:opacity-50"
-                    disabled={!thumbnails[index]}
-                  >
-                    <FaPlay className="mr-2" /> Previsualizar
-                  </button>
-                </div>
-              )}
-              
-              {/* Progress bar con más margen vertical */}
-              {(file.status === 'uploading' || uploadProgress[index]) && (
-                <div className={`w-full bg-gray-200 rounded-full ${isMobile ? 'h-2 mt-3' : 'h-2.5 my-2'} overflow-hidden`}>
-                  <div 
-                    className="bg-dashcam-600 h-full rounded-full transition-all duration-300 ease-in-out" 
-                    style={{ width: `${uploadProgress[index] || 0}%` }}
-                  ></div>
-                </div>
-              )}
+                )
+              })}
             </div>
-          );
-        })}
+          )}
+        </div>
+        
+        {/* Paginación */}
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          startIndex={startIndex}
+          endIndex={endIndex}
+          totalFiles={files.length}
+          onPageChange={setCurrentPage}
+        />
       </div>
-    </div>
+      
+      {/* Modal de previsualización */}
+      <PreviewModal
+        previewFile={previewFile}
+        previewUrl={previewUrl}
+        totalFiles={files.length}
+        onClose={closePreview}
+        onRemove={removeFile}
+        uploading={uploading}
+        formatDuration={formatDuration}
+      />
+    </>
   )
 }
 
@@ -356,4 +276,4 @@ FileList.propTypes = {
   isMobile: PropTypes.bool
 }
 
-export default FileList;
+export default FileList

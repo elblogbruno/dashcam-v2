@@ -4,6 +4,7 @@ import time
 from fastapi import APIRouter, Response, Request
 from fastapi.responses import StreamingResponse
 from typing import Dict, Any
+from shutdown_control import should_continue_loop, register_task
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -14,6 +15,12 @@ camera_manager = None
 # Tracking de clientes activos
 active_clients = {"road": 0, "interior": 0}
 client_streams: Dict[str, Dict[str, Any]] = {}
+
+# Estado del streaming MJPEG (desactivado por defecto)
+streaming_enabled = {
+    "road": False,
+    "interior": False
+}
 
 # Estadísticas
 stats = {
@@ -26,13 +33,14 @@ async def initialize_mjpeg():
     logger.info("🚀 Inicializando módulo de streaming MJPEG nativo...")
     
     # Iniciar limpieza periódica de clientes inactivos
-    asyncio.create_task(cleanup_inactive_clients())
+    cleanup_task = asyncio.create_task(cleanup_inactive_clients())
+    register_task(cleanup_task, "mjpeg_cleanup")
     
     logger.info("✓ Módulo MJPEG nativo inicializado correctamente")
 
 async def cleanup_inactive_clients():
     """Limpiar clientes inactivos periódicamente"""
-    while True:
+    while should_continue_loop("mjpeg"):
         try:
             current_time = time.time()
             to_remove = []
@@ -43,6 +51,7 @@ async def cleanup_inactive_clients():
                     to_remove.append(client_id)
             
             for client_id in to_remove:
+                logger.info(f"Limpiando cliente inactivo: {client_id}")
                 await cleanup_client(client_id, "inactividad")
             
             await asyncio.sleep(10)  # Verificar cada 10 segundos
@@ -50,6 +59,8 @@ async def cleanup_inactive_clients():
         except Exception as e:
             logger.error(f"Error en limpieza de clientes: {e}")
             await asyncio.sleep(5)
+    
+    logger.info("🛑 Cleanup de clientes MJPEG terminado")
 
 async def cleanup_client(client_id: str, reason: str = "desconexión"):
     """Limpiar recursos de un cliente"""
@@ -135,6 +146,29 @@ async def mjpeg_stream(request: Request, camera_type: str):
 async def native_mjpeg_generator(request: Request, camera_type: str, client_id: str):
     """Generador MJPEG nativo usando encoders hardware/software nativos"""
     try:
+        # Verificar si el streaming está habilitado para esta cámara
+        if not streaming_enabled[camera_type]:
+            logger.info(f"Streaming MJPEG está desactivado para la cámara {camera_type}")
+            # Generar un frame indicando que el streaming está desactivado
+            import cv2
+            import numpy as np
+            
+            # Crear un mensaje visual para el usuario
+            img = np.zeros((480, 640, 3), dtype=np.uint8)
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            cv2.putText(img, "Streaming MJPEG desactivado", (120, 240), font, 1, (255, 255, 255), 2)
+            cv2.putText(img, "Active el streaming desde el botón", (100, 280), font, 1, (255, 255, 255), 2)
+            cv2.putText(img, f"Cámara: {camera_type}", (240, 320), font, 1, (0, 120, 255), 2)
+            
+            # Enviar un solo frame con el mensaje
+            _, jpeg = cv2.imencode('.jpg', img)
+            frame_bytes = jpeg.tobytes()
+            yield (b"--frame\r\n"
+                   b"Content-Type: image/jpeg\r\n"
+                   b"Content-Length: " + f"{len(frame_bytes)}".encode() + b"\r\n"
+                   b"\r\n" + frame_bytes + b"\r\n")
+            return
+
         # Verificar camera_manager
         if camera_manager is None:
             logger.error("Camera manager no disponible")
@@ -153,6 +187,7 @@ async def native_mjpeg_generator(request: Request, camera_type: str, client_id: 
 
         # Obtener calidad del request
         quality_param = request.query_params.get('quality', 'medium').lower()
+        logger.info(f"Calidad solicitada: {quality_param} para {camera_type}")
         if quality_param not in ['low', 'medium', 'high']:
             quality_param = 'medium'
 
@@ -192,8 +227,11 @@ async def native_mjpeg_generator(request: Request, camera_type: str, client_id: 
                 break
                 
             try:
-                # Leer frame del streaming output
-                frame_data = streaming_output.read(timeout=1.0)
+                # SOLUCIÓN MEJORADA: Usar método optimizado para contextos async
+                # que minimiza el tiempo de bloqueo
+                frame_data = await asyncio.get_event_loop().run_in_executor(
+                    None, lambda: streaming_output.read_async_friendly(timeout=0.1)
+                )
                 
                 if frame_data:
                     # Enviar frame en formato MJPEG
@@ -214,8 +252,8 @@ async def native_mjpeg_generator(request: Request, camera_type: str, client_id: 
                         logger.warning(f"Demasiados timeouts para {client_id}")
                         break
                     
-                    # Pausa corta en caso de timeout
-                    await asyncio.sleep(0.1)
+                    # Pausa muy corta en caso de timeout para no bloquear
+                    await asyncio.sleep(0.01)  # Reducido de 0.1 a 0.01 segundos
                     
             except Exception as e:
                 logger.error(f"Error en streaming para {client_id}: {e}")
@@ -240,7 +278,31 @@ async def get_mjpeg_status():
         "total_clients": total_clients,
         "clients_by_camera": active_clients.copy(),
         "total_connections": stats["clients_connected"],
-        "streaming_mode": "native"
+        "streaming_mode": "native",
+        "streaming_enabled": streaming_enabled
+    }
+
+@router.post("/toggle/{camera_type}")
+async def toggle_mjpeg_streaming(camera_type: str):
+    """Activa o desactiva el streaming MJPEG para una cámara específica"""
+    if camera_type not in ["road", "interior"]:
+        return {"status": "error", "message": "Tipo de cámara no válido. Use 'road' o 'interior'."}
+    
+    # Cambiar estado del streaming para la cámara específica
+    streaming_enabled[camera_type] = not streaming_enabled[camera_type]
+    
+    # Si desactivamos el streaming, detener la cámara
+    if not streaming_enabled[camera_type] and camera_manager:
+        camera_attr = f"{camera_type}_camera"
+        if hasattr(camera_manager, camera_attr):
+            camera = getattr(camera_manager, camera_attr)
+            if camera:
+                camera.stop_mjpeg_stream()
+    
+    return {
+        "status": "ok",
+        "camera_type": camera_type,
+        "enabled": streaming_enabled[camera_type]
     }
 
 @router.post("/heartbeat/{client_id}")

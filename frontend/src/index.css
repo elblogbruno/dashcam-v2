@@ -1,73 +1,74 @@
+/* filepath: /root/dashcam-v2/frontend/src/index.css */
+@import './styles/theme.css'; /* Importar estilos de tema (debe ir antes de cualquier otra regla) */
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-@layer base {
-  /* Mobile-first approach */
-  html {
-    font-size: 14px; /* Smaller base font for mobile */
-    -webkit-text-size-adjust: 100%;
-    -webkit-tap-highlight-color: transparent;
-  }
-
-  @media (min-width: 768px) {
-    html {
-      font-size: 16px; /* Larger font for desktop */
-    }
-  }
-
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
-    line-height: 1.5;
-    overflow-x: hidden;
-    background-color: #f8fafc;
-  }
-
-  /* Estilos base para asegurar que el texto sea visible en los inputs y selectores */
-  input, select, textarea, button {
-    @apply text-gray-800;
-    font-size: inherit;
-    -webkit-appearance: none;
-  }
-  
-  input::placeholder, textarea::placeholder {
-    @apply text-gray-500;
-  }
-  
-  /* Asegurar que las etiquetas de los checkboxes sean visibles */
-  input[type="checkbox"] + label,
-  label:has(input[type="checkbox"]) {
-    @apply text-gray-800;
-  }
-
-  /* Asegurar que el texto dentro de labels sea visible */
-  label {
-    @apply text-gray-800;
-  }
-  
-  /* Estilos para spans dentro de labels (comúnmente usado con checkboxes) */
-  label span {
-    @apply text-gray-800;
-  }
-
-  /* Improve touch targets for mobile */
-  button, a, input, select, textarea {
-    min-height: 44px;
-    touch-action: manipulation;
-  }
-
-  /* Safe area support for modern mobile devices */
-  @supports (padding: max(0px)) {
-    .safe-area-top {
-      padding-top: max(env(safe-area-inset-top), 0px);
-    }
-    
-    .safe-area-bottom {
-      padding-bottom: max(env(safe-area-inset-bottom), 0px);
-    }
-  }
+/* Definición de variables para Nest Doorbell */
+:root {
+  --nest-background: #202124;
+  --nest-card-bg: #2e3033;
+  --nest-text-primary: #ffffff;
+  --nest-text-secondary: rgba(255, 255, 255, 0.7);
+  --nest-accent: #8ab4f8;
+  --nest-border: rgba(255, 255, 255, 0.1);
+  --nest-event-indicator: #8ab4f8;
+  --nest-selected: #4285f4;
+  --nest-header-height: 56px;
+  --nest-timeline-bg: #282a2d;
+  --nest-event-bg: #2e3033;
+  --nest-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
 }
 
+/* Estilos base */
+html {
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  background-color: var(--nest-background);
+  /* color: var(--nest-text-primary); */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overscroll-behavior: none;
+}
+
+
+
+/* Estilos base para asegurar que el texto sea visible en los inputs y selectores */
+input, select, textarea, button {
+  @apply text-gray-800;
+}
+
+input::placeholder, textarea::placeholder {
+  @apply text-gray-500;
+}
+
+/* Asegurar que las etiquetas de los checkboxes sean visibles */
+input[type="checkbox"] + label,
+label:has(input[type="checkbox"]) {
+  @apply text-gray-800;
+}
+
+/* Estilos personalizados para el mapa */
+.leaflet-container-custom {
+  width: 100% !important;
+  height: 100% !important;
+  z-index: 0;
+  margin-left: 0 !important;
+}
+
+/* Asegurar que el texto dentro de labels sea visible */
+label {
+  @apply text-gray-800;
+}
+
+/* Estilos para spans dentro de labels (comúnmente usado con checkboxes) */
+label span {
+  @apply text-gray-800;
+}
 @layer components {
   .btn {
     @apply px-4 py-2 rounded font-medium focus:outline-none focus:ring-2 focus:ring-dashcam-500 focus:ring-opacity-50 transition-colors;
