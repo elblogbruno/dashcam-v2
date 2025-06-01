@@ -9,7 +9,7 @@ import sys
 import logging
 from datetime import datetime
 from typing import Set, Dict, Optional
-from fastapi_profiler import PyInstrumentProfilerMiddleware
+# from fastapi_profiler import PyInstrumentProfilerMiddleware
 from shutdown_control import should_continue_loop, register_task, shutdown_controller
 
 

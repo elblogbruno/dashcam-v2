@@ -4,6 +4,8 @@ import logging
 import sys
 import os
 
+from backend.cameras.road_camera import RoadCamera
+
 # Set up logging
 logging.basicConfig(level=logging.INFO, 
                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -19,8 +21,8 @@ def test_interior_camera():
     logger.info("Testing interior camera module...")
     
     # Create camera instance
-    camera = InteriorCamera(device_path="0")  # Use index 0 directly
-    
+    # camera = InteriorCamera(device_path="0")  # Use index 0 directly
+    camera = RoadCamera()
     # Initialize camera
     if not camera.initialize():
         logger.error("Failed to initialize camera")

@@ -23,6 +23,42 @@ command_exists() {
   command -v "$1" >/dev/null 2>&1
 }
 
+
+# Function to kill processes using specific ports
+kill_port_processes() {
+  local port=$1
+  echo "Checking for processes using port $port..."
+  
+  # Try using lsof first (most reliable)
+  if command_exists lsof; then
+    local pids=$(lsof -ti :$port 2>/dev/null)
+    if [ -n "$pids" ]; then
+      echo "Found processes using port $port: $pids"
+      echo "Terminating processes on port $port..."
+      for pid in $pids; do
+        echo "Killing process $pid"
+        kill -15 $pid 2>/dev/null || kill -9 $pid 2>/dev/null
+      done
+      sleep 2
+    fi
+  # Fallback to fuser if lsof is not available
+  elif command_exists fuser; then
+    if fuser $port/tcp >/dev/null 2>&1; then
+      echo "Found process using port $port, terminating..."
+      fuser -k $port/tcp 2>/dev/null
+      sleep 2
+    fi
+  # Last resort: try netstat with pkill
+  else
+    local pid=$(netstat -tlnp 2>/dev/null | grep ":$port " | awk '{print $7}' | cut -d'/' -f1)
+    if [ -n "$pid" ] && [ "$pid" != "-" ]; then
+      echo "Found process $pid using port $port, terminating..."
+      kill -15 $pid 2>/dev/null || kill -9 $pid 2>/dev/null
+      sleep 2
+    fi
+  fi
+}
+
 # Check for required dependencies
 echo "Checking dependencies..."
 
@@ -42,8 +78,35 @@ if [ ! -d "venv" ]; then
   python3 -m venv --system-site-packages venv 
   source venv/bin/activate
   pip install -r requirements.txt
+  # Save requirements hash for future checks
+  md5sum requirements.txt > .requirements_hash 2>/dev/null || shasum requirements.txt > .requirements_hash
 else
   source venv/bin/activate
+  
+  # Check if requirements.txt has changed
+  REQUIREMENTS_CHANGED=false
+  if [ -f ".requirements_hash" ]; then
+    if ! (md5sum -c .requirements_hash 2>/dev/null || shasum -c .requirements_hash 2>/dev/null) >/dev/null 2>&1; then
+      REQUIREMENTS_CHANGED=true
+    fi
+  else
+    REQUIREMENTS_CHANGED=true
+  fi
+  
+  # Check for missing or outdated dependencies
+  if [ "$REQUIREMENTS_CHANGED" = true ]; then
+    echo "Requirements.txt has changed. Installing/updating dependencies..."
+    pip install -r requirements.txt
+    # Update requirements hash
+    md5sum requirements.txt > .requirements_hash 2>/dev/null || shasum requirements.txt > .requirements_hash
+  else
+    # Quick check for missing dependencies
+    echo "Checking for missing dependencies..."
+    if ! pip check >/dev/null 2>&1; then
+      echo "Some dependencies are missing or have conflicts. Reinstalling..."
+      pip install -r requirements.txt
+    fi
+  fi
 fi
 
 # Install additional development dependencies if needed
@@ -58,14 +121,19 @@ if [ ! -d "frontend/node_modules" ]; then
   cd ..
 fi
 
+# Clean up any processes using our ports before starting
+echo "Cleaning up any existing processes using development ports..."
+kill_port_processes 8000
+kill_port_processes 5173
+
 # Check for port conflicts before starting servers
 if netstat -tuln | grep LISTEN | grep -q ":8000 "; then
-  echo "Error: Port 8000 is already in use. Another process might be blocking it."
+  echo "Error: Port 8000 is still in use after cleanup attempt."
   exit 1
 fi
 
 if netstat -tuln | grep LISTEN | grep -q ":5173 "; then
-  echo "Error: Port 5173 is already in use. This port is needed for Vite dev server."
+  echo "Error: Port 5173 is still in use after cleanup attempt."
   exit 1
 fi
 

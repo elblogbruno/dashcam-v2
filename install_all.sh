@@ -23,17 +23,26 @@ if ! command -v npm &> /dev/null; then
     sudo apt-get update && sudo apt-get install -y npm
 fi
 
-# 2. Crear entorno virtual de Python
+# 2. Instalar picamera si es necesario (antes de crear el entorno virtual)
+echo "[2/5] Verificando e instalando picamera..."
+if python3 -c "import picamera" &> /dev/null; then
+    echo "picamera ya está instalado."
+else
+    echo "Instalando picamera..."
+    sudo apt install python3-picamera2 --no-install-recommends 
+fi
+
+# 3. Crear entorno virtual de Python
 cd "$(dirname "$0")"
-echo "[2/4] Creando entorno virtual de Python..."
+echo "[3/5] Creando entorno virtual de Python..."
 if [ ! -d "venv" ]; then
     python3 -m venv --system-site-packages venv 
 fi
 source venv/bin/activate
 
-# 3. Instalar dependencias de Python
+# 4. Instalar dependencias de Python
 if [ -f requirements.txt ]; then
-    echo "[3/4] Instalando dependencias de Python..."
+    echo "[4/5] Instalando dependencias de Python..."
     pip install --upgrade pip
     pip install -r requirements.txt
 else
@@ -42,9 +51,9 @@ fi
 
 deactivate
 
-# 4. Instalar dependencias de Node.js para el frontend
+# 5. Instalar dependencias de Node.js para el frontend
 if [ -d "frontend" ] && [ -f "frontend/package.json" ]; then
-    echo "[4/4] Instalando dependencias de Node.js en frontend..."
+    echo "[5/5] Instalando dependencias de Node.js en frontend..."
     cd frontend
     npm install
     cd ..
@@ -53,12 +62,3 @@ else
 fi
 
 echo "\n¡Instalación completa! Usa 'source venv/bin/activate' para activar el entorno Python."
-
-# 5. Instalar picamera si es necesario
-echo "[5/5] Verificando e instalando picamera..."
-if python3 -c "import picamera" &> /dev/null; then
-    echo "picamera ya está instalado."
-else
-    echo "Instalando picamera..."
-    sudo apt install python3-picamera2 --no-install-recommends 
-fi

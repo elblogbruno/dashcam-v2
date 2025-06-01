@@ -64,7 +64,7 @@ mkdir -p "/var/lib/dkms/${mod}/${ver}/${marker}"
 echo 'Updating boot configuration'
 config='/boot/config.txt'
 
-cp seeed-*-voicecard.dtbo /boot/overlays
+cp seeed-*-voicecard.dtbo /boot/firmware/overlays
 grep -q "^snd-soc-ac108$" /etc/modules || echo "snd-soc-ac108" >> /etc/modules
 sed -i -e 's:#dtparam=i2c_arm=on:dtparam=i2c_arm=on:g' "${config}"
 echo "dtoverlay=i2s-mmap" >> "${config}"
