@@ -2,11 +2,19 @@ import os
 import shutil
 import logging
 import time
-import sqlite3
 import threading
 import json
+import sys
 from datetime import datetime
 from typing import Dict, Any, List, Optional, Callable
+
+# Add backend directory to path to import modules
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+# Import Trip Manager and VideoRepository from the new system
+from trip_logger_package.services.trip_manager import TripManager
+from trip_logger_package.database.repository import VideoRepository
+from trip_logger_package.database.connection import get_database_manager
 
 # Configurar logging
 logging.basicConfig(
@@ -30,6 +38,10 @@ class HDDCopyModule:
         self.disk_manager = disk_manager
         self.camera_manager = camera_manager
         self.audio_notifier = audio_notifier
+        
+        # Initialize Trip Manager for database operations
+        self.trip_manager = TripManager(disk_manager.db_path if disk_manager else None)
+        self.db_manager = get_database_manager(disk_manager.db_path if disk_manager else None)
         
         # Estado interno
         self.is_copying = False
@@ -272,26 +284,42 @@ class HDDCopyModule:
             )
             os.makedirs(backup_folder, exist_ok=True)
             
-            # Get videos list from database
-            conn = sqlite3.connect(self.disk_manager.db_path)
-            cursor = conn.cursor()
-            
-            # Check if recordings table exists
-            cursor.execute("""
-                SELECT name FROM sqlite_master 
-                WHERE type='table' AND name='recordings'
-            """)
-            if not cursor.fetchone():
-                self._finish_copy(False, "No existe la tabla de grabaciones en la base de datos")
-                return
-            
-            # Get all videos that have not been backed up
-            cursor.execute("""
-                SELECT id, file_path, file_size FROM recordings
-                WHERE backed_up = 0 OR backed_up IS NULL
-                ORDER BY start_time
-            """)
-            videos = cursor.fetchall()
+            # Get videos list from database using VideoRepository
+            with self.db_manager.session_scope() as session:
+                video_repo = VideoRepository(session)
+                
+                # Get all video clips and external videos
+                video_clips = video_repo.get_all_video_clips()
+                external_videos = video_repo.get_all_external_videos()
+                
+                all_videos = list(video_clips) + list(external_videos)
+                
+                if not all_videos:
+                    self._finish_copy(False, "No hay videos en la base de datos")
+                    return
+                
+                # Filter videos that have not been backed up
+                videos = []
+                for video in all_videos:
+                    if not getattr(video, 'backed_up', False):
+                        videos.append((
+                            video.id,
+                            video.file_path,
+                            video.file_size or 0
+                        ))
+                
+                # Sort by start_time if available
+                videos_with_time = []
+                for video_tuple in videos:
+                    video_id = video_tuple[0]
+                    # Find the full video data to get start_time
+                    full_video = next((v for v in all_videos if v.id == video_id), None)
+                    start_time = full_video.start_time if full_video else None
+                    videos_with_time.append((video_tuple, start_time))
+                
+                # Sort by start_time, videos without time go to the end
+                videos_with_time.sort(key=lambda x: x[1] if x[1] else datetime.max)
+                videos = [item[0] for item in videos_with_time]
             
             logger.info(f"Videos encontrados para copia: {len(videos)}")
             for i, (video_id, file_path, file_size) in enumerate(videos):
@@ -390,14 +418,28 @@ class HDDCopyModule:
                         self.copy_stats["copied_files"] += 1
                         self.copy_stats["copied_size"] += file_size if file_size else 0
                         
-                        # Actualizar base de datos
-                        cursor.execute("""
-                            UPDATE recordings 
-                            SET backed_up = 1, backup_path = ?
-                            WHERE id = ?
-                        """, (dest_path, video_id))
-                        conn.commit()
-                        logger.debug(f"Base de datos actualizada para archivo ID {video_id}")
+                        # Actualizar base de datos usando VideoRepository
+                        with self.db_manager.session_scope() as update_session:
+                            update_video_repo = VideoRepository(update_session)
+                            
+                            # Find the video to update
+                            video_to_update = None
+                            video_clips = update_video_repo.get_all_video_clips()
+                            external_videos = update_video_repo.get_all_external_videos()
+                            
+                            for video in list(video_clips) + list(external_videos):
+                                if video.id == video_id:
+                                    video_to_update = video
+                                    break
+                            
+                            if video_to_update:
+                                # Update the backup information
+                                video_to_update.backed_up = True
+                                video_to_update.backup_path = dest_path
+                                update_session.commit()
+                                logger.debug(f"Base de datos actualizada para archivo ID {video_id}")
+                            else:
+                                logger.warning(f"No se encontró el video con ID {video_id} para actualizar")
                     else:
                         logger.warning(f"Archivo no encontrado: {source_path}")
                         # Continuar con el siguiente archivo en lugar de fallar
@@ -422,8 +464,7 @@ class HDDCopyModule:
                     # Continuamos con el siguiente archivo
             
             # Finalizar
-            conn.commit()
-            conn.close()
+            logger.info("Proceso de copia finalizado exitosamente")
             
             # Notificar completado
             if not self.cancel_copy:

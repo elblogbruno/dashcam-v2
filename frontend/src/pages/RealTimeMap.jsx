@@ -2,8 +2,10 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import axios from 'axios'
 import { MapContainer } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
-import { FaMapMarkerAlt } from 'react-icons/fa'
-import { MdWarning } from 'react-icons/md'
+
+// Importar el nuevo sistema de diseño
+import { Card, Alert } from '../components/common/UI'
+import { Stack, Flex } from '../components/common/Layout'
 
 // Importar componentes
 import OfflineTileLayer from '../components/Maps/OfflineTileLayer'
@@ -14,9 +16,8 @@ import StatusBar from '../components/map/StatusBar'
 import ControlPanel from '../components/map/ControlPanel'
 import NavigationSidebar from '../components/map/NavigationSidebar'
 import NotificationOverlay from '../components/map/NotificationOverlay'
-import MapSourceSelector from '../components/Maps/MapSourceSelector'
 import TileDebugger from '../components/Maps/TileDebugger'
-import OfflineTileDebugger from '../components/Maps/OfflineTileDebugger'  // Depurador de tiles offline
+import OfflineTileDebugger from '../components/Maps/OfflineTileDebugger'
 
 // Importar utilidades
 import { getDistanceBetweenCoordinates } from '../utils/mapHelpers'
@@ -28,6 +29,7 @@ function RealTimeMap() {
   const [speed, setSpeed] = useState(0)
   const [shouldFollowPosition, setShouldFollowPosition] = useState(true)
   const [isRecording, setIsRecording] = useState(false)
+  const [recordingStartTime, setRecordingStartTime] = useState(null)
   const [traveledPath, setTraveledPath] = useState([])
   const [nearbyLandmarks, setNearbyLandmarks] = useState([])
   const [upcomingLandmarks, setUpcomingLandmarks] = useState([])
@@ -44,7 +46,6 @@ function RealTimeMap() {
   
   // Estados para gestión de mapas
   const [mapSource, setMapSource] = useState(() => {
-    // Cargar la preferencia guardada en localStorage, o usar 'auto' por defecto
     const savedPreference = localStorage.getItem('preferredMapSource')
     return savedPreference || 'auto'
   })
@@ -54,9 +55,9 @@ function RealTimeMap() {
   const defaultMapLocation = [37.7749, -122.4194] // Default to San Francisco
   
   const mapRef = useRef(null)
-  const mapContainerRef = useRef(null) // Añadir referencia para el contenedor del mapa
+  const mapContainerRef = useRef(null)
 
-  // Añadir estado para controlar errores del mapa
+  // Estado para controlar errores del mapa
   const [mapError, setMapError] = useState(null);
 
   // Función para manejar errores del mapa
@@ -64,10 +65,8 @@ function RealTimeMap() {
     console.error("Error en el mapa:", error);
     setMapError(error.message || "Error desconocido en el mapa");
     
-    // Intentar recuperarse del error después de un tiempo
     setTimeout(() => {
       setMapError(null);
-      // Intentar inicializar el mapa de nuevo si es necesario
       if (mapRef.current) {
         mapRef.current.invalidateSize();
       }
@@ -89,7 +88,6 @@ function RealTimeMap() {
 
   // Load active trip info and check if there's an active trip already running
   useEffect(() => {
-    // Load planned trip from localStorage if available
     const savedTrip = localStorage.getItem('activeTrip')
     if (savedTrip) {
       try {
@@ -100,7 +98,6 @@ function RealTimeMap() {
       }
     }
     
-    // Check if there's an active trip already running
     const checkActiveTrip = async () => {
       try {
         const response = await fetch('/api/trips/active')
@@ -111,7 +108,6 @@ function RealTimeMap() {
           setTripId(data.active_trip.trip_id)
           
           if (data.active_trip.planned_trip_id) {
-            // If there's a planned trip ID, try to load that planned trip
             try {
               const tripResponse = await fetch(`/api/trip-planner/${data.active_trip.planned_trip_id}`)
               const tripData = await tripResponse.json()
@@ -119,7 +115,6 @@ function RealTimeMap() {
                 setActiveTrip(tripData)
                 localStorage.setItem('activeTrip', JSON.stringify(tripData))
                 
-                // Show a notification that there's an active trip
                 setTimeout(() => {
                   alert(`¡Estás en un viaje activo: ${tripData.name}!\nLa grabación está en curso.`);
                 }, 500);
@@ -128,7 +123,6 @@ function RealTimeMap() {
               console.error('Error loading active planned trip:', err)
             }
           } else {
-            // If there's a trip without planned data
             setTimeout(() => {
               alert('¡Hay un viaje activo actualmente!\nLa grabación está en curso.');
             }, 500);
@@ -155,7 +149,6 @@ function RealTimeMap() {
   const updateNavigationStatus = () => {
     if (!position || !activeTrip) return
 
-    // Get all waypoints including start and end
     let allPoints = [
       { ...activeTrip.start_location, name: 'Start' },
       ...(activeTrip.waypoints || []).map((wp, i) => ({ 
@@ -165,7 +158,6 @@ function RealTimeMap() {
       { ...activeTrip.end_location, name: 'Destination' }
     ]
     
-    // Filter out completed waypoints
     allPoints = allPoints.filter((_, index) => !completedWaypoints.includes(index))
     
     if (allPoints.length === 0) {
@@ -177,19 +169,15 @@ function RealTimeMap() {
       return
     }
     
-    // Calculate distance to next point
     const nextPoint = allPoints[0]
     const distance = getDistanceBetweenCoordinates(
       position[0], position[1], 
       nextPoint.lat, nextPoint.lon
     )
     
-    // Mark waypoint as completed if we're close enough
-    if (distance < 50 && allPoints.length > 1) { // Within 50 meters
+    if (distance < 50 && allPoints.length > 1) {
       const waypointIndex = completedWaypoints.length
       setCompletedWaypoints([...completedWaypoints, waypointIndex])
-      
-      // Show notification
       setStatusMessage(`Arrived at ${nextPoint.name}!`)
     }
     
@@ -217,7 +205,6 @@ function RealTimeMap() {
         break
       case 'message':
         try {
-          // Handle location updates
           if (data.type === 'location_update') {
             const { lat, lon, heading, speed } = data
             
@@ -226,22 +213,30 @@ function RealTimeMap() {
               setHeading(heading || 0)
               setSpeed(speed || 0)
               
-              // Add to traveled path if recording
               if (isRecording && lat && lon) {
                 setTraveledPath(prev => [...prev, [lat, lon]])
               }
             }
           }
           
-          // Handle recording status updates
           if (data.type === 'recording_status') {
+            const wasRecording = isRecording;
             setIsRecording(data.recording)
+            
+            // Si empezó a grabar y no estaba grabando antes, establecer tiempo de inicio
+            if (data.recording && !wasRecording) {
+              setRecordingStartTime(new Date().toISOString())
+            }
+            // Si paró de grabar, limpiar tiempo de inicio
+            else if (!data.recording && wasRecording) {
+              setRecordingStartTime(null)
+            }
+            
             if (data.trip_id) {
               setTripId(data.trip_id)
             }
           }
           
-          // Handle nearby landmarks updates
           if (data.type === 'landmarks_update') {
             if (data.nearby) {
               setNearbyLandmarks(data.nearby)
@@ -252,12 +247,10 @@ function RealTimeMap() {
             }
           }
           
-          // Handle status messages
           if (data.type === 'status') {
             setStatusMessage(data.message)
           }
           
-          // Handle status_update messages (new format)
           if (data.type === 'status_update') {
             if (data.location) {
               const { lat, lon, heading, speed } = data.location
@@ -266,7 +259,6 @@ function RealTimeMap() {
                 setHeading(heading || 0)
                 setSpeed(speed || 0)
                 
-                // Add to traveled path if recording
                 if (isRecording && lat && lon) {
                   setTraveledPath(prev => [...prev, [lat, lon]])
                 }
@@ -274,7 +266,17 @@ function RealTimeMap() {
             }
             
             if (data.recording !== undefined) {
+              const wasRecording = isRecording;
               setIsRecording(data.recording)
+              
+              // Si empezó a grabar y no estaba grabando antes, establecer tiempo de inicio
+              if (data.recording && !wasRecording) {
+                setRecordingStartTime(new Date().toISOString())
+              }
+              // Si paró de grabar, limpiar tiempo de inicio
+              else if (!data.recording && wasRecording) {
+                setRecordingStartTime(null)
+              }
             }
             
             if (data.trip_id) {
@@ -297,14 +299,10 @@ function RealTimeMap() {
 
   // Initialize WebSocket connection through centralized manager
   useEffect(() => {
-    // Register this component as a listener
     webSocketManager.addListener('realtime-map', handleWebSocketEvent)
-    
-    // Initialize connection if not already connected
     webSocketManager.connect()
     
     return () => {
-      // Remove listener when component unmounts
       webSocketManager.removeListener('realtime-map')
     }
   }, [handleWebSocketEvent])
@@ -314,11 +312,11 @@ function RealTimeMap() {
     try {
       setStatusMessage('Starting new trip...')
       
-      // If we have an active planned trip, include it in the request
       const payload = activeTrip ? { planned_trip_id: activeTrip.id } : {}
       
       const response = await axios.post('/api/trips/start', payload)
       setIsRecording(true)
+      setRecordingStartTime(new Date().toISOString())
       setTripId(response.data.trip_id)
       setTraveledPath([])
       setCompletedWaypoints([])
@@ -331,7 +329,6 @@ function RealTimeMap() {
   
   // Function to end current trip
   const endTrip = async () => {
-    // Confirmar con el usuario que realmente quiere finalizar el viaje
     const tripName = activeTrip ? activeTrip.name : "actual";
     if (!window.confirm(`¿Estás seguro de que quieres finalizar el viaje ${tripName}?\n\nSe detendrá la grabación y se guardarán todos los datos del viaje.`)) {
       return;
@@ -341,14 +338,13 @@ function RealTimeMap() {
       setStatusMessage('Finalizando viaje...')
       await axios.post('/api/trips/end')
       setIsRecording(false)
+      setRecordingStartTime(null)
       setTripId(null)
       setStatusMessage('Viaje finalizado correctamente')
       
-      // Clear active trip
       localStorage.removeItem('activeTrip')
       setActiveTrip(null)
       
-      // Mostrar un mensaje de confirmación
       alert('El viaje ha sido finalizado correctamente');
     } catch (error) {
       console.error('Error al finalizar el viaje:', error)
@@ -389,7 +385,7 @@ function RealTimeMap() {
         lon: position[1],
         description,
         category,
-        radius_m: 100 // Default radius
+        radius_m: 100
       })
       
       setStatusMessage('Landmark created successfully')
@@ -420,136 +416,57 @@ function RealTimeMap() {
     setShouldFollowPosition(false)
   }
 
-  // Efecto para ajustar tamaño del mapa cuando cambian dependencias importantes
+  // Efecto para ajustar tamaño del mapa
   useEffect(() => {
     if (mapRef.current) {
       mapRef.current.invalidateSize();
     }
   }, [navigationSidebarOpen]);
 
-  // Añadir función para formatear la velocidad
-  const formatSpeed = (speedMs) => {
-    const speedKmh = speedMs * 3.6; // Convertir m/s a km/h
-    return `${speedKmh.toFixed(1)} km/h`;
-  };
-
-  // Función para formatear la fecha y hora actual
-  const getCurrentDateTime = () => {
-    const now = new Date();
-    return now.toLocaleString('es-ES', { 
-      day: '2-digit', 
-      month: '2-digit', 
-      year: 'numeric',
-      hour: '2-digit', 
-      minute: '2-digit' 
-    });
-  };
-
   return (
-    <div className="flex flex-col h-screen bg-gray-100 w-full">
-      {/* Header mejorado con más información y funcionalidades - optimizado para móvil */}
-      <div className="p-1 sm:p-2 md:p-4 bg-gradient-to-r from-dashcam-900 to-dashcam-700 text-white shadow-md">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between">
-          <div className="flex items-center">
-            <FaMapMarkerAlt className="text-dashcam-300 mr-1 sm:mr-2 text-lg sm:text-xl" />
-            <h1 className="text-lg sm:text-xl md:text-2xl font-bold">Mapa en Tiempo Real</h1>
-          </div>
-          
-          <div className="flex flex-wrap items-center mt-1 sm:mt-2 text-xs sm:text-sm">
-            {/* Información de estado - versión compacta en móvil */}
-            <div className={`mr-2 sm:mr-4 flex items-center px-1 py-0.5 sm:px-2 sm:py-1 rounded-full ${connectionStatus === 'connected' ? 'bg-green-600' : 'bg-red-600'}`}>
-              <div className={`w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full ${connectionStatus === 'connected' ? 'bg-green-300' : 'bg-red-300'} mr-1 sm:mr-2`}></div>
-              <span className="hidden xs:inline">{connectionStatus === 'connected' ? 'Conectado' : 'Desconectado'}</span>
-            </div>
-            
-            {/* Información de velocidad - versión compacta en móvil */}
-            <div className="mr-2 sm:mr-4 flex items-center">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 sm:h-4 sm:w-4 mr-0.5 sm:mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-              </svg>
-              <span>{speed ? formatSpeed(speed) : '0.0 km/h'}</span>
-            </div>
-            
-            {/* Estado de grabación - sin texto en móvil muy pequeño */}
-            <div className={`mr-2 sm:mr-4 flex items-center ${isRecording ? 'text-red-400' : 'text-gray-300'}`}>
-              <svg xmlns="http://www.w3.org/2000/svg" className={`h-3 w-3 sm:h-4 sm:w-4 mr-0.5 sm:mr-1 ${isRecording ? 'animate-pulse' : ''}`} fill="currentColor" viewBox="0 0 24 24" stroke="currentColor">
-                <circle cx="12" cy="12" r="10" />
-              </svg>
-              <span className="hidden xs:inline">{isRecording ? 'Grabando' : 'Sin grabar'}</span>
-            </div>
-            
-            {/* Mostrar nombre del viaje activo si existe - versión compacta */}
-            {activeTrip && (
-              <div className="bg-dashcam-600 px-1 py-0.5 sm:px-2 sm:py-1 rounded-md flex items-center text-dashcam-50">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 sm:h-4 sm:w-4 mr-0.5 sm:mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
-                </svg>
-                <span className="truncate max-w-[80px] sm:max-w-[150px]">{activeTrip.name}</span>
-              </div>
-            )}
-          </div>
-        </div>
+    <div className="h-screen flex flex-col">
+      {/* Error del mapa */}
+      {mapError && (
+        <Alert
+          type="error"
+          title="Error del Mapa"
+          message={mapError}
+          className="m-4"
+        />
+      )}
+
+      {/* Contenedor del mapa con overlays */}
+      <div className="flex-1 relative">
+        {/* Status bar del mapa - posicionado en la parte superior */}
+        <StatusBar
+          connectionStatus={connectionStatus}
+          position={position}
+          speed={speed}
+          isRecording={isRecording}
+          statusMessage={statusMessage}
+          navigationStatus={navigationStatus}
+          recordingStartTime={recordingStartTime}
+          heading={heading}
+        />
         
-        {/* Barra de estado secundaria - oculta en móviles muy pequeños */}
-        <div className="hidden xs:flex justify-between items-center mt-0.5 sm:mt-2 text-xs text-dashcam-100">
-          <div className="truncate max-w-[70%]">
-            {statusMessage && <span>{statusMessage}</span>}
-          </div>
-          <div className="text-right text-2xs sm:text-xs">
-            {getCurrentDateTime()}
-          </div>
-        </div>
-      </div>
-        
-      {/* Main content with map and sidebar */}
-      <div className="flex-grow flex relative w-full overflow-hidden bg-gradient-to-b from-gray-100 to-gray-200">
-        {/* Navigation sidebar - necesita z-index alto */}
-        <div className="z-30 h-full absolute top-0 left-0">
-          <NavigationSidebar
-            activeTrip={activeTrip}
-            navigationSidebarOpen={navigationSidebarOpen}
-            setNavigationSidebarOpen={setNavigationSidebarOpen}
-            completedWaypoints={completedWaypoints}
-            navigationStatus={navigationStatus}
-          />
-        </div>
-        
-        {/* Map container with padding-bottom for mobile navigation */}
-        <div className="flex-grow relative w-full flex flex-col pb-16 md:pb-0" ref={mapContainerRef}>
-          {mapError && (
-            <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-50 bg-red-600 text-white px-4 py-2 rounded shadow-lg flex items-center">
-              <MdWarning className="mr-2" size={20} />
-              <span>Error de inicialización del mapa: {mapError}</span>
-            </div>
-          )}
-          
-          <MapContainer 
-            center={position || defaultMapLocation} 
-            zoom={15} 
-            style={{ height: 'calc(100vh - 110px)', width: '100%', maxHeight: 'calc(100% - 0px)' }} 
+        {/* Mapa principal - con margen superior para el StatusBar mejorado */}
+        <div className="absolute inset-0 pt-16 sm:pt-20 md:pt-16">
+          <MapContainer
+            center={position || defaultMapLocation}
+            zoom={15}
+            className="h-full w-full"
             ref={mapRef}
+            zoomControl={false}
             whenReady={(map) => {
-              // Usar whenReady en lugar de whenCreated (que está obsoleto)
               mapRef.current = map.target;
               map.target.on('drag', handleMapDrag);
               map.target.on('error', handleMapError);
               
-              // Asegurar que el mapa se ajuste correctamente
               setTimeout(() => map.target.invalidateSize(), 100);
               setTimeout(() => map.target.invalidateSize(), 500);
             }}
-            className="z-0 leaflet-container-custom shadow-inner"
-            zoomControl={false}
           >
-            {/* Colocar los controles de zoom en una posición personalizada */}
-            <div className="leaflet-control-container">
-              <div className="leaflet-top leaflet-left" style={{top: '20px'}}> {/* Ajustar posición */}
-                <div className="leaflet-control-zoom leaflet-bar leaflet-control">
-                  {/* Los controles de zoom se añadirán automáticamente */}
-                </div>
-              </div>
-            </div>
-            
+            {/* Capa de tiles */}
             <OfflineTileLayer
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -561,7 +478,7 @@ function RealTimeMap() {
               }}
             />
             
-            {/* Position, paths and landmarks */}
+            {/* Marcadores y capas */}
             <CurrentPositionMarker 
               position={position} 
               isRecording={isRecording} 
@@ -585,75 +502,90 @@ function RealTimeMap() {
               />
             )}
             
-            {/* Map updater component */}
-            <MapUpdater position={position} shouldFollow={shouldFollowPosition} />
-            
+            <MapUpdater 
+              position={position}
+              shouldFollow={shouldFollowPosition}
+              mapRef={mapRef}
+            />
+
             {/* Indicador del nivel de zoom */}
             <ZoomLevelIndicator position="bottomright" showAlways={true} />
             
-            {/* Añadir los depuradores - sólo visibles durante desarrollo */}
+            {/* Depuradores solo en desarrollo */}
             {process.env.NODE_ENV === 'development' && (
-              <>
-                <div className="leaflet-top leaflet-right" style={{ top: '80px', zIndex: 1000 }}>
-                  <TileDebugger tripId={tripId || activeTrip?.id} />
-                </div>
-              </>
-            )}
-          </MapContainer>
-          
-          {/* Capa de superposición para notificaciones y controles */}
-          <div className="absolute top-0 left-0 right-0 bottom-0 pointer-events-none z-20">
-            {/* Notifications and warnings */}
-            <NotificationOverlay 
-              position={position} 
-              navigationStatus={navigationStatus} 
-            />
-
-            {/* Panel de estadísticas flotante */}
-            {position && (
-              <div className="absolute top-4 left-4 pointer-events-auto">
-                <div className="bg-black bg-opacity-70 text-white p-3 rounded-lg shadow-lg text-sm">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-gray-300">Coordenadas:</span>
-                    <span className="font-mono">{position[0].toFixed(6)}, {position[1].toFixed(6)}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-gray-300">Rumbo:</span>
-                    <span className="font-mono">{heading.toFixed(1)}°</span>
-                  </div>
-                </div>
+              <div className="leaflet-top leaflet-right" style={{ top: '80px', zIndex: 30 }}>
+                <TileDebugger tripId={tripId || activeTrip?.id} />
               </div>
             )}
+          </MapContainer>
+        </div>
 
-            {/* Selector de fuente de mapas */}
-            <div className="absolute top-4 right-4 pointer-events-auto z-50 w-48">
-              <MapSourceSelector
-                mapSource={mapSource}
-                setMapSource={handleMapSourceChange}
-                offlineMapsAvailable={offlineMapsAvailable}
-                tripId={tripId || activeTrip?.id}
-              />
-            </div>
-            
-            {/* Panel de control - Ahora usando el componente renovado */}
-            <ControlPanel
-              isRecording={isRecording}
-              activeTrip={activeTrip}
-              startTrip={startTrip}
-              endTrip={endTrip}
-              navigationSidebarOpen={navigationSidebarOpen}
-              setNavigationSidebarOpen={setNavigationSidebarOpen}
-              showPlannedRoute={showPlannedRoute}
-              setShowPlannedRoute={setShowPlannedRoute}
-              showLandmarks={showLandmarks}
-              setShowLandmarks={setShowLandmarks}
-              downloadLandmarks={downloadLandmarks}
-              createLandmark={createLandmark}
-              centerOnPosition={centerOnPosition}
-              clearPlannedTrip={clearPlannedTrip}
+        {/* Overlays del mapa */}
+        {/* Warning GPS */}
+        {showGpsWarning && (
+          <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-50 pointer-events-none">
+            <Alert
+              type="warning"
+              title="Sin señal GPS"
+              message="Esperando señal GPS para mostrar la ubicación actual"
+              className="pointer-events-auto"
             />
           </div>
-        </div>
+        )}
+
+        {/* Información de posición */}
+        {position && (
+          <Card className="absolute bottom-4 left-4 z-40 pointer-events-auto max-w-xs">
+            <Stack gap="sm" className="text-sm">
+              <Flex justify="between">
+                <span className="text-gray-600">Lat:</span>
+                <span className="font-mono">{position[0].toFixed(6)}</span>
+              </Flex>
+              <Flex justify="between">
+                <span className="text-gray-600">Lng:</span>
+                <span className="font-mono">{position[1].toFixed(6)}</span>
+              </Flex>
+              <Flex justify="between">
+                <span className="text-gray-600">Rumbo:</span>
+                <span className="font-mono">{heading.toFixed(1)}°</span>
+              </Flex>
+            </Stack>
+          </Card>
+        )}
+
+        {/* Panel de control */}
+        <ControlPanel
+          isRecording={isRecording}
+          activeTrip={activeTrip}
+          startTrip={startTrip}
+          endTrip={endTrip}
+          navigationSidebarOpen={navigationSidebarOpen}
+          setNavigationSidebarOpen={setNavigationSidebarOpen}
+          showPlannedRoute={showPlannedRoute}
+          setShowPlannedRoute={setShowPlannedRoute}
+          showLandmarks={showLandmarks}
+          setShowLandmarks={setShowLandmarks}
+          downloadLandmarks={downloadLandmarks}
+          createLandmark={createLandmark}
+          centerOnPosition={centerOnPosition}
+          clearPlannedTrip={clearPlannedTrip}
+          mapSource={mapSource}
+          setMapSource={handleMapSourceChange}
+          offlineMapsAvailable={offlineMapsAvailable}
+          tripId={tripId || activeTrip?.id}
+        />
+
+        {/* Sidebar de navegación */}
+        <NavigationSidebar
+          isOpen={navigationSidebarOpen}
+          onClose={() => setNavigationSidebarOpen(false)}
+          navigationStatus={navigationStatus}
+          upcomingLandmarks={upcomingLandmarks}
+          activeTrip={activeTrip}
+        />
+
+        {/* Overlay de notificaciones */}
+        <NotificationOverlay notifications={[]} />
       </div>
     </div>
   )

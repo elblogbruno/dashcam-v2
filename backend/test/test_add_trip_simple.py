@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 def main():
     """Probar específicamente el método add_trip"""
     try:
-        from landmarks_db import LandmarksDB
+        from landmarks.core.landmarks_db import LandmarksDB
         db = LandmarksDB()
         
         # Crear un viaje de prueba simple

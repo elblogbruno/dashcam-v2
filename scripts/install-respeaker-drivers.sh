@@ -2,7 +2,7 @@
 
 # Installs drivers for the ReSpeaker 2mic and 4mic HATs on Raspberry Pi OS.
 # Must be run with sudo.
-# Requires: curl raspberrypi-kernel-headers dkms i2c-tools libasound2-plugins alsa-utils
+# Requires: curl raspberrypi-kernel-headers linux-headers dkms i2c-tools libasound2-plugins alsa-utils build-essential git
 
 set -eo pipefail
 
@@ -16,7 +16,15 @@ fi
 
 apt-get update
 apt-get install --no-install-recommends --yes \
-    curl raspberrypi-kernel-headers dkms i2c-tools libasound2-plugins alsa-utils
+    curl \
+    raspberrypi-kernel-headers \
+    linux-headers-$(uname -r) \
+    build-essential \
+    dkms \
+    i2c-tools \
+    libasound2-plugins \
+    alsa-utils \
+    git
 
 temp_dir="$(mktemp -d)"
 

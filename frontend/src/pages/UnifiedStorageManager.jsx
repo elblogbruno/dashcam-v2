@@ -2,9 +2,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { 
   FaHdd, FaSync, FaChartBar, FaCheckCircle, 
-  FaExclamationTriangle, FaUsb, FaCopy, FaFolderOpen
+  FaExclamationTriangle, FaUsb, FaCopy, FaFolderOpen,
+  FaLightbulb
 } from 'react-icons/fa';
 import axios from 'axios';
+
+// Layout y UI Components
+import { PageLayout, Section, Flex, Stack, Grid } from '../components/common/Layout';
+import { Button, Card, Alert, Spinner } from '../components/common/UI';
 
 // Importación de componentes modularizados
 import DiskInfoPanel from '../components/storage/DiskInfoPanel';
@@ -14,6 +19,7 @@ import HddBackupPanel from '../components/storage/HddBackupPanel';
 import StorageSettingsPanel from '../components/storage/StorageSettingsPanel';
 import DriveDetailsModal from '../components/storage/DriveDetailsModal';
 import FileExplorer from '../components/FileExplorer';
+import DiskSpaceMonitor from './DiskSpaceMonitor';
 
 // Importación de utilidades
 import { formatBytes, formatDate } from '../utils/formatUtils';
@@ -74,7 +80,7 @@ function UnifiedStorageManager() {
   });
 
   // Estados de interfaz
-  const [activeTab, setActiveTab] = useState('overview'); // 'overview', 'usb-drives', 'hdd-backup', 'explorer', 'settings'
+  const [activeTab, setActiveTab] = useState('overview'); // 'overview', 'usb-drives', 'hdd-backup', 'explorer', 'disk-monitor', 'settings'
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [actionResult, setActionResult] = useState(null);
@@ -419,213 +425,222 @@ function UnifiedStorageManager() {
 
   if (loading) {
     return (
-      <div className="p-2 sm:p-4 max-w-7xl mx-auto">
-        <div className="flex items-center justify-center min-h-[50vh]">
-          <div className="bg-white rounded-xl sm:rounded-2xl shadow-lg p-4 sm:p-8 border border-neutral-200 hover:shadow-xl transition-all duration-500 mx-2">
-            <div className="bg-gradient-to-br from-dashcam-600 to-dashcam-500 p-3 sm:p-4 rounded-xl shadow-lg mx-auto mb-4 sm:mb-6 w-fit">
-              <FaHdd className="text-3xl sm:text-5xl text-white animate-pulse" />
-            </div>
-            <div className="loading loading-spinner loading-md sm:loading-lg mb-3 sm:mb-4 text-dashcam-500"></div>
-            <p className="text-base sm:text-lg font-medium text-neutral-700 text-center">Cargando información de almacenamiento...</p>
-            <p className="text-xs sm:text-sm text-neutral-500 mt-2 text-center">Esto puede tardar unos momentos si hay muchos archivos</p>
-          </div>
-        </div>
-      </div>
+      <PageLayout>
+        <Section className="flex items-center justify-center min-h-[50vh]">
+          <Card className="text-center p-8 max-w-md mx-auto">
+            <Flex direction="col" align="center" className="gap-4">
+              <div className="bg-gradient-to-br from-primary-600 to-primary-500 p-4 rounded-xl shadow-lg">
+                <FaHdd className="text-5xl text-white animate-pulse" />
+              </div>
+              <Spinner size="lg" />
+              <Stack spacing="sm" className="text-center">
+                <p className="text-lg font-medium text-neutral-700">Cargando información de almacenamiento...</p>
+                <p className="text-sm text-neutral-500">Esto puede tardar unos momentos si hay muchos archivos</p>
+              </Stack>
+            </Flex>
+          </Card>
+        </Section>
+      </PageLayout>
     );
   }
 
   return (
-    <div className="p-2 sm:p-4 max-w-7xl mx-auto">
-      <h1 className="text-xl sm:text-2xl font-bold text-dashcam-800 flex items-center mb-4 sm:mb-6">
-        <FaHdd className="mr-2" /> 
-        <span className="hidden sm:inline">Administrador de Almacenamiento</span>
-        <span className="sm:hidden">Almacenamiento</span>
-      </h1>
-      
-      <div className="bg-white rounded-xl sm:rounded-2xl shadow-lg border border-neutral-200 overflow-hidden">
-        <div className="border-b border-neutral-200">
-          <nav className="flex overflow-x-auto space-x-1 sm:space-x-2 px-3 sm:px-6 scrollbar-hide" role="tablist">
-            <button
+    <div className="storage-manager-container">
+      <PageLayout
+        title="Administrador de Almacenamiento"
+        icon={<FaHdd size={20} />}
+        subtitle="Gestiona el almacenamiento de tu sistema DashCam"
+      >
+        {/* Alert para acciones */}
+        {actionResult && (
+          <Alert
+            type={actionResult.success ? "success" : "error"}
+            onClose={() => setActionResult(null)}
+            className="mb-4"
+          >
+            {actionResult.message}
+          </Alert>
+        )}
+
+        {/* Pestañas de navegación simplificadas */}
+        <div className="border-b border-gray-100 mb-4">
+          <nav className="flex space-x-1 overflow-x-auto scrollbar-hide" role="tablist">
+            <Button
               onClick={() => setActiveTab('overview')}
-              className={`py-3 sm:py-4 px-2 sm:px-4 font-medium transition-all border-b-2 hover:text-dashcam-600 whitespace-nowrap ${
+              variant={activeTab === 'overview' ? 'primary' : 'ghost'}
+              size="sm"
+              className={`py-2 px-3 text-xs border-b-2 whitespace-nowrap ${
                 activeTab === 'overview'
-                  ? 'border-dashcam-500 text-dashcam-600'
-                  : 'border-transparent text-neutral-600 hover:border-neutral-300'
+                  ? 'border-primary-500'
+                  : 'border-transparent hover:border-gray-300'
               }`}
-              role="tab"
-              aria-selected={activeTab === 'overview'}
             >
-              <div className="flex items-center gap-1 sm:gap-2">
-                <FaChartBar className="text-sm sm:text-base" />
-                <span className="text-sm sm:text-base">Resumen</span>
-              </div>
-            </button>
-            <button
+              <FaChartBar className="mr-1 text-xs" />
+              Resumen
+            </Button>
+            <Button
               onClick={() => setActiveTab('usb-drives')}
-              className={`py-3 sm:py-4 px-2 sm:px-4 font-medium transition-all border-b-2 hover:text-dashcam-600 whitespace-nowrap ${
+              variant={activeTab === 'usb-drives' ? 'primary' : 'ghost'}
+              size="sm"
+              className={`py-2 px-3 text-xs border-b-2 whitespace-nowrap ${
                 activeTab === 'usb-drives'
-                  ? 'border-dashcam-500 text-dashcam-600'
-                  : 'border-transparent text-neutral-600 hover:border-neutral-300'
+                  ? 'border-primary-500'
+                  : 'border-transparent hover:border-gray-300'
               }`}
-              role="tab"
-              aria-selected={activeTab === 'usb-drives'}
             >
-              <div className="flex items-center gap-1 sm:gap-2">
-                <FaUsb className="text-sm sm:text-base" />
-                <span className="text-sm sm:text-base">USB</span>
-              </div>
-            </button>
-            <button
+              <FaUsb className="mr-1 text-xs" />
+              USB
+            </Button>
+            <Button
               onClick={() => setActiveTab('hdd-backup')}
-              className={`py-3 sm:py-4 px-2 sm:px-4 font-medium transition-all border-b-2 hover:text-dashcam-600 whitespace-nowrap ${
+              variant={activeTab === 'hdd-backup' ? 'primary' : 'ghost'}
+              size="sm"
+              className={`py-2 px-3 text-xs border-b-2 whitespace-nowrap ${
                 activeTab === 'hdd-backup'
-                  ? 'border-dashcam-500 text-dashcam-600'
-                  : 'border-transparent text-neutral-600 hover:border-neutral-300'
+                  ? 'border-primary-500'
+                  : 'border-transparent hover:border-gray-300'
               }`}
-              role="tab"
-              aria-selected={activeTab === 'hdd-backup'}
             >
-              <div className="flex items-center gap-1 sm:gap-2">
-                <FaCopy className="text-sm sm:text-base" />
-                <span className="text-sm sm:text-base">Copia</span>
-              </div>
-            </button>
-            <button
+              <FaCopy className="mr-1 text-xs" />
+              Copia
+            </Button>
+            <Button
               onClick={() => setActiveTab('explorer')}
-              className={`py-3 sm:py-4 px-2 sm:px-4 font-medium transition-all border-b-2 hover:text-dashcam-600 whitespace-nowrap ${
+              variant={activeTab === 'explorer' ? 'primary' : 'ghost'}
+              size="sm"
+              className={`py-2 px-3 text-xs border-b-2 whitespace-nowrap ${
                 activeTab === 'explorer'
-                  ? 'border-dashcam-500 text-dashcam-600'
-                  : 'border-transparent text-neutral-600 hover:border-neutral-300'
+                  ? 'border-primary-500'
+                  : 'border-transparent hover:border-gray-300'
               }`}
-              role="tab"
-              aria-selected={activeTab === 'explorer'}
             >
-              <div className="flex items-center gap-1 sm:gap-2">
-                <FaFolderOpen className="text-sm sm:text-base" />
-                <span className="text-sm sm:text-base">Explorador</span>
-              </div>
-            </button>
-            <button
+              <FaFolderOpen className="mr-1 text-xs" />
+              Explorador
+            </Button>
+            <Button
+              onClick={() => setActiveTab('disk-monitor')}
+              variant={activeTab === 'disk-monitor' ? 'primary' : 'ghost'}
+              size="sm"
+              className={`py-2 px-3 text-xs border-b-2 whitespace-nowrap ${
+                activeTab === 'disk-monitor'
+                  ? 'border-primary-500'
+                  : 'border-transparent hover:border-gray-300'
+              }`}
+            >
+              <FaLightbulb className="mr-1 text-xs" />
+              Monitor LEDs
+            </Button>
+            <Button
               onClick={() => setActiveTab('settings')}
-              className={`py-3 sm:py-4 px-2 sm:px-4 font-medium transition-all border-b-2 hover:text-dashcam-600 whitespace-nowrap ${
+              variant={activeTab === 'settings' ? 'primary' : 'ghost'}
+              size="sm"
+              className={`py-2 px-3 text-xs border-b-2 whitespace-nowrap ${
                 activeTab === 'settings'
-                  ? 'border-dashcam-500 text-dashcam-600'
-                  : 'border-transparent text-neutral-600 hover:border-neutral-300'
+                  ? 'border-primary-500'
+                  : 'border-transparent hover:border-gray-300'
               }`}
-              role="tab"
-              aria-selected={activeTab === 'settings'}
             >
-              <div className="flex items-center gap-1 sm:gap-2">
-                <FaHdd className="text-sm sm:text-base" />
-                <span className="text-sm sm:text-base">Ajustes</span>
-              </div>
-            </button>
+              <FaHdd className="mr-1 text-xs" />
+              Ajustes
+            </Button>
           </nav>
         </div>
 
-        <div className="p-3 sm:p-6">
-          <div className="space-y-4 sm:space-y-6">
-            {activeTab === 'overview' && (
-              <div className="space-y-4 sm:space-y-6">
-                {/* Estado del disco principal */}
-                <div className="bg-white rounded-xl sm:rounded-2xl shadow-lg border border-neutral-200/70 hover:shadow-xl transition-all duration-500">
-                  <DiskInfoPanel 
-                    diskInfo={diskInfo}
-                    actionLoading={actionLoading}
-                    formatBytes={formatBytes}
-                    onMount={() => handleDriveMount()}
-                    onEject={() => handleDriveEject(diskInfo.device)}
-                  />
-                </div>
-
-                {/* Estadísticas de videos */}
-                <div className="bg-white rounded-xl sm:rounded-2xl shadow-lg border border-neutral-200/70 hover:shadow-xl transition-all duration-500">
-                  <VideoStatsPanel 
-                    videoStats={videoStats}
-                    actionLoading={actionLoading}
-                    formatBytes={formatBytes}
-                    onCleanup={handleCleanup}
-                    onArchive={handleArchive}
-                  />
-                </div>
-              </div>
-            )}
-            
-            {activeTab === 'usb-drives' && (
-              <div className="bg-white rounded-xl sm:rounded-2xl shadow-lg border border-neutral-200/70 hover:shadow-xl transition-all duration-500">
-                <UsbDrivesPanel 
-                  drives={availableDrives}
-                  diskInfo={diskInfo}
-                  actionLoading={actionLoading}
-                  formatBytes={formatBytes}
-                  onMount={handleDriveMount}
-                  onEject={handleDriveEject}
-                  onViewDetails={handleViewDriveDetails}
-                />
-              </div>
-            )}
-            
-            {activeTab === 'hdd-backup' && (
-              <div className="bg-white rounded-xl sm:rounded-2xl shadow-lg border border-neutral-200/70 hover:shadow-xl transition-all duration-500">
-                <HddBackupPanel 
-                  copyStatus={copyStatus}
-                  drives={availableDrives}
-                  actionLoading={actionLoading}
-                  formatBytes={formatBytes}
-                  formatDate={formatDate}
-                  onStartCopy={handleStartHDDCopy}
-                  onCancelCopy={handleCancelHDDCopy}
-                  onEjectAfterCopy={handleEjectAfterCopy}
-                  diskInfo={diskInfo}
-                />
-              </div>
-            )}
-            
-            {activeTab === 'explorer' && (
-              <div className="bg-white rounded-xl sm:rounded-2xl shadow-lg border border-neutral-200/70 hover:shadow-xl transition-all duration-500">
-                <div className="p-4 sm:p-6">
-                  <div className="flex justify-between items-center mb-4">
-                    <h2 className="text-lg sm:text-xl font-semibold text-gray-800">Explorador de archivos</h2>
-                    <button 
-                      className="px-3 py-2 bg-gray-600 text-white rounded-lg flex items-center gap-2 hover:bg-gray-700"
-                      onClick={handleSwitchDisk}
-                    >
-                      {selectedDisk === 'internal' ? 'Cambiar a Disco Externo' : 'Cambiar a Disco Interno'}
-                    </button>
-                  </div>
-                  <FileExplorer 
-                    onFileSelect={handleFileSelection}
-                    showVideosOnly={false}
-                    allowFileOperations={true}
-                    allowIndexing={true}
-                    selectedDisk={selectedDisk}
-                    height="60vh"
-                  />
-                </div>
-              </div>
-            )}
-            
-            {activeTab === 'settings' && (
-              <div className="bg-white rounded-xl sm:rounded-2xl shadow-lg border border-neutral-200/70 hover:shadow-xl transition-all duration-500">
-                <StorageSettingsPanel 
-                  settings={settings}
-                  onSettingChange={handleSettingChange}
-                  onSettingsUpdate={handleSettingsUpdate}
-                  actionLoading={actionLoading}
-                />
-              </div>
-            )}
-          </div>
+        {/* Contenido de las pestañas - SIN Card wrapper adicional */}
+        <div className="space-y-3">
+          {activeTab === 'overview' && (
+            <>
+              <DiskInfoPanel 
+                diskInfo={diskInfo}
+                actionLoading={actionLoading}
+                formatBytes={formatBytes}
+                onMount={() => handleDriveMount()}
+                onEject={() => handleDriveEject(diskInfo.device)}
+              />
+              <VideoStatsPanel 
+                videoStats={videoStats}
+                actionLoading={actionLoading}
+                formatBytes={formatBytes}
+                onCleanup={handleCleanup}
+                onArchive={handleArchive}
+              />
+            </>
+          )}
+          
+          {activeTab === 'usb-drives' && (
+            <UsbDrivesPanel 
+              drives={availableDrives}
+              diskInfo={diskInfo}
+              actionLoading={actionLoading}
+              formatBytes={formatBytes}
+              onMount={handleDriveMount}
+              onEject={handleDriveEject}
+              onViewDetails={handleViewDriveDetails}
+            />
+          )}
+          
+          {activeTab === 'hdd-backup' && (
+            <HddBackupPanel 
+              copyStatus={copyStatus}
+              drives={availableDrives}
+              actionLoading={actionLoading}
+              formatBytes={formatBytes}
+              formatDate={formatDate}
+              onStartCopy={handleStartHDDCopy}
+              onCancelCopy={handleCancelHDDCopy}
+              onEjectAfterCopy={handleEjectAfterCopy}
+              diskInfo={diskInfo}
+            />
+          )}
+          
+          {activeTab === 'explorer' && (
+            <Card className="p-3">
+              <Flex className="justify-between items-center mb-3">
+                <h2 className="text-sm font-semibold text-gray-800">Explorador de archivos</h2>
+                <Button
+                  onClick={handleSwitchDisk}
+                  variant="secondary"
+                  size="sm"
+                  className="text-xs"
+                >
+                  {selectedDisk === 'internal' ? 'Cambiar a Disco Externo' : 'Cambiar a Disco Interno'}
+                </Button>
+              </Flex>
+              <FileExplorer 
+                onFileSelect={handleFileSelection}
+                showVideosOnly={false}
+                allowFileOperations={true}
+                allowIndexing={true}
+                selectedDisk={selectedDisk}
+                height="60vh"
+              />
+            </Card>
+          )}
+          
+          {activeTab === 'disk-monitor' && (
+            <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+              <DiskSpaceMonitor />
+            </div>
+          )}
+          
+          {activeTab === 'settings' && (
+            <StorageSettingsPanel 
+              settings={settings}
+              onSettingChange={handleSettingChange}
+              onSettingsUpdate={handleSettingsUpdate}
+              actionLoading={actionLoading}
+            />
+          )}
         </div>
-      </div>
 
-      {/* Modal para detalles del disco */}
-      <DriveDetailsModal 
-        isOpen={showDriveDetails}
-        onClose={() => setShowDriveDetails(false)}
-        driveDetails={selectedDriveDetails}
-        formatBytes={formatBytes}
-      />
+        {/* Modal para detalles del disco */}
+        <DriveDetailsModal 
+          isOpen={showDriveDetails}
+          onClose={() => setShowDriveDetails(false)}
+          driveDetails={selectedDriveDetails}
+          formatBytes={formatBytes}
+        />
+      </PageLayout>
     </div>
   );
 }

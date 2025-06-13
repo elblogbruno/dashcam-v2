@@ -8,9 +8,15 @@ import PlaceholderTileAlert from './PlaceholderTileAlert';
 
 /**
  * Componente TileLayer modificado que utiliza tiles offline cuando están disponibles
+ * - Optimizado para mejor rendimiento y manejo de errores
  */
 const OfflineTileLayer = ({ url, tripId, preferredSource, onChangeMapSource, onAvailabilityChange, ...props }) => {
   const map = useMap();
+  
+  // Validar que tenemos una URL válida
+  const defaultUrl = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
+  const tileUrl = url || defaultUrl;
+  
   const [offlineAvailable, setOfflineAvailable] = useState(false);
   const [mbtilesAvailable, setMbtilesAvailable] = useState(false);
   const [showIndicator, setShowIndicator] = useState(false);
@@ -20,6 +26,8 @@ const OfflineTileLayer = ({ url, tripId, preferredSource, onChangeMapSource, onA
   const [showMapError, setShowMapError] = useState(false);
   // Contador de errores de carga
   const [tileErrorCount, setTileErrorCount] = useState(0);
+  // Referencia para evitar múltiples comprobaciones
+  const [lastCheck, setLastCheck] = useState(0);
   
   // Función para verificar disponibilidad de archivos .mbtiles
   const checkMbtilesAvailability = async () => {
@@ -133,18 +141,36 @@ const OfflineTileLayer = ({ url, tripId, preferredSource, onChangeMapSource, onA
   }, [tripId]);
 
   // Efecto para controlar cuando mostrar el mensaje de error
+  // Optimizado con throttling para reducir actualizaciones innecesarias
   useEffect(() => {
+    // Verificar si han pasado al menos 3 segundos desde la última verificación
+    const now = Date.now();
+    if (now - lastCheck < 3000) {
+      return; // No procesar más si no han pasado 3 segundos
+    }
+    
+    setLastCheck(now);
+    
     // Solo mostrar el error si hay varios fallos de carga
-    if (tileErrorCount > 3) {
+    if (tileErrorCount > 10) {
+      console.warn(`[OfflineTileLayer] Muchos errores de tiles (${tileErrorCount}), mostrando alerta`);
       setShowMapError(true);
-      // Ocultar después de 5 segundos
+      
+      // Intentar cambiar a otra fuente de mapas
+      if (mapSource === 'online' && mbtilesAvailable) {
+        console.log('[OfflineTileLayer] Cambiando a MBTiles debido a errores');
+      } else if (mapSource === 'mbtiles' && offlineAvailable) {
+        console.log('[OfflineTileLayer] Cambiando a tiles offline debido a errores');
+      }
+      
+      // Ocultar después de 5 segundos y reiniciar contador
       const timer = setTimeout(() => {
         setShowMapError(false);
         setTileErrorCount(0);
       }, 5000);
       return () => clearTimeout(timer);
     }
-  }, [tileErrorCount]);
+  }, [tileErrorCount, mapSource, mbtilesAvailable, offlineAvailable, lastCheck]);
 
   // Función para configurar la capa MBTiles usando el endpoint del backend
   const setupMBTilesLayer = async () => {
@@ -208,7 +234,7 @@ const OfflineTileLayer = ({ url, tripId, preferredSource, onChangeMapSource, onA
 
   // Función para configurar capa de tiles online
   const setupOnlineLayer = () => {
-    const newLayer = new L.TileLayer(url, { 
+    const newLayer = new L.TileLayer(tileUrl, { 
       ...props,
       subdomains: 'abc',
       minZoom: 1,
@@ -239,7 +265,7 @@ const OfflineTileLayer = ({ url, tripId, preferredSource, onChangeMapSource, onA
           // Intentar con URL alternativa en caso de error
           if (mapSource === 'online') {
             const alternativeSubdomain = String.fromCharCode(97 + (Math.abs(coords.x + coords.y) % 3));
-            const alternativeUrl = url
+            const alternativeUrl = tileUrl
               .replace('{s}', alternativeSubdomain)
               .replace('{z}', coords.z)
               .replace('{x}', coords.x)
@@ -248,7 +274,7 @@ const OfflineTileLayer = ({ url, tripId, preferredSource, onChangeMapSource, onA
             tile.src = alternativeUrl;
           } else {
             // Si estamos en offline y falla, intentar online como respaldo
-            const onlineUrl = url
+            const onlineUrl = tileUrl
               .replace('{s}', 'a')
               .replace('{z}', coords.z)
               .replace('{x}', coords.x)
@@ -263,14 +289,14 @@ const OfflineTileLayer = ({ url, tripId, preferredSource, onChangeMapSource, onA
         const loadTile = async () => {
           try {
             console.log(`[OfflineTileLayer] Creating tile for z=${coords.z}, x=${coords.x}, y=${coords.y}, source=${mapSource}`);
-            let tileUrl = null;
+            let finalTileUrl = null;
 
             if (mapSource === 'offline' && tripId) {
               // Intentar cargar desde almacenamiento offline primero
               try {
                 const offlineTile = await offlineMapManager.getTile(coords.z, coords.x, coords.y);
                 if (offlineTile && offlineTile.data) {
-                  tileUrl = offlineTile.data;
+                  finalTileUrl = offlineTile.data;
                   console.log(`[OfflineTileLayer] Loaded offline tile for z=${coords.z}, x=${coords.x}, y=${coords.y}`);
                 } else {
                   throw new Error('Tile not found in offline storage');
@@ -278,7 +304,7 @@ const OfflineTileLayer = ({ url, tripId, preferredSource, onChangeMapSource, onA
               } catch (offlineError) {
                 console.warn(`[OfflineTileLayer] Offline tile not available for z=${coords.z}, x=${coords.x}, y=${coords.y}, falling back to online`);
                 // Si el tile offline no está disponible, usar la URL online
-                tileUrl = url
+                finalTileUrl = tileUrl
                   .replace('{s}', String.fromCharCode(97 + (Math.abs(coords.x + coords.y) % 3)))
                   .replace('{z}', coords.z)
                   .replace('{x}', coords.x)
@@ -286,14 +312,14 @@ const OfflineTileLayer = ({ url, tripId, preferredSource, onChangeMapSource, onA
               }
             } else {
               // Modo online normal
-              tileUrl = url
+              finalTileUrl = tileUrl
                 .replace('{s}', String.fromCharCode(97 + (Math.abs(coords.x + coords.y) % 3)))
                 .replace('{z}', coords.z)
                 .replace('{x}', coords.x)
                 .replace('{y}', coords.y);
             }
 
-            tile.src = tileUrl;
+            tile.src = finalTileUrl;
             done(null, tile);
           } catch (error) {
             console.error(`[OfflineTileLayer] Error in loadTile: ${error.message}`);
@@ -306,9 +332,9 @@ const OfflineTileLayer = ({ url, tripId, preferredSource, onChangeMapSource, onA
       }
     });
 
-    const newLayer = new customTileLayerClass(url, {
+    const newLayer = new customTileLayerClass(tileUrl, {
       ...props,
-      attribution: props.attribution + (mapSource === 'offline' ? ' | Offline Mode' : ''),
+      attribution: (props.attribution || '&copy; OpenStreetMap contributors') + (mapSource === 'offline' ? ' | Offline Mode' : ''),
       subdomains: 'abc',
       minZoom: 1,
       maxZoom: 19,
@@ -356,7 +382,7 @@ const OfflineTileLayer = ({ url, tripId, preferredSource, onChangeMapSource, onA
       <PlaceholderTileAlert mapSource={mapSource} />
       
       {/* Indicador de fuente del mapa */}
-      <div className="leaflet-bottom leaflet-left" style={{ zIndex: 1000, margin: '0 0 10px 10px' }}>
+      <div className="leaflet-bottom leaflet-left" style={{ zIndex: 20, margin: '0 0 10px 10px' }}>
         <div className={`leaflet-control px-2 py-1 rounded-lg shadow-md flex items-center text-xs ${
           mapSource === 'offline'
             ? (mbtilesAvailable ? 'bg-green-600 text-white' : 'bg-blue-600 text-white')
@@ -377,7 +403,7 @@ const OfflineTileLayer = ({ url, tripId, preferredSource, onChangeMapSource, onA
       
       {/* Indicador de mapas offline */}
       {showIndicator && (offlineAvailable || mbtilesAvailable) && (
-        <div className="leaflet-bottom leaflet-right" style={{ zIndex: 1000 }}>
+        <div className="leaflet-bottom leaflet-right" style={{ zIndex: 20 }}>
           <div className="leaflet-control bg-green-600 text-white px-2 py-1 rounded-lg shadow-md flex items-center">
             <FaSignal className="mr-1" /> 
             {mbtilesAvailable ? 'MBTiles disponibles' : 'Mapas disponibles offline'}
@@ -390,7 +416,7 @@ const OfflineTileLayer = ({ url, tripId, preferredSource, onChangeMapSource, onA
         <div
           className="leaflet-top leaflet-center"
           style={{
-            zIndex: 1000,
+            zIndex: 20,
             position: 'absolute',
             top: '50%',
             left: '50%',

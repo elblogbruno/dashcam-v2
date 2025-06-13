@@ -20,6 +20,10 @@ class AudioNotifier:
         self.tts_engine = None
         self.connected_clients: Set[WebSocket] = None  # Se inicializa desde main.py
         
+        # Track active subprocess processes for proper cleanup
+        self.active_processes: List[subprocess.Popen] = []
+        self._process_lock = threading.Lock()
+        
         # Initialize TTS engine
         self._init_tts_engine()
         
@@ -206,8 +210,18 @@ class AudioNotifier:
                         text=True
                     )
                     
-                    # Send text to Piper
-                    stdout, stderr = piper_process.communicate(input=text)
+                    # Track the process for cleanup
+                    with self._process_lock:
+                        self.active_processes.append(piper_process)
+                    
+                    try:
+                        # Send text to Piper
+                        stdout, stderr = piper_process.communicate(input=text)
+                    finally:
+                        # Remove from tracking once completed
+                        with self._process_lock:
+                            if piper_process in self.active_processes:
+                                self.active_processes.remove(piper_process)
                     
                     if piper_process.returncode == 0:
                         # Play the generated audio
@@ -380,6 +394,135 @@ class AudioNotifier:
             
         return status
         
+    def _cleanup_active_processes(self):
+        """Clean up any active subprocess processes"""
+        with self._process_lock:
+            processes_to_clean = self.active_processes.copy()
+            self.active_processes.clear()
+        
+        for process in processes_to_clean:
+            try:
+                if process.poll() is None:  # Process is still running
+                    logger.info(f"Terminating active subprocess with PID {process.pid}")
+                    process.terminate()
+                    
+                    # Wait up to 2 seconds for graceful termination
+                    try:
+                        process.wait(timeout=2.0)
+                        logger.info(f"Process {process.pid} terminated gracefully")
+                    except subprocess.TimeoutExpired:
+                        logger.warning(f"Process {process.pid} did not terminate gracefully, force killing")
+                        process.kill()
+                        process.wait()
+                        logger.info(f"Process {process.pid} force killed")
+            except Exception as e:
+                logger.error(f"Error cleaning up subprocess {process.pid}: {str(e)}")
+
+    def beep(self, frequency=800, duration=0.2, volume=None):
+        """
+        Generate a simple beep sound
+        
+        Args:
+            frequency: Frequency of the beep in Hz (default 800)
+            duration: Duration of the beep in seconds (default 0.2)
+            volume: Volume level (0-100), uses current volume if None
+        """
+        if not self.enabled:
+            logger.info(f"Audio disabled, would have beeped at {frequency}Hz for {duration}s")
+            return False
+            
+        # Start beep in a separate thread to avoid blocking
+        beep_thread = threading.Thread(target=self._generate_beep, args=(frequency, duration, volume))
+        beep_thread.daemon = True
+        beep_thread.start()
+        return True
+        
+    def _generate_beep(self, frequency, duration, volume):
+        """Generate a beep using available audio tools"""
+        try:
+            if platform.system() == "Linux":
+                # Try different methods on Linux
+                
+                # Method 1: Use sox if available
+                try:
+                    result = subprocess.run(["which", "sox"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                    if result.returncode == 0:
+                        vol_param = f"{volume or self.volume}/100" if volume else f"{self.volume}/100"
+                        subprocess.run([
+                            "sox", "-n", "-t", "wav", "-", 
+                            "synth", str(duration), "sine", str(frequency),
+                            "vol", vol_param
+                        ] + ["|", "aplay"], shell=True, 
+                        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                        return
+                except:
+                    pass
+                
+                # Method 2: Use speaker-test for simple beep
+                try:
+                    subprocess.run([
+                        "speaker-test", "-t", "sine", "-f", str(frequency), 
+                        "-l", "1", "-s", "1"
+                    ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=duration + 0.5)
+                    return
+                except:
+                    pass
+                    
+                # Method 3: Use beep command if available
+                try:
+                    result = subprocess.run(["which", "beep"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                    if result.returncode == 0:
+                        subprocess.run([
+                            "beep", "-f", str(frequency), "-l", str(int(duration * 1000))
+                        ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                        return
+                except:
+                    pass
+                    
+                # Method 4: Terminal bell as fallback
+                try:
+                    print("\a", flush=True)  # ASCII bell character
+                except:
+                    pass
+                    
+            elif platform.system() == "Darwin":  # macOS
+                # Use afplay with generated tone
+                try:
+                    import tempfile
+                    with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_audio:
+                        temp_audio_path = temp_audio.name
+                    
+                    # Generate tone with sox if available
+                    vol_param = f"{volume or self.volume}/100" if volume else f"{self.volume}/100"
+                    result = subprocess.run([
+                        "sox", "-n", temp_audio_path, 
+                        "synth", str(duration), "sine", str(frequency),
+                        "vol", vol_param
+                    ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                    
+                    if result.returncode == 0:
+                        subprocess.run(["afplay", temp_audio_path],
+                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                    
+                    # Clean up
+                    try:
+                        os.unlink(temp_audio_path)
+                    except:
+                        pass
+                        
+                except:
+                    # Fallback to system beep
+                    print("\a", flush=True)
+                    
+            else:
+                # Windows or other - just use system bell
+                print("\a", flush=True)
+                
+        except Exception as e:
+            logger.warning(f"Error generating beep: {str(e)}")
+            # Final fallback
+            print("\a", flush=True)
+
     def test_audio(self):
         """Test the audio system by speaking a test message"""
         return self.announce("This is a test of the dashcam audio system")
@@ -388,13 +531,19 @@ class AudioNotifier:
         """Properly clean up resources before shutdown"""
         logger.info("Cleaning up AudioNotifier resources")
         
+        # Stop any active audio thread
+        if self.audio_thread and self.audio_thread.is_alive():
+            logger.info("Waiting for audio thread to complete...")
+            self.audio_thread.join(timeout=2.0)
+            if self.audio_thread.is_alive():
+                logger.warning("Audio thread did not complete within timeout")
+        
+        # Clean up any active subprocess processes
+        self._cleanup_active_processes()
+        
         # Clean up the pyttsx3 engine if it was initialized
         if self.tts_engine == "pyttsx3" and hasattr(self, '_pyttsx3_engine'):
             try:
-                # Stop any ongoing speech
-                if self.audio_thread and self.audio_thread.is_alive():
-                    self.audio_thread.join(timeout=1.0)
-                    
                 # Some engines need specific cleanup
                 if hasattr(self._pyttsx3_engine, 'stop'):
                     self._pyttsx3_engine.stop()

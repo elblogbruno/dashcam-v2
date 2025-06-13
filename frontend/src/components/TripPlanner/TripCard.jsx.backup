@@ -1,0 +1,706 @@
+import React, { useRef, useState } from 'react';
+import { FaDownload, FaPlay, FaStop, FaEdit, FaTrash, FaCheck, FaMapMarkerAlt, FaSync, FaFileImport, FaMap, FaImage, FaChevronDown, FaChevronUp, FaDatabase } from 'react-icons/fa';
+import { MdOutlineTerrain } from 'react-icons/md';
+import { toast } from 'react-hot-toast';
+import offlineMapManager from '../../services/offlineMapService';
+import organicMapManager from '../../services/organicMapService';
+import landmarkImageManager from '../../services/landmarkImageService';
+
+const TripCard = ({ 
+  trip, 
+  onSelect, 
+  onDelete, 
+  onDownloadLandmarks, 
+  onStartNavigation,
+  onEdit,
+  onManageLandmarks,
+  onImportLandmarksFromKml,
+  isSelected,
+  downloadingTrip,
+  downloadProgress,
+  isActiveTripId = false
+}) => {
+  const kmlFileInputRef = useRef(null);
+  
+  // Estados para la descarga offline
+  const [isDownloadingOffline, setIsDownloadingOffline] = useState(false);
+  const [showOfflineOptions, setShowOfflineOptions] = useState(false);
+  const [showDataDownloads, setShowDataDownloads] = useState(false);
+  const [downloadOptions, setDownloadOptions] = useState({
+    mapTiles: true,
+    landmarkImages: true,
+    organicMaps: false,
+    geodata: true  // Nueva opción para bases de datos geodata
+  });
+  const [downloadStatus, setDownloadStatus] = useState({
+    mapProgress: 0,
+    organicMapsProgress: 0,
+    geodataProgress: 0,  // Nueva opción para progreso de geodata
+    landmarksTotal: 0,
+    landmarksDownloaded: 0,
+    currentStep: ''
+  });
+  const formatDate = (dateString) => {
+    const options = { year: 'numeric', month: 'short', day: 'numeric' };
+    return new Date(dateString).toLocaleDateString(undefined, options);
+  };
+  
+  // Función para calcular el bounding box del viaje
+  const calculateBoundingBox = (trip) => {
+    const points = [];
+    
+    // Agregar puntos de inicio y fin
+    if (trip.start_location) {
+      points.push({
+        lat: trip.start_location.lat || trip.start_location.latitude,
+        lon: trip.start_location.lon || trip.start_location.longitude
+      });
+    }
+    
+    if (trip.end_location) {
+      points.push({
+        lat: trip.end_location.lat || trip.end_location.latitude,
+        lon: trip.end_location.lon || trip.end_location.longitude
+      });
+    }
+    
+    // Agregar waypoints
+    if (trip.waypoints && trip.waypoints.length > 0) {
+      trip.waypoints.forEach(waypoint => {
+        points.push({
+          lat: waypoint.lat || waypoint.latitude,
+          lon: waypoint.lon || waypoint.longitude
+        });
+      });
+    }
+    
+    if (points.length === 0) {
+      // Si no hay puntos, usar valores por defecto
+      return {
+        minLat: 0,
+        maxLat: 0,
+        minLon: 0,
+        maxLon: 0
+      };
+    }
+    
+    // Calcular bounding box con un margen del 10%
+    const lats = points.map(p => p.lat).filter(lat => lat !== undefined && lat !== null);
+    const lons = points.map(p => p.lon).filter(lon => lon !== undefined && lon !== null);
+    
+    const minLat = Math.min(...lats);
+    const maxLat = Math.max(...lats);
+    const minLon = Math.min(...lons);
+    const maxLon = Math.max(...lons);
+    
+    // Agregar margen del 10%
+    const latMargin = (maxLat - minLat) * 0.1;
+    const lonMargin = (maxLon - minLon) * 0.1;
+    
+    return {
+      minLat: minLat - latMargin,
+      maxLat: maxLat + latMargin,
+      minLon: minLon - lonMargin,
+      maxLon: maxLon + lonMargin
+    };
+  };
+  
+  const handleCardClick = () => {
+    onSelect(trip);
+  };
+
+  // Función para manejar la importación de KML
+  const handleKmlImport = (e) => {
+    e.stopPropagation();
+    kmlFileInputRef.current?.click();
+  };
+
+  const handleKmlFileChange = (e) => {
+    const file = e.target.files[0];
+    if (file && onImportLandmarksFromKml) {
+      onImportLandmarksFromKml(trip.id, file);
+    }
+    // Reset the input
+    e.target.value = '';
+  };
+
+  // Función para descargar recursos offline
+  const handleDownloadOfflineResources = async (e) => {
+    e.stopPropagation();
+    
+    if (!trip || !trip.id) {
+      toast.error('No se puede descargar los recursos para este viaje');
+      return;
+    }
+
+    if (!downloadOptions.mapTiles && !downloadOptions.landmarkImages && !downloadOptions.organicMaps && !downloadOptions.geodata) {
+      toast.error('Por favor selecciona al menos un tipo de recurso para descargar');
+      return;
+    }
+    
+    setIsDownloadingOffline(true);
+    setDownloadStatus({
+      mapProgress: 0,
+      organicMapsProgress: 0,
+      geodataProgress: 0,
+      landmarksTotal: 0,
+      landmarksDownloaded: 0,
+      currentStep: 'Iniciando descarga...'
+    });
+    
+    const toastId = toast.loading(`Descargando recursos offline para ${trip.name}...`);
+    
+    try {
+      // Progress tracker
+      const onProgress = (progress, message) => {
+        toast.loading(`${message} (${Math.round(progress)}%)`, { id: toastId });
+        
+        setDownloadStatus(prevState => {
+          if (message.includes('mapa') || message.includes('tile')) {
+            return {
+              ...prevState,
+              mapProgress: progress,
+              currentStep: message
+            };
+          } else if (message.includes('imagen') || message.includes('landmark')) {
+            const matches = message.match(/(\d+)\/(\d+)/);
+            if (matches && matches.length === 3) {
+              return {
+                ...prevState,
+                landmarksDownloaded: parseInt(matches[1], 10),
+                landmarksTotal: parseInt(matches[2], 10),
+                currentStep: message
+              };
+            }
+          }
+          return {
+            ...prevState,
+            currentStep: message
+          };
+        });
+      };
+      
+      // Descargar mapas offline
+      if (downloadOptions.mapTiles) {
+        await offlineMapManager.downloadMapTilesForTrip(trip, onProgress);
+      }
+      
+      // Descargar mapas de Organic Maps
+      if (downloadOptions.organicMaps) {
+        setDownloadStatus(prevState => ({
+          ...prevState,
+          currentStep: 'Iniciando descarga de mapas Organic Maps...',
+          organicMapsProgress: 0
+        }));
+        
+        await organicMapManager.downloadMWMForTrip(trip, (progress, message) => {
+          toast.loading(`${message} (${Math.round(progress)}%)`, { id: toastId });
+          
+          setDownloadStatus(prevState => ({
+            ...prevState,
+            organicMapsProgress: progress,
+            currentStep: message
+          }));
+        });
+      }
+      
+      // Descargar imágenes de landmarks
+      if (downloadOptions.landmarkImages) {
+        const response = await fetch(`/api/landmarks/by-trip/${trip.id}`);
+        if (!response.ok) {
+          throw new Error('No se pudieron obtener los landmarks del viaje');
+        }
+        
+        const tripLandmarks = await response.json();
+        
+        setDownloadStatus(prevState => ({
+          ...prevState,
+          landmarksTotal: tripLandmarks.length,
+          currentStep: `Encontrados ${tripLandmarks.length} landmarks para descargar`
+        }));
+        
+        await landmarkImageManager.downloadLandmarkImages(trip.id, tripLandmarks, onProgress);
+      }
+      
+      // Descargar geodata para reverse geocoding offline
+      if (downloadOptions.geodata) {
+        setDownloadStatus(prevState => ({
+          ...prevState,
+          currentStep: 'Iniciando descarga de geodata para reverse geocoding...',
+          geodataProgress: 0
+        }));
+        
+        try {
+          // Definir el área de descarga basada en los puntos del viaje
+          const bbox = calculateBoundingBox(trip);
+          
+          const geodataResponse = await fetch('/api/offline-geodata/download', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              min_lat: bbox.minLat,
+              max_lat: bbox.maxLat,
+              min_lon: bbox.minLon,
+              max_lon: bbox.maxLon,
+              name: `${trip.name}_geodata`
+            }),
+          });
+          
+          if (!geodataResponse.ok) {
+            throw new Error('Error al iniciar la descarga de geodata');
+          }
+          
+          const geodataResult = await geodataResponse.json();
+          
+          // Simular progreso de descarga de geodata
+          let progress = 0;
+          const geodataInterval = setInterval(() => {
+            progress += 10;
+            setDownloadStatus(prevState => ({
+              ...prevState,
+              geodataProgress: progress,
+              currentStep: `Descargando geodata... ${progress}%`
+            }));
+            
+            toast.loading(`Descargando geodata... ${progress}%`, { id: toastId });
+            
+            if (progress >= 100) {
+              clearInterval(geodataInterval);
+              setDownloadStatus(prevState => ({
+                ...prevState,
+                currentStep: 'Geodata descargada correctamente'
+              }));
+            }
+          }, 500);
+          
+          // Esperar a que termine la descarga
+          await new Promise(resolve => {
+            const checkComplete = () => {
+              if (progress >= 100) {
+                resolve();
+              } else {
+                setTimeout(checkComplete, 100);
+              }
+            };
+            checkComplete();
+          });
+          
+        } catch (error) {
+          console.error('Error descargando geodata:', error);
+          setDownloadStatus(prevState => ({
+            ...prevState,
+            currentStep: `Error en geodata: ${error.message}`
+          }));
+          // No lanzamos el error para que continúe con otros recursos
+        }
+      }
+      
+      const recursosDescargados = [
+        downloadOptions.mapTiles ? 'mapas OSM' : '',
+        downloadOptions.organicMaps ? 'mapas Organic' : '',
+        downloadOptions.landmarkImages ? 'imágenes' : '',
+        downloadOptions.geodata ? 'geodata' : ''
+      ].filter(Boolean).join(', ').replace(/, ([^,]*)$/, ' y $1');
+      
+      toast.success(`${recursosDescargados} descargados correctamente para ${trip.name}`, { id: toastId });
+    } catch (error) {
+      console.error('Error descargando recursos offline:', error);
+      toast.error(`Error: ${error.message}`, { id: toastId });
+    } finally {
+      setIsDownloadingOffline(false);
+      setShowOfflineOptions(false);
+    }
+  };
+  
+  return (
+    <div 
+      className={`bg-white rounded-lg shadow-md overflow-hidden border-2 cursor-pointer transition-all touch-manipulation
+        ${isSelected ? 'border-blue-500' : 'border-transparent'} 
+        ${downloadingTrip === trip.id ? 'animate-pulse' : ''}`}
+      onClick={handleCardClick}
+    >
+      <div className="bg-blue-700 text-white p-3 sm:p-4">
+        <h3 className="text-base sm:text-lg font-semibold truncate">{trip.name}</h3>
+        <p className="text-xs sm:text-sm opacity-90">
+          {formatDate(trip.start_date)} - {formatDate(trip.end_date)}
+        </p>
+      </div>
+      
+      <div className="p-3 sm:p-4 space-y-2 sm:space-y-3">
+        {/* Location info - more compact on mobile */}
+        <div className="space-y-2">
+          <div>
+            <p className="text-xs text-gray-600 mb-1">Start:</p>
+            <p className="text-xs sm:text-sm font-medium text-gray-800 truncate">
+              {trip.start_location && trip.start_location.lat !== undefined ? trip.start_location.lat.toFixed(4) : '0.0000'}, 
+              {trip.start_location && trip.start_location.lon !== undefined ? trip.start_location.lon.toFixed(4) : '0.0000'}
+            </p>
+          </div>
+          
+          <div>
+            <p className="text-xs text-gray-600 mb-1">End:</p>
+            <p className="text-xs sm:text-sm font-medium text-gray-800 truncate">
+              {trip.end_location && trip.end_location.lat !== undefined ? trip.end_location.lat.toFixed(4) : '0.0000'}, 
+              {trip.end_location && trip.end_location.lon !== undefined ? trip.end_location.lon.toFixed(4) : '0.0000'}
+            </p>
+          </div>
+        </div>
+        
+        {trip.waypoints && trip.waypoints.length > 0 && (
+          <div>
+            <p className="text-xs text-gray-600">
+              <span className="font-medium">{trip.waypoints.length}</span> waypoint{trip.waypoints.length !== 1 ? 's' : ''}
+              {trip.waypoints[0].name && (
+                <span className="text-gray-500 ml-1 hidden sm:inline">
+                  (First: {trip.waypoints[0].name})
+                </span>
+              )}
+            </p>
+          </div>
+        )}
+        
+        {trip.notes && (
+          <div>
+            <p className="text-xs text-gray-600 mb-1">Notes:</p>
+            <p className="text-xs sm:text-sm text-gray-700 line-clamp-2">{trip.notes}</p>
+          </div>
+        )}
+
+        {/* Download Progress Bar */}
+        {downloadingTrip === trip.id && downloadProgress !== null && (
+          <div className="space-y-1">
+            <div className="w-full bg-gray-200 rounded-full h-2">
+              <div 
+                className="bg-blue-500 h-2 rounded-full transition-all duration-300" 
+                style={{ width: `${Math.min(downloadProgress, 100)}%` }}
+              ></div>
+            </div>
+            <p className="text-xs text-gray-500">
+              Downloading: {downloadProgress.toFixed(0)}%
+              {downloadProgress.detail && (
+                <span className="block mt-1 text-xs italic truncate">
+                  {downloadProgress.detail}
+                </span>
+              )}
+            </p>
+          </div>
+        )}
+        
+        {/* Action buttons - improved mobile layout */}
+        <div className="space-y-3 pt-2 border-t border-gray-100">
+          {/* Admin actions row */}
+          <div className="flex justify-between items-center">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete(trip.id);
+              }}
+              className="text-red-500 hover:text-red-700 flex items-center text-xs sm:text-sm p-2 -m-2 touch-manipulation"
+            >
+              <FaTrash className="mr-1" /> Delete
+            </button>
+            
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onEdit(trip);
+              }}
+              className="py-1.5 px-3 rounded bg-amber-500 hover:bg-amber-600 text-white flex items-center text-xs sm:text-sm min-h-[36px] touch-manipulation"
+            >
+              <FaEdit className="mr-1" /> Edit
+            </button>
+          </div>
+          
+          {/* Landmarks Management button */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onManageLandmarks(trip);
+            }}
+            className="w-full py-2 px-3 rounded bg-blue-500 hover:bg-blue-600 text-white flex items-center justify-center text-xs sm:text-sm min-h-[40px] touch-manipulation"
+          >
+            <FaMapMarkerAlt className="mr-1" /> Manage Landmarks
+          </button>
+
+          {/* Trip actions - only for upcoming trips */}
+          {new Date(trip.end_date) >= new Date() && (
+            <div className="space-y-2">
+              {isActiveTripId ? (
+                <>
+                  {/* Active trip indicator */}
+                  <div className="py-2 px-3 bg-green-100 text-green-800 border border-green-300 rounded flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+                    <span className="text-xs sm:text-sm font-medium">Trip in progress</span>
+                  </div>
+                  
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (window.confirm(`Stop trip "${trip.name}" now? Recording will end.`)) {
+                        fetch('/api/trips/end', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' }
+                        })
+                        .then(response => response.json())
+                        .then(data => {
+                          if (data.status === 'success') {
+                            alert(`Trip "${trip.name}" ended! Recording stopped.`);
+                            window.location.reload();
+                          } else {
+                            alert('Error stopping trip: ' + (data.detail || 'Unknown error'));
+                          }
+                        })
+                        .catch(error => {
+                          console.error('Error stopping trip:', error);
+                          alert('Error stopping trip. Check console for details.');
+                        });
+                      }
+                    }}
+                    className="w-full py-2 px-3 rounded bg-red-600 hover:bg-red-700 text-white flex items-center justify-center text-xs sm:text-sm min-h-[40px] touch-manipulation"
+                  >
+                    <FaStop className="mr-1" /> Stop Trip
+                  </button>
+                </>
+              ) : (
+                <>
+                  {/* PRIMARY ACTIONS - Trip control buttons */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onStartNavigation(trip);
+                      }}
+                      className="py-2 px-3 rounded bg-green-500 hover:bg-green-600 text-white flex items-center justify-center text-xs sm:text-sm min-h-[40px] touch-manipulation font-medium"
+                    >
+                      <FaPlay className="mr-1" /> Navigate
+                    </button>
+                    
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (window.confirm(`Start trip "${trip.name}" now? Recording will begin automatically.`)) {
+                          fetch('/api/trips/start', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ planned_trip_id: trip.id })
+                          })
+                          .then(response => response.json())
+                          .then(data => {
+                            if (data.status === 'success') {
+                              alert(`Trip "${trip.name}" started! Recording has begun.`);
+                              onStartNavigation(trip);
+                            } else {
+                              alert('Error starting trip: ' + (data.detail || 'Unknown error'));
+                            }
+                          })
+                          .catch(error => {
+                            console.error('Error starting trip:', error);
+                            alert('Error starting trip. Check console for details.');
+                          });
+                        }
+                      }}
+                      className="py-2 px-3 rounded bg-purple-600 hover:bg-purple-700 text-white flex items-center justify-center text-xs sm:text-sm min-h-[40px] touch-manipulation font-medium"
+                    >
+                      <FaPlay className="mr-1" /> Start Trip
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* SECONDARY ACTIONS - Data & Downloads section */}
+          <div className="space-y-2 border-t border-gray-100 pt-3">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowDataDownloads(!showDataDownloads);
+              }}
+              disabled={isDownloadingOffline || downloadingTrip !== null}
+              className="w-full py-2 px-3 rounded bg-gray-500 hover:bg-gray-600 text-white flex items-center justify-center text-xs sm:text-sm min-h-[40px] touch-manipulation"
+            >
+              <FaDatabase className="mr-1" />
+              Data & Downloads
+              {showDataDownloads ? <FaChevronUp className="ml-1" /> : <FaChevronDown className="ml-1" />}
+            </button>
+
+            {showDataDownloads && (
+              <div className="bg-gray-50 p-3 rounded space-y-3">
+                {/* POI Management */}
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-gray-700 mb-2">POI Management</p>
+                  
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDownloadLandmarks(trip.id);
+                    }}
+                    disabled={downloadingTrip !== null}
+                    className={`w-full py-2 px-3 rounded flex items-center justify-center text-xs sm:text-sm min-h-[36px] touch-manipulation ${
+                      trip.landmarks_downloaded && downloadingTrip !== trip.id
+                        ? 'bg-green-500 hover:bg-green-600 text-white'
+                        : downloadingTrip !== null
+                        ? 'bg-gray-300 cursor-not-allowed text-gray-500'
+                        : 'bg-blue-500 hover:bg-blue-600 text-white'
+                    }`}
+                  >
+                    {trip.landmarks_downloaded && downloadingTrip !== trip.id ? (
+                      <>
+                        <FaSync className="mr-1" /> Update POIs
+                      </>
+                    ) : downloadingTrip === trip.id ? (
+                      <>
+                        <div className="animate-spin h-3 w-3 sm:h-4 sm:w-4 border-2 border-gray-500 border-t-transparent rounded-full mr-1"></div>
+                        Downloading...
+                      </>
+                    ) : (
+                      <>
+                        <FaDownload className="mr-1" /> Get POIs
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    onClick={handleKmlImport}
+                    disabled={isDownloadingOffline || downloadingTrip !== null}
+                    className="w-full py-2 px-3 rounded bg-amber-500 hover:bg-amber-600 text-white flex items-center justify-center text-xs sm:text-sm min-h-[36px] touch-manipulation"
+                  >
+                    <FaFileImport className="mr-1" /> Import from KML
+                  </button>
+                </div>
+
+                {/* Offline Resources */}
+                <div className="space-y-2 border-t border-gray-200 pt-3">
+                  <p className="text-xs font-semibold text-gray-700 mb-2">Offline Resources</p>
+                  
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowOfflineOptions(!showOfflineOptions);
+                    }}
+                    disabled={isDownloadingOffline}
+                    className="w-full py-2 px-3 rounded bg-indigo-500 hover:bg-indigo-600 text-white flex items-center justify-center text-xs sm:text-sm min-h-[36px] touch-manipulation"
+                  >
+                    <FaDownload className="mr-1" />
+                    Download Offline
+                    {showOfflineOptions ? <FaChevronUp className="ml-1" /> : <FaChevronDown className="ml-1" />}
+                  </button>
+
+                  {showOfflineOptions && (
+                    <div className="bg-white p-3 rounded border space-y-3">
+                      {/* Download options */}
+                      <div className="space-y-2">
+                        <p className="text-xs font-medium text-gray-700 mb-2">Select resources:</p>
+                        
+                        <label className="flex items-center space-x-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={downloadOptions.mapTiles}
+                            onChange={(e) => setDownloadOptions(prev => ({ ...prev, mapTiles: e.target.checked }))}
+                            className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                          />
+                          <span className="text-xs text-gray-700 flex items-center">
+                            <FaMap className="mr-1" /> Map tiles (OSM)
+                          </span>
+                        </label>
+                        
+                        <label className="flex items-center space-x-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={downloadOptions.landmarkImages}
+                            onChange={(e) => setDownloadOptions(prev => ({ ...prev, landmarkImages: e.target.checked }))}
+                            className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                          />
+                          <span className="text-xs text-gray-700 flex items-center">
+                            <FaImage className="mr-1" /> Landmark images
+                          </span>
+                        </label>
+                        
+                        <label className="flex items-center space-x-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={downloadOptions.organicMaps}
+                            onChange={(e) => setDownloadOptions(prev => ({ ...prev, organicMaps: e.target.checked }))}
+                            className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                          />
+                          <span className="text-xs text-gray-700 flex items-center">
+                            <MdOutlineTerrain className="mr-1" /> Organic Maps
+                          </span>
+                        </label>
+                        
+                        <label className="flex items-center space-x-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={downloadOptions.geodata}
+                            onChange={(e) => setDownloadOptions(prev => ({ ...prev, geodata: e.target.checked }))}
+                            className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                          />
+                          <span className="text-xs text-gray-700 flex items-center">
+                            <FaDatabase className="mr-1" /> Geodata (Reverse Geocoding)
+                          </span>
+                        </label>
+                      </div>
+
+                      {/* Download progress */}
+                      {isDownloadingOffline && (
+                        <div className="space-y-2">
+                          <div className="w-full bg-gray-200 rounded-full h-2">
+                            <div 
+                              className="bg-indigo-500 h-2 rounded-full transition-all duration-300" 
+                              style={{ width: `${Math.max(downloadStatus.mapProgress, downloadStatus.organicMapsProgress, downloadStatus.geodataProgress)}%` }}
+                            ></div>
+                          </div>
+                          <p className="text-xs text-gray-600">{downloadStatus.currentStep}</p>
+                          {downloadStatus.landmarksTotal > 0 && (
+                            <p className="text-xs text-gray-500">
+                              Landmarks: {downloadStatus.landmarksDownloaded}/{downloadStatus.landmarksTotal}
+                            </p>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Download button */}
+                      <button
+                        onClick={handleDownloadOfflineResources}
+                        disabled={isDownloadingOffline || (!downloadOptions.mapTiles && !downloadOptions.landmarkImages && !downloadOptions.organicMaps && !downloadOptions.geodata)}
+                        className={`w-full py-2 px-3 rounded flex items-center justify-center text-xs sm:text-sm min-h-[36px] touch-manipulation ${
+                          isDownloadingOffline || (!downloadOptions.mapTiles && !downloadOptions.landmarkImages && !downloadOptions.organicMaps && !downloadOptions.geodata)
+                            ? 'bg-gray-300 cursor-not-allowed text-gray-500'
+                            : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                        }`}
+                      >
+                        {isDownloadingOffline ? (
+                          <>
+                            <div className="animate-spin h-3 w-3 border-2 border-gray-500 border-t-transparent rounded-full mr-2"></div>
+                            Downloading...
+                          </>
+                        ) : (
+                          <>
+                            <FaDownload className="mr-1" /> Start Download
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Hidden KML file input */}
+          <input
+            ref={kmlFileInputRef}
+            type="file"
+            accept=".kml,.kmz"
+            onChange={handleKmlFileChange}
+            style={{ display: 'none' }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default TripCard;

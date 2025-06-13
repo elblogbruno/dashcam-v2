@@ -1,6 +1,11 @@
 import React, { useState } from 'react';
 import axios from 'axios';
+import { FaBell, FaVolumeUp, FaArrowLeft } from 'react-icons/fa';
 import { showSuccess, showError, showInfo, showWarning } from '../services/notificationService';
+
+// Importar el nuevo sistema de diseño
+import { PageLayout, Section, Grid, Stack, Flex } from '../components/common/Layout';
+import { Button, Card, Input, Select, Spinner } from '../components/common/UI';
 
 const NotificationTester = () => {
   const [message, setMessage] = useState('Esta es una notificación de prueba');
@@ -64,99 +69,171 @@ const NotificationTester = () => {
   };
 
   return (
-    <div className="container mx-auto px-4 py-6">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold">Probador de Notificaciones</h1>
-        <a href="/settings#debug-section" className="text-dashcam-600 hover:text-dashcam-800 text-sm">
-          &larr; Volver a Configuración
-        </a>
-      </div>
-      
-      <div className="bg-white rounded-lg shadow p-6 mb-6">
-        <div className="mb-4">
-          <label className="block text-gray-700 mb-2" htmlFor="message">
-            Mensaje:
-          </label>
-          <input
-            id="message"
-            type="text"
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            className="w-full p-2 border rounded"
-          />
-        </div>
+    <PageLayout
+      title="Probador de Notificaciones"
+      icon={<FaBell />}
+      action={
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => window.location.href = "/settings#debug-section"}
+        >
+          <FaArrowLeft className="mr-2" />
+          Volver a Configuración
+        </Button>
+      }
+    >
+      <Grid cols={1} gap="lg" className="max-w-4xl mx-auto">
+        {/* Formulario de configuración */}
+        <Card>
+          <div className="p-6">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">Configurar Notificación</h2>
+            
+            <Stack space="md">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2" htmlFor="message">
+                  Mensaje:
+                </label>
+                <Input
+                  id="message"
+                  type="text"
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                  placeholder="Escribe el mensaje de la notificación"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2" htmlFor="title">
+                  Título:
+                </label>
+                <Input
+                  id="title"
+                  type="text"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="Título de la notificación"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2" htmlFor="type">
+                  Tipo:
+                </label>
+                <Select
+                  id="type"
+                  value={type}
+                  onChange={(e) => setType(e.target.value)}
+                >
+                  <option value="info">Información</option>
+                  <option value="success">Éxito</option>
+                  <option value="error">Error</option>
+                  <option value="warning">Advertencia</option>
+                </Select>
+              </div>
+            </Stack>
+          </div>
+        </Card>
+
+        {/* Botones de acción */}
+        <Card>
+          <div className="p-6">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">Enviar Notificación</h2>
+            
+            <Grid cols={1} gap="sm" className="sm:grid-cols-3">
+              <Button
+                onClick={sendLocalNotification}
+                variant="primary"
+                size="lg"
+                className="w-full"
+              >
+                <FaBell className="mr-2" />
+                Notificación Local
+              </Button>
+              
+              <Button
+                onClick={sendBackendNotification}
+                variant="secondary"
+                size="lg"
+                disabled={loading}
+                className="w-full"
+              >
+                {loading ? (
+                  <>
+                    <Spinner size="sm" className="mr-2" />
+                    Enviando...
+                  </>
+                ) : (
+                  <>
+                    <FaBell className="mr-2" />
+                    Backend (Sin Audio)
+                  </>
+                )}
+              </Button>
+              
+              <Button
+                onClick={sendBackendNotificationWithAudio}
+                variant="warning"
+                size="lg"
+                disabled={loading}
+                className="w-full"
+              >
+                {loading ? (
+                  <>
+                    <Spinner size="sm" className="mr-2" />
+                    Enviando...
+                  </>
+                ) : (
+                  <>
+                    <FaVolumeUp className="mr-2" />
+                    Backend + Audio
+                  </>
+                )}
+              </Button>
+            </Grid>
+          </div>
+        </Card>
         
-        <div className="mb-4">
-          <label className="block text-gray-700 mb-2" htmlFor="title">
-            Título:
-          </label>
-          <input
-            id="title"
-            type="text"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            className="w-full p-2 border rounded"
-          />
-        </div>
-        
-        <div className="mb-6">
-          <label className="block text-gray-700 mb-2" htmlFor="type">
-            Tipo:
-          </label>
-          <select
-            id="type"
-            value={type}
-            onChange={(e) => setType(e.target.value)}
-            className="w-full p-2 border rounded"
-          >
-            <option value="info">Información</option>
-            <option value="success">Éxito</option>
-            <option value="error">Error</option>
-            <option value="warning">Advertencia</option>
-          </select>
-        </div>
-        
-        <div className="flex flex-wrap gap-4">
-          <button
-            onClick={sendLocalNotification}
-            className="bg-blue-500 text-white py-2 px-4 rounded hover:bg-blue-600"
-          >
-            Enviar Notificación Local
-          </button>
-          
-          <button
-            onClick={sendBackendNotification}
-            disabled={loading}
-            className={`bg-green-500 text-white py-2 px-4 rounded hover:bg-green-600 ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
-          >
-            Enviar Notificación Backend
-          </button>
-          
-          <button
-            onClick={sendBackendNotificationWithAudio}
-            disabled={loading}
-            className={`bg-purple-500 text-white py-2 px-4 rounded hover:bg-purple-600 ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
-          >
-            Enviar Notificación + Audio
-          </button>
-        </div>
-      </div>
-      
-      <div className="bg-white rounded-lg shadow p-6">
-        <h2 className="text-xl font-semibold mb-4">Instrucciones:</h2>
-        <ul className="list-disc pl-5 space-y-2">
-          <li>
-            <strong>Enviar Notificación Local</strong>: Usa el servicio de notificaciones del frontend directamente.
-          </li>
-          <li>
-            <strong>Enviar Notificación Backend</strong>: Envía la notificación a través del backend sin reproducir audio.
-          </li>
-          <li>
-            <strong>Enviar Notificación + Audio</strong>: Envía la notificación a través del backend y reproduce el mensaje por audio.
-          </li>
-        </ul>
-      </div>
-    </div>
+        {/* Instrucciones */}
+        <Card>
+          <div className="p-6">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">Instrucciones</h2>
+            
+            <Stack space="sm">
+              <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+                <h3 className="font-medium text-blue-900 mb-2">
+                  <FaBell className="inline mr-2" />
+                  Notificación Local
+                </h3>
+                <p className="text-blue-800 text-sm">
+                  Usa el servicio de notificaciones del frontend directamente.
+                </p>
+              </div>
+              
+              <div className="p-4 bg-green-50 rounded-lg border border-green-200">
+                <h3 className="font-medium text-green-900 mb-2">
+                  <FaBell className="inline mr-2" />
+                  Backend (Sin Audio)
+                </h3>
+                <p className="text-green-800 text-sm">
+                  Envía la notificación a través del backend sin reproducir audio.
+                </p>
+              </div>
+              
+              <div className="p-4 bg-orange-50 rounded-lg border border-orange-200">
+                <h3 className="font-medium text-orange-900 mb-2">
+                  <FaVolumeUp className="inline mr-2" />
+                  Backend + Audio
+                </h3>
+                <p className="text-orange-800 text-sm">
+                  Envía la notificación a través del backend y reproduce el mensaje por audio.
+                </p>
+              </div>
+            </Stack>
+          </div>
+        </Card>
+      </Grid>
+    </PageLayout>
   );
 };
 

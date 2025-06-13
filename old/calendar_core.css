@@ -1,0 +1,1909 @@
+/* 
+ * CALENDAR_CORE.CSS
+ * Estilos principales para la estructura y componentes del calendario
+ */
+
+/* Variables para el tema Nest Doorbell */
+:root {
+  --nest-background: #202124;
+  --nest-card-bg: #2e3033;
+  --nest-text-primary: #ffffff;
+  --nest-text-secondary: rgba(255, 255, 255, 0.7);
+  --nest-accent: #3b82f6;
+  --nest-border: rgba(255, 255, 255, 0.1);
+  --nest-event-indicator: #3b82f6;
+  --nest-selected: #2563eb;
+  --nest-header-height: 56px;
+  --nest-timeline-bg: #282a2d;
+  --nest-event-bg: #2e3033;
+  --nest-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  --status-bar-height: 48px; /* Altura de la barra de estado para desktop */
+}
+
+/* Contenedor principal con diseño de grid */
+.nest-layout-container {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  max-width: 100vw;
+  background-color: var(--nest-background);
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* En pantallas medianas y grandes, usamos un diseño de dos columnas y ajustamos por la navegación */
+@media (min-width: 768px) {
+  .nest-layout-container {
+    display: grid;
+    grid-template-columns: 70% 30%;
+    grid-template-rows: auto 1fr; /* Header fijo, timeline flexible */
+    /* Removido margin-left para permitir que el layout desktop maneje el espaciado */
+    width: 100%;
+    max-width: 100%;
+  }
+}
+
+/* Panel principal donde está el video (a la izquierda en desktop) */
+.nest-video-panel {
+  display: flex;
+  flex-direction: column;
+  background-color: var(--nest-background);
+  padding: 0;
+  margin: 0;
+  gap: 0;
+  overflow-y: auto;
+  position: relative;
+  order: 1;
+}
+
+@media (min-width: 768px) {
+  .nest-video-panel {
+    grid-column: 1 / 2;
+    grid-row: 1 / -1;
+    border-right: 1px solid var(--nest-border);
+    height: 100vh;
+    overflow-y: auto;
+    order: unset;
+    width: 100%; /* Asegurar que use todo el ancho disponible */
+  }
+}
+
+/* Contenedor específico del video */
+.nest-video-container {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border-radius: 0;
+  overflow: hidden;
+  position: relative;
+  flex-shrink: 0; /* Evita que el video se encoja cuando el SelectedClipInfo crece */
+  flex-grow: 0; /* Evita que el video crezca inesperadamente */
+  min-height: 0; /* Permite que el video mantenga su tamaño mínimo */
+  aspect-ratio: 16/9; /* Forzar relación de aspecto 16:9 */
+  background: #000; /* Asegurar fondo negro */
+}
+
+/* Mejoras específicas para móvil */
+@media (max-width: 767px) {
+  .nest-video-container {
+    aspect-ratio: 16/9;
+    max-height: 40vh; /* Limitar altura en móvil pero mantener ratio */
+    height: auto;
+    overflow: hidden;
+  }
+  
+  .video-player-container {
+    aspect-ratio: 16/9 !important;
+    max-height: 40vh !important;
+    height: auto !important;
+    overflow: hidden !important;
+    position: relative !important;
+  }
+  
+  .video-player-embedded {
+    aspect-ratio: 16/9;
+    max-height: 40vh;
+    height: auto;
+    overflow: hidden;
+  }
+  
+  .video-player-embedded .video-wrapper {
+    aspect-ratio: 16/9 !important;
+    height: auto !important;
+    overflow: hidden !important;
+    position: relative !important;
+  }
+}
+
+/* Para desktop, asegurar que mantenga la relación 16:9 */
+@media (min-width: 768px) {
+  .nest-video-container {
+    aspect-ratio: 16/9;
+    max-height: 60vh; /* Limitar altura máxima en desktop */
+    height: auto;
+    overflow: hidden;
+  }
+  
+  .video-player-embedded .video-wrapper {
+    aspect-ratio: 16/9 !important;
+    height: auto !important;
+    overflow: hidden !important;
+    position: relative !important;
+  }
+}
+
+/* Estabilizar la posición del panel de video */
+.nest-video-panel {
+  position: relative; /* Asegurar contexto de posicionamiento estable */
+}
+
+/* Mejorar la estabilidad del layout en desktop */
+@media (min-width: 768px) {
+  .nest-video-panel {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+  }
+  
+  .nest-video-container {
+    /* Remover position: sticky para permitir scroll unificado */
+    position: relative;
+    z-index: 5;
+    background: #000;
+  }
+}
+
+/* Panel de cabecera que contiene la fecha y los selectores */
+.nest-header-panel {
+  background-color: var(--nest-card-bg);
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--nest-border);
+  z-index: 10;
+  order: 2;
+  flex-shrink: 0;
+}
+
+@media (min-width: 768px) {
+  .nest-header-panel {
+    grid-column: 2 / 3;
+    grid-row: 1 / 2;
+    order: unset;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    height: fit-content;
+    width: 100%; /* Asegurar que use todo el ancho disponible */
+    min-height: var(--nest-header-height); /* Asegurar altura mínima */
+  }
+}
+
+/* Panel lateral con timeline vertical y eventos (a la derecha en desktop) */
+.nest-timeline-panel {
+  background-color: var(--nest-card-bg);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  order: 3;
+}
+
+@media (min-width: 768px) {
+  .nest-timeline-panel {
+    grid-column: 2 / 3;
+    grid-row: 2 / -1; /* Cambiar a la segunda fila para estar debajo del header */
+    height: calc(100vh - var(--nest-header-height)); /* Ajustar altura para el header */
+    padding-top: 0; /* Eliminar padding-top ya que está en fila separada */
+    order: unset;
+    width: 100%; /* Asegurar que use todo el ancho disponible */
+  }
+}
+
+/* Línea de tiempo vertical al estilo Nest */
+.nest-vertical-timeline {
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  overflow-y: auto;
+  height: 100%;
+  position: relative;
+}
+
+/* Línea central de la timeline vertical */
+.nest-timeline-line {
+  position: absolute;
+  left: 24px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background-color: var(--nest-border);
+  z-index: 0;
+}
+
+/* Eventos en la línea de tiempo */
+.nest-timeline-event {
+  display: flex;
+  margin-bottom: 16px;
+  position: relative;
+  padding-left: 32px;
+  transition: transform 0.3s ease, opacity 0.3s ease;
+}
+
+.nest-timeline-event:hover {
+  transform: translateX(3px);
+}
+
+/* Punto indicador del evento */
+.nest-timeline-dot {
+  position: absolute;
+  left: 20px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background-color: var(--nest-accent);
+  transform: translateX(-50%);
+  z-index: 1;
+}
+
+/* Tarjeta de evento al estilo Nest */
+.nest-event-card {
+  background-color: var(--nest-event-bg);
+  border-radius: 8px;
+  border: 1px solid var(--nest-border);
+  overflow: hidden;
+  width: 100%;
+  transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+  margin-bottom: 12px;
+}
+
+.nest-event-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--nest-shadow);
+  border-color: var(--nest-accent);
+}
+
+/* Evento en reproducción */
+.nest-event-playing {
+  z-index: 2;
+}
+
+.nest-event-playing .nest-event-card {
+  border: 2px solid var(--nest-selected);
+  box-shadow: 0 0 10px rgba(37, 99, 235, 0.3);
+  transform: scale(1.03);
+}
+
+.nest-event-playing .nest-timeline-dot {
+  background-color: var(--nest-selected);
+  box-shadow: 0 0 5px var(--nest-selected);
+  animation: pulse-dot 1.5s infinite;
+}
+
+@keyframes pulse-dot {
+  0% {
+    transform: translateX(-50%) scale(1);
+  }
+  50% {
+    transform: translateX(-50%) scale(1.3);
+  }
+  100% {
+    transform: translateX(-50%) scale(1);
+  }
+}
+
+/* Estilos para la miniatura del evento */
+.nest-event-thumbnail {
+  width: 100%;
+  height: 0;
+  padding-bottom: 40%;
+  position: relative;
+  overflow: hidden;
+  border-radius: 6px 6px 0 0;
+}
+
+.nest-event-thumbnail img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Información del evento */
+.nest-event-info {
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Hora del evento */
+.nest-event-time {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--nest-text-primary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Descripción del evento */
+.nest-event-description {
+  font-size: 11px;
+  color: var(--nest-text-secondary);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Etiqueta de tipo de video */
+.nest-event-type {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background-color: rgba(0, 0, 0, 0.6);
+  color: white;
+  z-index: 2;
+}
+
+/* Diferenciación de tipos de videos */
+.external-video .nest-event-type {
+  background-color: var(--nest-accent); /* Color azul de Google */
+}
+
+.clip-video .nest-event-type {
+  background-color: rgba(52, 168, 83, 0.8); /* Color verde de Google */
+}
+
+/* Contenedor de videos externos */
+.nest-section {
+  margin-top: 16px;
+  padding: 0 16px;
+}
+
+.nest-section-title {
+  display: flex;
+  align-items: center;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--nest-text-primary);
+  margin-bottom: 12px;
+}
+
+.nest-section-icon {
+  margin-right: 8px;
+  color: var(--nest-accent);
+}
+
+.nest-section-title-external {
+  color: var(--nest-accent);
+}
+
+/* Grid para videos externos */
+.nest-video-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+@media (min-width: 500px) {
+  .nest-video-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* Card de video externo */
+.nest-video-card {
+  background-color: var(--nest-event-bg);
+  border-radius: 8px;
+  border: 1px solid var(--nest-border);
+  overflow: hidden;
+  margin-bottom: 12px;
+  transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+}
+
+.nest-video-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--nest-shadow);
+  border-color: var(--nest-accent);
+}
+
+/* Estilos mejorados para videos externos */
+.nest-external-video-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1rem;
+  padding: 0.75rem;
+}
+
+.nest-external-video-card {
+  background: #ffffff;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.nest-external-video-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  border-color: rgba(59, 130, 246, 0.2);
+}
+
+.nest-external-video-thumbnail {
+  position: relative;
+  width: 100%;
+  height: 180px;
+  overflow: hidden;
+  background: #f8f9fa;
+}
+
+.nest-external-thumbnail-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.3s ease;
+}
+
+.nest-external-video-card:hover .nest-external-thumbnail-image {
+  transform: scale(1.05);
+}
+
+.nest-external-play-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  cursor: pointer;
+}
+
+.nest-external-video-card:hover .nest-external-play-overlay {
+  opacity: 1;
+}
+
+.nest-external-play-icon {
+  color: white;
+  font-size: 3rem;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+  transition: transform 0.2s ease;
+}
+
+.nest-external-play-overlay:hover .nest-external-play-icon {
+  transform: scale(1.1);
+}
+
+.nest-external-source-badge {
+  position: absolute;
+  top: 0.75rem;
+  left: 0.75rem;
+  background: rgba(0, 0, 0, 0.7);
+  color: white;
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  backdrop-filter: blur(4px);
+}
+
+.nest-external-source-icon {
+  font-size: 0.7rem;
+}
+
+.nest-external-video-content {
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.nest-external-video-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.nest-external-video-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #1a1a1a;
+  margin: 0;
+  line-height: 1.3;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  flex: 1;
+}
+
+.nest-external-video-time {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: #666;
+  font-size: 0.75rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.nest-external-time-icon {
+  font-size: 0.7rem;
+}
+
+.nest-external-tags-section {
+  margin: 0.25rem 0;
+}
+
+.nest-external-tags-wrapper {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.nest-external-tag {
+  background: linear-gradient(135deg, #e3f2fd, #f3e5f5);
+  color: #1565c0;
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  font-size: 0.7rem;
+  font-weight: 500;
+  border: 1px solid rgba(21, 101, 192, 0.2);
+  transition: all 0.2s ease;
+}
+
+.nest-external-tag:hover {
+  background: linear-gradient(135deg, #bbdefb, #e1bee7);
+  transform: translateY(-1px);
+}
+
+.nest-external-tag-more {
+  background: #f5f5f5;
+  color: #666;
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  font-size: 0.7rem;
+  font-weight: 500;
+  border: 1px solid #e0e0e0;
+}
+
+.nest-external-video-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid #f0f0f0;
+}
+
+.nest-external-video-meta {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.nest-external-location-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  background: #e8f5e8;
+  color: #2e7d32;
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  font-size: 0.7rem;
+  font-weight: 500;
+  border: 1px solid rgba(46, 125, 50, 0.2);
+}
+
+.nest-external-location-icon {
+  font-size: 0.7rem;
+}
+
+.nest-external-play-button {
+  background: linear-gradient(135deg, #2563eb, #34a853);
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 4px rgba(59, 130, 246, 0.3);
+}
+
+.nest-external-play-button:hover {
+  background: linear-gradient(135deg, #3367d6, #2d8a47);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+}
+
+.nest-external-play-button:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 4px rgba(59, 130, 246, 0.3);
+}
+
+.nest-external-play-button-icon {
+  font-size: 0.9rem;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .nest-external-video-grid {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+    padding: 0.5rem;
+  }
+  
+  .nest-external-video-thumbnail {
+    height: 160px;
+  }
+  
+  .nest-external-video-content {
+    padding: 0.75rem;
+  }
+  
+  .nest-external-video-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+  
+  .nest-external-video-footer {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.75rem;
+  }
+  
+  .nest-external-play-button {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 480px) {
+  .nest-external-video-grid {
+    padding: 0.25rem;
+  }
+  
+  .nest-external-video-thumbnail {
+    height: 140px;
+  }
+  
+  .nest-external-play-icon {
+    font-size: 2.5rem;
+  }
+}
+
+/* 
+ * CALENDAR_CORE.CSS
+ * Estilos principales para la estructura y componentes del calendario
+ */
+
+/* Variables para el tema Nest Doorbell */
+:root {
+  --nest-background: #202124;
+  --nest-card-bg: #2e3033;
+  --nest-text-primary: #ffffff;
+  --nest-text-secondary: rgba(255, 255, 255, 0.7);
+  --nest-accent: #3b82f6;
+  --nest-border: rgba(255, 255, 255, 0.1);
+  --nest-event-indicator: #3b82f6;
+  --nest-selected: #2563eb;
+  --nest-header-height: 56px;
+  --nest-timeline-bg: #282a2d;
+  --nest-event-bg: #2e3033;
+  --nest-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  --status-bar-height: 48px; /* Altura de la barra de estado para desktop */
+}
+
+/* Contenedor principal con diseño de grid */
+.nest-layout-container {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  max-width: 100vw;
+  background-color: var(--nest-background);
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* En pantallas medianas y grandes, usamos un diseño de dos columnas y ajustamos por la navegación */
+@media (min-width: 768px) {
+  .nest-layout-container {
+    display: grid;
+    grid-template-columns: 70% 30%;
+    grid-template-rows: auto 1fr; /* Header fijo, timeline flexible */
+    /* Removido margin-left para permitir que el layout desktop maneje el espaciado */
+    width: 100%;
+    max-width: 100%;
+  }
+}
+
+/* Panel principal donde está el video (a la izquierda en desktop) */
+.nest-video-panel {
+  display: flex;
+  flex-direction: column;
+  background-color: var(--nest-background);
+  padding: 0;
+  margin: 0;
+  gap: 0;
+  overflow-y: auto;
+  position: relative;
+  order: 1;
+}
+
+@media (min-width: 768px) {
+  .nest-video-panel {
+    grid-column: 1 / 2;
+    grid-row: 1 / -1;
+    border-right: 1px solid var(--nest-border);
+    height: 100vh;
+    overflow-y: auto;
+    order: unset;
+    width: 100%; /* Asegurar que use todo el ancho disponible */
+  }
+}
+
+/* Contenedor específico del video */
+.nest-video-container {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border-radius: 0;
+  overflow: hidden;
+  position: relative;
+  flex-shrink: 0; /* Evita que el video se encoja cuando el SelectedClipInfo crece */
+  flex-grow: 0; /* Evita que el video crezca inesperadamente */
+  min-height: 0; /* Permite que el video mantenga su tamaño mínimo */
+  aspect-ratio: 16/9; /* Forzar relación de aspecto 16:9 */
+  background: #000; /* Asegurar fondo negro */
+}
+
+/* Mejoras específicas para móvil */
+@media (max-width: 767px) {
+  .nest-video-container {
+    aspect-ratio: 16/9;
+    max-height: 40vh; /* Limitar altura en móvil pero mantener ratio */
+    height: auto;
+    overflow: hidden;
+  }
+  
+  .video-player-container {
+    aspect-ratio: 16/9 !important;
+    max-height: 40vh !important;
+    height: auto !important;
+    overflow: hidden !important;
+    position: relative !important;
+  }
+  
+  .video-player-embedded {
+    aspect-ratio: 16/9;
+    max-height: 40vh;
+    height: auto;
+    overflow: hidden;
+  }
+  
+  .video-player-embedded .video-wrapper {
+    aspect-ratio: 16/9 !important;
+    height: auto !important;
+    overflow: hidden !important;
+    position: relative !important;
+  }
+}
+
+/* Para desktop, asegurar que mantenga la relación 16:9 */
+@media (min-width: 768px) {
+  .nest-video-container {
+    aspect-ratio: 16/9;
+    max-height: 60vh; /* Limitar altura máxima en desktop */
+    height: auto;
+    overflow: hidden;
+  }
+  
+  .video-player-embedded .video-wrapper {
+    aspect-ratio: 16/9 !important;
+    height: auto !important;
+    overflow: hidden !important;
+    position: relative !important;
+  }
+}
+
+/* Estabilizar la posición del panel de video */
+.nest-video-panel {
+  position: relative; /* Asegurar contexto de posicionamiento estable */
+}
+
+/* Mejorar la estabilidad del layout en desktop */
+@media (min-width: 768px) {
+  .nest-video-panel {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+  }
+  
+  .nest-video-container {
+    /* Remover position: sticky para permitir scroll unificado */
+    position: relative;
+    z-index: 5;
+    background: #000;
+  }
+}
+
+/* Panel de cabecera que contiene la fecha y los selectores */
+.nest-header-panel {
+  background-color: var(--nest-card-bg);
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--nest-border);
+  z-index: 10;
+  order: 2;
+  flex-shrink: 0;
+}
+
+@media (min-width: 768px) {
+  .nest-header-panel {
+    grid-column: 2 / 3;
+    grid-row: 1 / 2;
+    order: unset;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    height: fit-content;
+    width: 100%; /* Asegurar que use todo el ancho disponible */
+    min-height: var(--nest-header-height); /* Asegurar altura mínima */
+  }
+}
+
+/* Panel lateral con timeline vertical y eventos (a la derecha en desktop) */
+.nest-timeline-panel {
+  background-color: var(--nest-card-bg);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  order: 3;
+}
+
+@media (min-width: 768px) {
+  .nest-timeline-panel {
+    grid-column: 2 / 3;
+    grid-row: 2 / -1; /* Cambiar a la segunda fila para estar debajo del header */
+    height: calc(100vh - var(--nest-header-height)); /* Ajustar altura para el header */
+    padding-top: 0; /* Eliminar padding-top ya que está en fila separada */
+    order: unset;
+    width: 100%; /* Asegurar que use todo el ancho disponible */
+  }
+}
+
+/* Línea de tiempo vertical al estilo Nest */
+.nest-vertical-timeline {
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  overflow-y: auto;
+  height: 100%;
+  position: relative;
+}
+
+/* Línea central de la timeline vertical */
+.nest-timeline-line {
+  position: absolute;
+  left: 24px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background-color: var(--nest-border);
+  z-index: 0;
+}
+
+/* Eventos en la línea de tiempo */
+.nest-timeline-event {
+  display: flex;
+  margin-bottom: 16px;
+  position: relative;
+  padding-left: 32px;
+  transition: transform 0.3s ease, opacity 0.3s ease;
+}
+
+.nest-timeline-event:hover {
+  transform: translateX(3px);
+}
+
+/* Punto indicador del evento */
+.nest-timeline-dot {
+  position: absolute;
+  left: 20px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background-color: var(--nest-accent);
+  transform: translateX(-50%);
+  z-index: 1;
+}
+
+/* Tarjeta de evento al estilo Nest */
+.nest-event-card {
+  background-color: var(--nest-event-bg);
+  border-radius: 8px;
+  border: 1px solid var(--nest-border);
+  overflow: hidden;
+  width: 100%;
+  transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+  margin-bottom: 12px;
+}
+
+.nest-event-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--nest-shadow);
+  border-color: var(--nest-accent);
+}
+
+/* Evento en reproducción */
+.nest-event-playing {
+  z-index: 2;
+}
+
+.nest-event-playing .nest-event-card {
+  border: 2px solid var(--nest-selected);
+  box-shadow: 0 0 10px rgba(37, 99, 235, 0.3);
+  transform: scale(1.03);
+}
+
+.nest-event-playing .nest-timeline-dot {
+  background-color: var(--nest-selected);
+  box-shadow: 0 0 5px var(--nest-selected);
+  animation: pulse-dot 1.5s infinite;
+}
+
+@keyframes pulse-dot {
+  0% {
+    transform: translateX(-50%) scale(1);
+  }
+  50% {
+    transform: translateX(-50%) scale(1.3);
+  }
+  100% {
+    transform: translateX(-50%) scale(1);
+  }
+}
+
+/* Estilos para la miniatura del evento */
+.nest-event-thumbnail {
+  width: 100%;
+  height: 0;
+  padding-bottom: 40%;
+  position: relative;
+  overflow: hidden;
+  border-radius: 6px 6px 0 0;
+}
+
+.nest-event-thumbnail img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Información del evento */
+.nest-event-info {
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Hora del evento */
+.nest-event-time {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--nest-text-primary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Descripción del evento */
+.nest-event-description {
+  font-size: 11px;
+  color: var(--nest-text-secondary);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Etiqueta de tipo de video */
+.nest-event-type {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background-color: rgba(0, 0, 0, 0.6);
+  color: white;
+  z-index: 2;
+}
+
+/* Diferenciación de tipos de videos */
+.external-video .nest-event-type {
+  background-color: var(--nest-accent); /* Color azul de Google */
+}
+
+.clip-video .nest-event-type {
+  background-color: rgba(52, 168, 83, 0.8); /* Color verde de Google */
+}
+
+/* Contenedor de videos externos */
+.nest-section {
+  margin-top: 16px;
+  padding: 0 16px;
+}
+
+.nest-section-title {
+  display: flex;
+  align-items: center;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--nest-text-primary);
+  margin-bottom: 12px;
+}
+
+.nest-section-icon {
+  margin-right: 8px;
+  color: var(--nest-accent);
+}
+
+.nest-section-title-external {
+  color: var(--nest-accent);
+}
+
+/* Grid para videos externos */
+.nest-video-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+@media (min-width: 500px) {
+  .nest-video-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* Card de video externo */
+.nest-video-card {
+  background-color: var(--nest-event-bg);
+  border-radius: 8px;
+  border: 1px solid var(--nest-border);
+  overflow: hidden;
+  margin-bottom: 12px;
+  transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+}
+
+.nest-video-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--nest-shadow);
+  border-color: var(--nest-accent);
+}
+
+/* Estilos mejorados para videos externos */
+.nest-external-video-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1rem;
+  padding: 0.75rem;
+}
+
+.nest-external-video-card {
+  background: #ffffff;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.nest-external-video-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  border-color: rgba(59, 130, 246, 0.2);
+}
+
+.nest-external-video-thumbnail {
+  position: relative;
+  width: 100%;
+  height: 180px;
+  overflow: hidden;
+  background: #f8f9fa;
+}
+
+.nest-external-thumbnail-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.3s ease;
+}
+
+.nest-external-video-card:hover .nest-external-thumbnail-image {
+  transform: scale(1.05);
+}
+
+.nest-external-play-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  cursor: pointer;
+}
+
+.nest-external-video-card:hover .nest-external-play-overlay {
+  opacity: 1;
+}
+
+.nest-external-play-icon {
+  color: white;
+  font-size: 3rem;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+  transition: transform 0.2s ease;
+}
+
+.nest-external-play-overlay:hover .nest-external-play-icon {
+  transform: scale(1.1);
+}
+
+.nest-external-source-badge {
+  position: absolute;
+  top: 0.75rem;
+  left: 0.75rem;
+  background: rgba(0, 0, 0, 0.7);
+  color: white;
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  backdrop-filter: blur(4px);
+}
+
+.nest-external-source-icon {
+  font-size: 0.7rem;
+}
+
+.nest-external-video-content {
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.nest-external-video-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.nest-external-video-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #1a1a1a;
+  margin: 0;
+  line-height: 1.3;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  flex: 1;
+}
+
+.nest-external-video-time {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: #666;
+  font-size: 0.75rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.nest-external-time-icon {
+  font-size: 0.7rem;
+}
+
+.nest-external-tags-section {
+  margin: 0.25rem 0;
+}
+
+.nest-external-tags-wrapper {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.nest-external-tag {
+  background: linear-gradient(135deg, #e3f2fd, #f3e5f5);
+  color: #1565c0;
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  font-size: 0.7rem;
+  font-weight: 500;
+  border: 1px solid rgba(21, 101, 192, 0.2);
+  transition: all 0.2s ease;
+}
+
+.nest-external-tag:hover {
+  background: linear-gradient(135deg, #bbdefb, #e1bee7);
+  transform: translateY(-1px);
+}
+
+.nest-external-tag-more {
+  background: #f5f5f5;
+  color: #666;
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  font-size: 0.7rem;
+  font-weight: 500;
+  border: 1px solid #e0e0e0;
+}
+
+.nest-external-video-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid #f0f0f0;
+}
+
+.nest-external-video-meta {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.nest-external-location-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  background: #e8f5e8;
+  color: #2e7d32;
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  font-size: 0.7rem;
+  font-weight: 500;
+  border: 1px solid rgba(46, 125, 50, 0.2);
+}
+
+.nest-external-location-icon {
+  font-size: 0.7rem;
+}
+
+.nest-external-play-button {
+  background: linear-gradient(135deg, #2563eb, #34a853);
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 4px rgba(59, 130, 246, 0.3);
+}
+
+.nest-external-play-button:hover {
+  background: linear-gradient(135deg, #3367d6, #2d8a47);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+}
+
+.nest-external-play-button:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 4px rgba(59, 130, 246, 0.3);
+}
+
+.nest-external-play-button-icon {
+  font-size: 0.9rem;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .nest-external-video-grid {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+    padding: 0.5rem;
+  }
+  
+  .nest-external-video-thumbnail {
+    height: 160px;
+  }
+  
+  .nest-external-video-content {
+    padding: 0.75rem;
+  }
+  
+  .nest-external-video-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+  
+  .nest-external-video-footer {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.75rem;
+  }
+  
+  .nest-external-play-button {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 480px) {
+  .nest-external-video-grid {
+    padding: 0.25rem;
+  }
+  
+  .nest-external-video-thumbnail {
+    height: 140px;
+  }
+  
+  .nest-external-play-icon {
+    font-size: 2.5rem;
+  }
+}
+
+/* Estilos para la vista vacía */
+.nest-empty-view {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 24px;
+  color: var(--nest-text-secondary);
+}
+
+.nest-empty-view svg {
+  font-size: 48px;
+  margin-bottom: 16px;
+  color: var(--nest-accent);
+  opacity: 0.7;
+}
+
+/* Estilos para el componente SelectedClipInfo */
+.selected-clip-info {
+  background: linear-gradient(135deg, var(--nest-card-bg) 0%, rgba(255, 255, 255, 0.05) 100%);
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  margin: 12px;
+  overflow: hidden;
+  transition: all 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  box-shadow: 
+    0 8px 32px rgba(0, 0, 0, 0.12),
+    0 2px 8px rgba(0, 0, 0, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  position: relative;
+  flex-shrink: 0; /* Evitar que se encoja inesperadamente */
+  will-change: height, transform; /* Optimizar animaciones */
+  animation: slideInUp 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.selected-clip-info.collapsed {
+  max-height: 72px;
+  min-height: 72px;
+  overflow: hidden;
+  transform: scale(0.98);
+}
+
+.selected-clip-info.expanded {
+  min-height: 320px;
+  max-height: 650px;
+  transform: scale(1);
+  box-shadow: 
+    0 12px 40px rgba(0, 0, 0, 0.15),
+    0 4px 12px rgba(0, 0, 0, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  animation: slideInUp 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+/* Efecto de brillo sutil en hover para elementos interactivos */
+.clip-action-btn::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  transition: left 0.5s ease;
+}
+
+.clip-action-btn:hover::before {
+  left: 100%;
+}
+
+.selected-clip-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 18px 24px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(90deg, rgba(0, 0, 0, 0.15) 0%, rgba(0, 0, 0, 0.05) 100%);
+  position: relative;
+}
+
+.selected-clip-header::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.2) 50%, transparent 100%);
+}
+
+.selected-clip-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-shrink: 0;
+  z-index: 10;
+  position: relative;
+}
+
+.clip-action-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--nest-text-secondary);
+  cursor: pointer;
+  padding: 8px 10px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  backdrop-filter: blur(5px);
+  min-width: 36px;
+  height: 36px;
+  position: relative;
+  z-index: 1;
+  flex-shrink: 0;
+}
+
+.clip-action-btn:hover {
+  color: var(--nest-text-primary);
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: translateY(-2px) scale(1.05);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.clip-action-btn:active {
+  transform: translateY(0) scale(0.95);
+}
+
+.clip-action-btn.close-btn:hover {
+  color: #ff6b6b;
+  background: rgba(255, 107, 107, 0.1);
+  border-color: rgba(255, 107, 107, 0.3);
+}
+
+/* Estilos específicos para evitar superposición de botones */
+.collapse-btn {
+  order: 1;
+  margin-right: 4px;
+  z-index: 2;
+}
+
+.collapse-btn:hover {
+  background: rgba(59, 130, 246, 0.2);
+  border-color: rgba(59, 130, 246, 0.4);
+  color: #60a5fa;
+}
+
+.close-btn {
+  order: 2;
+  margin-left: 0;
+  z-index: 2;
+}
+
+.close-btn:hover {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #f87171;
+}
+
+.selected-clip-content {
+  padding: 24px 24px 20px;
+  transition: all 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  min-height: 180px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.02) 0%, transparent 100%);
+}
+
+.selected-clip-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.selected-clip-content::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 3px;
+}
+
+.selected-clip-content::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+}
+
+.selected-clip-content::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.selected-clip-content.hidden {
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateY(-10px);
+}
+
+.selected-clip-info .info-label {
+  font-size: 11px;
+  color: var(--nest-text-secondary);
+  margin-bottom: 6px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  opacity: 0.8;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.selected-clip-info .info-label::before {
+  content: '';
+  width: 3px;
+  height: 3px;
+  background: var(--nest-accent);
+  border-radius: 50%;
+  opacity: 0.7;
+}
+
+.selected-clip-info .info-value {
+  font-weight: 500;
+  color: var(--nest-text-primary);
+  line-height: 1.5;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(5px);
+  transition: all 0.2s ease;
+}
+
+.selected-clip-info .info-value:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Estilos mejorados para los botones de descarga */
+.selected-clip-content a[download] {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 20px;
+  background: linear-gradient(135deg, var(--nest-accent) 0%, #4a9eff 100%);
+  color: white;
+  border-radius: 12px;
+  font-weight: 600;
+  font-size: 14px;
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  text-decoration: none;
+  border: none;
+  cursor: pointer;
+  box-shadow: 
+    0 4px 16px rgba(74, 158, 255, 0.25),
+    0 2px 8px rgba(0, 0, 0, 0.1);
+  position: relative;
+  overflow: hidden;
+  min-height: 44px;
+  letter-spacing: 0.3px;
+}
+
+.selected-clip-content a[download]::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  transition: left 0.6s ease;
+}
+
+.selected-clip-content a[download]:hover {
+  background: linear-gradient(135deg, #4a9eff 0%, var(--nest-accent) 100%);
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 
+    0 8px 24px rgba(74, 158, 255, 0.35),
+    0 4px 16px rgba(0, 0, 0, 0.15);
+}
+
+.selected-clip-content a[download]:hover::before {
+  left: 100%;
+}
+
+.selected-clip-content a[download]:active {
+  transform: translateY(0) scale(0.98);
+}
+
+.selected-clip-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 24px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.02) 0%, rgba(255, 255, 255, 0.01) 100%);
+  border: 2px dashed rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  margin: 8px;
+  backdrop-filter: blur(5px);
+  transition: all 0.3s ease;
+}
+
+.selected-clip-empty:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.02) 100%);
+}
+
+/* Indicador de cargando mejorado */
+.nest-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--nest-text-secondary);
+  padding: 20px;
+}
+
+.nest-spinner {
+  border: 3px solid rgba(255, 255, 255, 0.1);
+  border-top: 3px solid var(--nest-accent);
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  animation: nest-spin 1s linear infinite;
+  margin-bottom: 16px;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));
+}
+
+@keyframes nest-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Ajustes responsivos para SelectedClipInfo */
+@media (max-width: 767px) {
+  .selected-clip-info {
+    margin: 8px;
+    border-radius: 12px;
+    position: relative;
+    z-index: 10; /* Asegurar que esté visible por encima de otros elementos */
+    background: linear-gradient(135deg, var(--nest-card-bg) 0%, rgba(255, 255, 255, 0.08) 100%);
+    box-shadow: 
+      0 8px 32px rgba(0, 0, 0, 0.2),
+      0 2px 8px rgba(0, 0, 0, 0.15),
+      inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  }
+  
+  .selected-clip-info.collapsed {
+    max-height: 64px;
+    min-height: 64px;
+  }
+  
+  .selected-clip-info.expanded {
+    min-height: 280px;
+    max-height: 70vh; /* Permitir más altura en móvil */
+    overflow-y: auto;
+  }
+  
+  .selected-clip-header {
+    padding: 14px 16px;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: linear-gradient(90deg, rgba(0, 0, 0, 0.2) 0%, rgba(0, 0, 0, 0.1) 100%);
+  }
+  
+  .selected-clip-content {
+    padding: 20px 16px;
+    min-height: 160px;
+    gap: 16px;
+    max-height: calc(70vh - 64px);
+    overflow-y: auto;
+  }
+  
+  .selected-clip-info .info-value {
+    font-size: 14px;
+    padding: 6px 10px;
+  }
+
+  .selected-clip-content a[download] {
+    padding: 10px 16px;
+    font-size: 13px;
+    min-height: 40px;
+  }
+
+  .clip-action-btn {
+    padding: 6px 8px;
+    min-width: 32px;
+    height: 32px;
+  }
+}
+
+/* Estilos específicos para mejorar la presentación del SelectedClipInfo */
+.selected-clip-info .selected-clip-content .flex.items-start {
+  margin-bottom: 24px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  transition: all 0.2s ease;
+}
+
+.selected-clip-info .selected-clip-content .flex.items-start:last-of-type {
+  border-bottom: none;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+
+.selected-clip-info .selected-clip-content .flex.items-start:hover {
+  padding-bottom: 22px;
+  border-bottom-color: rgba(255, 255, 255, 0.12);
+}
+
+/* Mejorar los botones de descarga */
+.selected-clip-info a {
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  border-radius: 12px;
+  font-weight: 600;
+  padding: 12px 20px;
+  min-width: 140px;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.selected-clip-info a:hover {
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+}
+
+/* Estilo para el botón móvil mejorado */
+.selected-clip-info button {
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  border-radius: 10px;
+  font-weight: 500;
+  backdrop-filter: blur(5px);
+}
+
+.selected-clip-info button:hover {
+  transform: translateY(-1px) scale(1.02);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* Agregar animaciones de entrada para el SelectedClipInfo */
+@keyframes slideInUp {
+  from {
+    transform: translateY(20px) scale(0.95);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.selected-clip-info {
+  animation: slideInUp 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.selected-clip-info.expanded {
+  animation: slideInUp 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+/* Indicadores de estado mejorados */
+.selected-clip-info::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--nest-accent) 0%, #4a9eff 50%, var(--nest-accent) 100%);
+  background-size: 200% 100%;
+  animation: shimmer 2s linear infinite;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.selected-clip-info.expanded::after {
+  opacity: 0.6;
+}
+
+/* Mejoras adicionales para el diseño responsive */
+@media (max-width: 480px) {
+  .selected-clip-info {
+    margin: 6px;
+    border-radius: 14px;
+  }
+  
+  .selected-clip-header {
+    padding: 12px 16px;
+  }
+  
+  .selected-clip-content {
+    padding: 16px 16px 14px;
+    gap: 14px;
+  }
+  
+  .clip-action-btn {
+    padding: 6px 7px;
+    min-width: 30px;
+    height: 30px;
+    border-radius: 8px;
+  }
+}

@@ -1,0 +1,377 @@
+/* Estilos basados en la app de Nest Doorbell */
+:root {
+  --nest-background: #202124;
+  --nest-card-bg: #2e3033;
+  --nest-text-primary: #ffffff;
+  --nest-text-secondary: rgba(255, 255, 255, 0.7);
+  --nest-accent: #3b82f6;
+  --nest-border: rgba(255, 255, 255, 0.1);
+  --nest-event-indicator: #3b82f6;
+  --nest-selected: #2563eb;
+  --nest-header-height: 56px;
+  --nest-timeline-bg: #282a2d;
+  --nest-event-bg: #2e3033;
+  --nest-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  --nest-timeline-day-bg: #34373b;
+}
+
+/* Aplicando tema oscuro global */
+body {
+  background-color: var(--nest-background);
+  color: var(--nest-text-primary);
+}
+
+/* Estilo de tarjetas al estilo Nest */
+.card {
+  background-color: var(--nest-card-bg);
+  border-radius: 12px;
+  border: 1px solid var(--nest-border);
+  box-shadow: var(--nest-shadow);
+  overflow: hidden;
+}
+
+/* Barra superior con fecha e información */
+.calendar-header {
+  height: var(--nest-header-height);
+  background-color: var(--nest-card-bg);
+  color: var(--nest-text-primary);
+  border-bottom: 1px solid var(--nest-border);
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  font-weight: 500;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+/* Estilos de Calendario */
+.calendar-sidebar .react-calendar {
+  background-color: var(--nest-card-bg) !important;
+  color: var(--nest-text-primary) !important;
+  border: none !important;
+}
+
+.calendar-sidebar .react-calendar__tile {
+  color: var(--nest-text-primary) !important;
+  background: none !important;
+}
+
+.calendar-sidebar .react-calendar__tile:hover {
+  background: rgba(255, 255, 255, 0.1) !important;
+}
+
+.calendar-sidebar .react-calendar__tile--now {
+  background-color: rgba(138, 180, 248, 0.12) !important;
+}
+
+.calendar-sidebar .react-calendar__tile--active {
+  background: var(--nest-selected) !important;
+  color: white !important;
+}
+
+.calendar-sidebar .react-calendar__navigation {
+  background-color: var(--nest-card-bg);
+}
+
+.calendar-sidebar .react-calendar__navigation button {
+  color: var(--nest-text-primary);
+}
+
+.calendar-sidebar .react-calendar__month-view__weekdays {
+  color: var(--nest-text-secondary);
+}
+
+.calendar-sidebar .react-calendar__month-view__days__day--neighboringMonth {
+  color: var(--nest-text-secondary);
+  opacity: 0.5;
+}
+
+/* Indicador de eventos en el calendario */
+.calendar-sidebar .has-events .event-dot {
+  background-color: var(--nest-event-indicator);
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  position: absolute;
+  bottom: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+/* Estilización de línea de tiempo */
+.video-timeline {
+  background-color: var(--nest-timeline-bg);
+  border-radius: 12px;
+  padding: 10px;
+  margin-top: 10px;
+  border: 1px solid var(--nest-border);
+}
+
+.timeline-hour {
+  background-color: var(--nest-timeline-day-bg);
+  border-radius: 8px;
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+
+.timeline-hour-header {
+  padding: 8px 12px;
+  font-weight: 500;
+  color: var(--nest-text-primary);
+  background-color: rgba(255, 255, 255, 0.05);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.video-clip {
+  background-color: var(--nest-event-bg);
+  border-radius: 8px;
+  margin: 6px;
+  padding: 10px;
+  cursor: pointer;
+  border: 1px solid var(--nest-border);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.video-clip:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.video-clip.selected {
+  border: 2px solid var(--nest-selected);
+}
+
+/* Reproductor de video con tema Nest */
+.video-player-embedded {
+  background-color: #000;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: var(--nest-shadow);
+}
+
+.video-controls {
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.8), transparent);
+  color: white;
+  padding: 16px 8px 8px 8px;
+}
+
+.video-controls button {
+  color: white;
+  background-color: rgba(255, 255, 255, 0.15);
+  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.2s;
+}
+
+.video-controls button:hover {
+  background-color: rgba(255, 255, 255, 0.25);
+}
+
+/* Selector de cámara */
+.camera-selector {
+  background-color: var(--nest-card-bg);
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  justify-content: center;
+  margin: 10px 0;
+  border: 1px solid var(--nest-border);
+}
+
+.camera-selector button {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: var(--nest-text-primary);
+  border: none;
+  padding: 8px 16px;
+  margin: 0 4px;
+  border-radius: 24px;
+}
+
+.camera-selector button.active {
+  background-color: var(--nest-selected);
+  color: white;
+}
+
+/* Información del clip seleccionado */
+.selected-clip-info {
+  background-color: var(--nest-card-bg);
+  border-radius: 12px;
+  padding: 16px;
+  margin: 10px 0;
+  border: 1px solid var(--nest-border);
+}
+
+.selected-clip-info h3 {
+  color: var(--nest-text-primary);
+  font-size: 16px;
+  margin-bottom: 8px;
+}
+
+.selected-clip-info .info-label {
+  color: var(--nest-text-secondary);
+  font-size: 12px;
+}
+
+.selected-clip-info .info-value {
+  color: var(--nest-text-primary);
+  font-size: 14px;
+}
+
+/* Filtros de videos */
+.video-filters {
+  background-color: var(--nest-card-bg);
+  border-radius: 12px;
+  padding: 16px;
+  margin: 10px 0;
+  border: 1px solid var(--nest-border);
+}
+
+/* Círculos de eventos a la Nest */
+.event-marker {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background-color: var(--nest-accent);
+  margin-right: 6px;
+}
+
+/* Estado de vacío mejorado */
+.empty-state {
+  color: var(--nest-text-secondary);
+  text-align: center;
+  padding: 24px;
+  background-color: var(--nest-card-bg);
+  border-radius: 12px;
+  margin: 16px 0;
+}
+
+/* Estilo de scrollbar al estilo Nest */
+.scrollbar-nest {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+
+.scrollbar-nest::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+.scrollbar-nest::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-nest::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+}
+
+/* Botón de cierre del modal al estilo Nest */
+.close-button {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background-color: rgba(0, 0, 0, 0.5);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+}
+
+/* Contador de eventos en el día */
+.event-count {
+  background-color: var(--nest-selected);
+  color: white;
+  border-radius: 24px;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: bold;
+  margin: 8px 0;
+  display: inline-block;
+}
+
+/* Estilo para la vista general del día (hoy + 76 eventos) */
+.day-overview {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background-color: var(--nest-card-bg);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 16px;
+  box-shadow: var(--nest-shadow);
+}
+
+.day-overview-title {
+  font-size: 24px;
+  font-weight: bold;
+  color: var(--nest-text-primary);
+}
+
+.event-counter {
+  color: var(--nest-text-secondary);
+  font-size: 14px;
+}
+
+/* Botones de controles del reproductor */
+.player-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 8px 0;
+}
+
+/* Pantalla completa */
+.fullscreen-player {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: black;
+  z-index: 9999;
+}
+
+/* Modo móvil al estilo Nest */
+@media (max-width: 768px) {
+  .calendar-view {
+    padding: 0;
+  }
+  
+  .calendar-main {
+    padding: 8px;
+  }
+  
+  .day-overview {
+    margin: 0 0 12px 0;
+    border-radius: 0;
+  }
+  
+  .video-timeline .clip-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .camera-selector {
+    flex-wrap: wrap;
+    margin: 8px 0;
+  }
+}
+
+/* Estilo de calendario móvil */
+@media (max-width: 767px) {
+  .calendar-sidebar.mobile-calendar-open {
+    background-color: rgba(0, 0, 0, 0.8);
+  }
+}

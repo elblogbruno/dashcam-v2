@@ -19,6 +19,8 @@ import {
   FaPercentage,
   FaFileAlt
 } from 'react-icons/fa';
+import { Modal, Card, Button, Badge } from '../common/UI';
+import { Grid, Flex } from '../common/Layout';
 
 function DriveDetailsModal({ 
   isOpen, 
@@ -46,143 +48,118 @@ function DriveDetailsModal({
   disk.avail = typeof disk.avail === 'number' && !isNaN(disk.avail) ? disk.avail : 0;
   
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4">
-      <div className="modal-box max-w-4xl w-full bg-white shadow-2xl rounded-xl border border-neutral-200 animate__animated animate__fadeInUp animate__faster max-h-[90vh] overflow-y-auto">
-        {/* Header */}
-        <div className="bg-gradient-to-r from-dashcam-600 to-dashcam-500 text-white p-3 sm:p-4 rounded-t-xl">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
-              <FaHdd className="text-xl sm:text-2xl flex-shrink-0" />
-              <h2 className="text-base sm:text-lg font-semibold truncate text-white">
-                Detalles del Dispositivo: {disk.name || disk.device}
-              </h2>
-            </div>
-            <button 
-              onClick={onClose}
-              className="p-2 hover:bg-white/20 rounded-full transition-colors flex-shrink-0 ml-2"
-            >
-              <FaTimes className="text-lg" />
-            </button>
-          </div>
-        </div>
-
-        {/* Content */}
-        <div className="p-3 sm:p-6">
-          {/* General Info */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 mb-4 sm:mb-6">
-            <div className="bg-neutral-50 p-3 sm:p-4 rounded-xl border border-neutral-200">
-              <div className="flex items-center gap-2 sm:gap-3 mb-3 sm:mb-4 pb-3 border-b border-neutral-200">
-                <div className="bg-gradient-to-r from-dashcam-500 to-dashcam-600 p-2 rounded-lg text-white flex-shrink-0">
-                  <FaInfoCircle className="text-sm sm:text-lg" />
-                </div>
-                <h3 className="text-sm sm:text-base font-medium text-neutral-800">Información General</h3>
+    <Modal isOpen={isOpen} onClose={onClose} title={`Detalles del Dispositivo: ${disk.name || disk.device}`} size="large">
+      <div className="p-6">
+        {/* General Info */}
+        <Grid cols={1} gap={6} className="lg:grid-cols-2 mb-6">
+          <Card variant="secondary">
+            <Flex alignItems="center" gap={3} className="mb-4 pb-3 border-b border-gray-200">
+              <div className="bg-gradient-to-r from-primary-500 to-primary-600 p-2 rounded-lg text-white flex-shrink-0">
+                <FaInfoCircle className="text-lg" />
               </div>
+              <h3 className="font-medium text-gray-800">Información General</h3>
+            </Flex>
 
-              <div className="space-y-3 sm:space-y-4">
-                {disk.model && (
-                  <div className="bg-white p-2 sm:p-3 rounded-lg border border-neutral-200 flex items-center gap-2 sm:gap-3">
-                    <FaServer className="text-dashcam-600 flex-shrink-0" />
+            <div className="space-y-4">
+              {disk.model && (
+                <Card variant="white" className="bg-white">
+                  <Flex alignItems="center" gap={3}>
+                    <FaServer className="text-primary-600 flex-shrink-0" />
                     <div className="min-w-0 flex-1">
-                      <p className="text-xs sm:text-sm text-neutral-600">Modelo</p>
-                      <p className="text-sm sm:text-base font-medium text-neutral-800 break-words">{disk.model}</p>
+                      <p className="text-sm text-gray-600">Modelo</p>
+                      <p className="font-medium text-gray-800 break-words">{disk.model}</p>
                     </div>
+                  </Flex>
+                </Card>
+              )}
+              
+              {disk.serial && (
+                <Card variant="white" className="bg-white">
+                  <Flex alignItems="center" gap={3}>
+                    <FaTag className="text-primary-600 flex-shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm text-gray-600">Número de Serie</p>
+                      <p className="font-medium text-gray-800 font-mono break-all">{disk.serial}</p>
+                    </div>
+                  </Flex>
+                </Card>
+              )}
+            </div>
+          </Card>
+
+          {/* Capacity Info */}
+          <Card variant="secondary">
+            <Flex alignItems="center" gap={3} className="mb-4 pb-3 border-b border-gray-200">
+              <div className="bg-gradient-to-r from-primary-500 to-primary-600 p-2 rounded-lg text-white flex-shrink-0">
+                <FaDatabase className="text-lg" />
+              </div>
+              <h3 className="font-medium text-gray-800">Estado y Capacidad</h3>
+            </Flex>
+
+            <div className="space-y-4">
+              <Card variant="white" className="bg-white">
+                <Flex direction="col" gap={3} className="sm:flex-row sm:items-center sm:gap-4 mb-3">
+                  <div className="bg-gradient-to-r from-primary-500 to-primary-600 p-3 rounded-full text-white flex-shrink-0 self-start sm:self-center">
+                    <FaMemory className="text-xl" />
                   </div>
-                )}
+                  <div>
+                    <p className="text-sm text-gray-600">Espacio Total</p>
+                    <p className="text-xl font-semibold text-gray-800">{formatBytes(disk.size)}</p>
+                  </div>
+                </Flex>
                 
-                {disk.serial && (
-                  <div className="bg-white p-2 sm:p-3 rounded-lg border border-neutral-200 flex items-center gap-2 sm:gap-3">
-                    <FaTag className="text-dashcam-600 flex-shrink-0" />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs sm:text-sm text-neutral-600">Número de Serie</p>
-                      <p className="text-sm sm:text-base font-medium text-neutral-800 font-mono break-all">{disk.serial}</p>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Capacity Info */}
-            <div className="bg-neutral-50 p-3 sm:p-4 rounded-xl border border-neutral-200">
-              <div className="flex items-center gap-2 sm:gap-3 mb-3 sm:mb-4 pb-3 border-b border-neutral-200">
-                <div className="bg-gradient-to-r from-dashcam-500 to-dashcam-600 p-2 rounded-lg text-white flex-shrink-0">
-                  <FaDatabase className="text-sm sm:text-lg" />
+                <div className="w-full bg-gray-100 rounded-full h-2">
+                  <div 
+                    className={`h-2 rounded-full transition-all duration-300 ${
+                      (disk.used / disk.size) > 0.9 
+                        ? 'bg-error-500' 
+                        : (disk.used / disk.size) > 0.7 
+                          ? 'bg-warning-500' 
+                          : 'bg-success-500'
+                    }`}
+                    style={{ width: `${disk.size > 0 ? Math.round((disk.used / disk.size) * 100) : 0}%` }}
+                  />
                 </div>
-                <h3 className="text-sm sm:text-base font-medium text-neutral-800">Estado y Capacidad</h3>
-              </div>
 
-              <div className="space-y-3 sm:space-y-4">
-                <div className="bg-white p-3 sm:p-4 rounded-lg border border-neutral-200">
-                  <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 mb-3">
-                    <div className="bg-gradient-to-r from-dashcam-500 to-dashcam-600 p-2 sm:p-3 rounded-full text-white flex-shrink-0 self-start sm:self-center">
-                      <FaMemory className="text-xl" />
-                    </div>
-                    <div>
-                      <p className="text-sm text-neutral-600">Espacio Total</p>
-                      <p className="text-xl font-semibold text-neutral-800">{formatBytes(disk.size)}</p>
-                    </div>
+                <Grid cols={2} gap={4} className="mt-3">
+                  <div className="text-center">
+                    <p className="text-sm text-gray-600">Usado</p>
+                    <p className="font-medium text-gray-800">{formatBytes(disk.used)}</p>
+                    <p className="text-xs text-gray-500">
+                      {disk.size > 0 ? `${Math.round((disk.used / disk.size) * 100)}%` : '0%'}
+                    </p>
                   </div>
-                  
-                  <div className="w-full bg-neutral-100 rounded-full h-2">
-                    <div 
-                      className={`h-2 rounded-full transition-all duration-300 ${
-                        (disk.used / disk.size) > 0.9 
-                          ? 'bg-error-500' 
-                          : (disk.used / disk.size) > 0.7 
-                            ? 'bg-warning-500' 
-                            : 'bg-success-500'
-                      }`}
-                      style={{ width: `${disk.size > 0 ? Math.round((disk.used / disk.size) * 100) : 0}%` }}
-                    />
+                  <div className="text-center">
+                    <p className="text-sm text-gray-600">Libre</p>
+                    <p className="font-medium text-gray-800">{formatBytes(disk.avail)}</p>
+                    <p className="text-xs text-gray-500">
+                      {disk.size > 0 ? `${Math.round((disk.avail / disk.size) * 100)}%` : '0%'}
+                    </p>
                   </div>
-
-                  <div className="mt-3 grid grid-cols-2 gap-4">
-                    <div className="text-center">
-                      <p className="text-sm text-neutral-600">Usado</p>
-                      <p className="font-medium text-neutral-800">{formatBytes(disk.used)}</p>
-                      <p className="text-xs text-neutral-500">
-                        {disk.size > 0 ? `${Math.round((disk.used / disk.size) * 100)}%` : '0%'}
-                      </p>
-                    </div>
-                    <div className="text-center">
-                      <p className="text-sm text-neutral-600">Libre</p>
-                      <p className="font-medium text-neutral-800">{formatBytes(disk.avail)}</p>
-                      <p className="text-xs text-neutral-500">
-                        {disk.size > 0 ? `${Math.round((disk.avail / disk.size) * 100)}%` : '0%'}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
+                </Grid>
+              </Card>
             </div>
-          </div>
+          </Card>
+        </Grid>
 
-          {/* Status Badge */}
-          <div className="flex justify-center mb-4 sm:mb-6">
-            <span className={`px-3 sm:px-4 py-2 rounded-full flex items-center gap-2 text-sm sm:text-base ${
-              disk.mounted 
-                ? 'bg-success-100 text-success-700 border border-success-200' 
-                : 'bg-neutral-100 text-neutral-600 border border-neutral-200'
-            }`}>
-              <span className="flex-shrink-0">
-                {disk.mounted ? <FaCheckCircle /> : <FaExclamationTriangle />}
-              </span>
-              <span className="truncate">
-                {disk.mounted ? 'Dispositivo Montado' : 'Dispositivo No Montado'}
-              </span>
-            </span>
-          </div>
+        {/* Status Badge */}
+        <Flex justifyContent="center" className="mb-6">
+          <Badge 
+            variant={disk.mounted ? 'success' : 'secondary'}
+            icon={disk.mounted ? <FaCheckCircle /> : <FaExclamationTriangle />}
+          >
+            {disk.mounted ? 'Dispositivo Montado' : 'Dispositivo No Montado'}
+          </Badge>
+        </Flex>
 
-          {/* Footer */}
-          <div className="flex justify-center sm:justify-end pt-4 border-t border-neutral-200">              <button
-              onClick={onClose}
-              className="bg-gradient-to-r from-dashcam-500 to-dashcam-600 text-white px-4 sm:px-6 py-2 rounded-lg hover:shadow-lg transition-shadow text-sm sm:text-base w-full sm:w-auto"
-            >
-              Cerrar
-            </button>
-          </div>
-        </div>
+        {/* Footer */}
+        <Flex justifyContent="center" className="sm:justify-end pt-4 border-t border-gray-200">
+          <Button onClick={onClose} variant="primary" className="w-full sm:w-auto">
+            Cerrar
+          </Button>
+        </Flex>
       </div>
-    </div>
+    </Modal>
   );
 }
 

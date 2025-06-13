@@ -139,12 +139,11 @@ function MJPEGCamera({ cameraType, width = '100%', height = '100%', className = 
         onError={handleError}
         showStats={showStats}
         cameraType={cameraType}
-        // Usamos una key que refleje el estado de optimización
         key={streamKey}
       />
       
-      {/* Botón para activar/desactivar streaming */}
-      <div className="absolute top-2 right-2 z-20">
+      {/* Controles reposicionados para evitar superposiciones */}
+      <div className="absolute top-2 left-2 z-20">
         <button
           onClick={toggleStreaming}
           disabled={isLoading}
@@ -158,25 +157,23 @@ function MJPEGCamera({ cameraType, width = '100%', height = '100%', className = 
           {isLoading ? (
             <span className="inline-block animate-spin mr-1">⟳</span>
           ) : streamingEnabled ? (
-            <span>■ Detener streaming</span>
+            <span>■ Detener</span>
           ) : (
-            <span>▶ Activar streaming</span>
+            <span>▶ Activar</span>
           )}
         </button>
       </div>
       
-      {/* Indicador de estado de conexión */}
       {connectionAttempts > 0 && (
-        <div className="absolute top-12 right-2 bg-black bg-opacity-60 text-white text-xs px-2 py-1 rounded z-30">
+        <div className="absolute top-2 right-2 bg-black bg-opacity-60 text-white text-xs px-2 py-1 rounded z-30">
           {connectionAttempts > 3 ? '⚠️' : '🔄'} {connectionAttempts}
         </div>
       )}
       
-      {/* Indicador de estado del streaming */}
       <div className={`absolute bottom-2 left-2 ${
         streamingEnabled ? 'bg-green-600' : 'bg-gray-600'
       } bg-opacity-70 text-white text-xs px-2 py-1 rounded z-30`}>
-        {streamingEnabled ? '🚀 Streaming activo' : '⏸️ Streaming pausado'}
+        {streamingEnabled ? '🚀 Activo' : '⏸️ Pausado'}
       </div>
     </div>
   );

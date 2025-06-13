@@ -1,7 +1,7 @@
 /* Estilos para el indicador de nivel de zoom */
 .leaflet-zoom-indicator {
   position: absolute;
-  z-index: 1000;
+  z-index: 25;
 }
 
 .leaflet-bottomright {

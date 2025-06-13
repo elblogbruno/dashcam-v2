@@ -1,0 +1,160 @@
+/* Estilos para el selector de capítulos estilo Netflix */
+.chapter-selector {
+  position: absolute;
+  right: 0;
+  bottom: 64px;
+  background: rgba(15, 15, 15, 0.95);
+  border-radius: 4px;
+  width: 320px;
+  max-height: 80%;
+  overflow-y: auto;
+  box-shadow: 0 0 15px rgba(0, 0, 0, 0.7);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+}
+
+.chapter-selector-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  border-bottom: 1px solid #333;
+}
+
+.chapter-selector-header h3 {
+  color: #fff;
+  font-size: 16px;
+  margin: 0;
+}
+
+.close-chapter-selector {
+  background: transparent;
+  border: none;
+  color: #ccc;
+  font-size: 20px;
+  cursor: pointer;
+}
+
+.close-chapter-selector:hover {
+  color: #fff;
+}
+
+.chapter-segments {
+  overflow-y: auto;
+}
+
+.chapter-segment {
+  border-bottom: 1px solid #333;
+}
+
+.segment-title {
+  padding: 8px 12px;
+  color: #aaa;
+  font-size: 14px;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.segment-clips {
+  display: flex;
+  flex-direction: column;
+}
+
+.chapter-clip {
+  display: flex;
+  padding: 8px 12px;
+  border-bottom: 1px solid #222;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.chapter-clip:last-child {
+  border-bottom: none;
+}
+
+.chapter-clip:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.chapter-clip.active {
+  background-color: rgba(255, 255, 255, 0.15);
+}
+
+.clip-thumbnail {
+  position: relative;
+  width: 120px;
+  height: 68px;
+  border-radius: 3px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.clip-thumbnail img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.clip-duration {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  background: rgba(0, 0, 0, 0.7);
+  color: white;
+  font-size: 10px;
+  padding: 2px 4px;
+  border-radius: 2px;
+}
+
+.clip-info {
+  margin-left: 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  flex-grow: 1;
+}
+
+.clip-title {
+  color: #fff;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+
+.clip-playing {
+  color: #1DB954;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.chapter-selector-button {
+  background: transparent;
+  border: none;
+  color: white;
+  display: flex;
+  align-items: center;
+  margin-left: 12px;
+  cursor: pointer;
+}
+
+.chapter-selector-button.active {
+  color: #1DB954;
+}
+
+/* Ajustes responsive */
+@media (max-width: 640px) {
+  .chapter-selector {
+    width: 100%;
+    left: 0;
+    right: 0;
+    bottom: 54px;
+  }
+  
+  .clip-thumbnail {
+    width: 80px;
+    height: 45px;
+  }
+  
+  .clip-title {
+    font-size: 12px;
+  }
+}

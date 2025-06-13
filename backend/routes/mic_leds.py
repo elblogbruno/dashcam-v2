@@ -272,8 +272,23 @@ class LEDController:
         if color is None:
             color = (255, 0, 0)  # Rojo por defecto
         
-        r, g, b = color
-        off_r, off_g, off_b = off_color
+        # Asegurar que color sea una tupla válida de enteros
+        try:
+            if isinstance(color, dict):
+                r, g, b = color.get('r', 0), color.get('g', 0), color.get('b', 0)
+            else:
+                r, g, b = color
+            
+            # Convertir a enteros para asegurar compatibilidad
+            r, g, b = int(r), int(g), int(b)
+            off_r, off_g, off_b = int(off_color[0]), int(off_color[1]), int(off_color[2])
+            
+            logger.info(f"Blink animation: color=({r}, {g}, {b}), off_color=({off_r}, {off_g}, {off_b}), count={count}")
+            
+        except Exception as e:
+            logger.error(f"Error procesando colores para blink animation: {e}")
+            r, g, b = 255, 0, 0  # Fallback a rojo
+            off_r, off_g, off_b = 0, 0, 0
         
         for _ in range(count):
             if self.stop_animation.is_set():
@@ -290,6 +305,59 @@ class LEDController:
                 self.leds.set_pixel(i, off_r, off_g, off_b)
             self.leds.show()
             time.sleep(off_time)
+    
+    def shutdown_sequence(self, colors=None, delay=1.0):
+        """
+        Secuencia de LEDs para apagado: enciende LEDs uno por uno
+        
+        Args:
+            colors: Lista de colores para cada LED [(r,g,b), ...] o None para usar rojo/amarillo/verde
+            delay: Tiempo entre encender cada LED en segundos
+        """
+        if not self.initialized:
+            logger.warning("LEDs no inicializados, no se puede ejecutar secuencia de apagado")
+            return False
+            
+        # Detener cualquier animación en curso
+        self.stop_animation.set()
+        if self.animation_thread and self.animation_thread.is_alive():
+            self.animation_thread.join(timeout=1.0)
+            
+        # Colores por defecto para la secuencia de apagado
+        if colors is None:
+            colors = [
+                (255, 0, 0),    # Rojo
+                (255, 255, 0),  # Amarillo  
+                (0, 255, 0)     # Verde
+            ]
+        
+        logger.info(f"Iniciando secuencia de apagado con {len(colors)} LEDs")
+        
+        try:
+            # Asegurar que todos los LEDs estén apagados al inicio
+            self.set_color((0, 0, 0))
+            time.sleep(0.2)
+            
+            # Encender LEDs uno por uno
+            for i, color in enumerate(colors):
+                if i >= NUM_LEDS:
+                    break
+                    
+                r, g, b = color
+                self.leds.set_pixel(i, int(r), int(g), int(b))
+                self.leds.show()
+                logger.info(f"LED {i+1} encendido: color ({r}, {g}, {b})")
+                time.sleep(delay)
+            
+            # Mantener encendidos por un momento
+            time.sleep(0.5)
+            
+            logger.info("Secuencia de apagado completada")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error en secuencia de apagado: {e}")
+            return False
 
 
 class APA102:
@@ -348,6 +416,23 @@ class APA102:
         """
         if led_num < 0 or led_num >= self.num_led:
             return  # Píxel invisible, ignorar
+
+        try:
+            # Asegurar que todos los valores sean enteros válidos
+            red = int(red) if red is not None else 0
+            green = int(green) if green is not None else 0
+            blue = int(blue) if blue is not None else 0
+            bright_percent = float(bright_percent) if bright_percent is not None else 100.0
+            
+            # Validar rangos
+            red = max(0, min(255, red))
+            green = max(0, min(255, green))
+            blue = max(0, min(255, blue))
+            bright_percent = max(0, min(100, bright_percent))
+            
+        except (ValueError, TypeError) as e:
+            logger.error(f"Error validando valores para set_pixel: red={red}, green={green}, blue={blue}, bright_percent={bright_percent}. Error: {e}")
+            return
 
         # Calcular brillo del píxel como porcentaje del brillo global
         brightness = int((bright_percent * self.global_brightness / 100.0) + 0.5)

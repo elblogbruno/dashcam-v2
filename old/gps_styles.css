@@ -1,0 +1,368 @@
+/* GPS Styles for Video Player and Components */
+
+/* GPS Toggle Button */
+.gps-toggle-button {
+  background: transparent;
+  border: none;
+  color: white;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.gps-toggle-button:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.gps-toggle-button.active {
+  background: rgba(34, 197, 94, 0.8);
+  color: white;
+}
+
+.gps-toggle-button.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.gps-toggle-button.disabled:hover {
+  background: transparent;
+}
+
+/* GPS Overlay Container */
+.gps-overlay {
+  position: absolute;
+  top: 60px;
+  right: 20px;
+  max-width: 400px;
+  background: rgba(0, 0, 0, 0.9);
+  border-radius: 12px;
+  padding: 0;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  z-index: 1000;
+  animation: slideInFromRight 0.3s ease-out;
+}
+
+@keyframes slideInFromRight {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* GPS Track Viewer Styles */
+.gps-track-viewer {
+  color: white;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.gps-track-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.gps-track-header:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.gps-track-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.gps-track-icon {
+  color: #10b981;
+  font-size: 18px;
+}
+
+.gps-expand-icon {
+  color: #9ca3af;
+  transition: transform 0.2s ease;
+}
+
+.gps-expand-icon.expanded {
+  transform: rotate(180deg);
+}
+
+/* GPS Content */
+.gps-track-content {
+  padding: 20px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+/* GPS Statistics */
+.gps-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.gps-stat {
+  text-align: center;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.gps-stat-value {
+  display: block;
+  font-size: 18px;
+  font-weight: 700;
+  color: #10b981;
+  margin-bottom: 4px;
+}
+
+.gps-stat-label {
+  font-size: 12px;
+  color: #9ca3af;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* GPS Track SVG */
+.gps-track-svg {
+  width: 100%;
+  height: 200px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.gps-track-path {
+  fill: none;
+  stroke: #10b981;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.gps-track-point {
+  fill: #10b981;
+  stroke: #065f46;
+  stroke-width: 1;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.gps-track-point:hover {
+  fill: #34d399;
+  r: 4;
+}
+
+.gps-track-point.start {
+  fill: #22c55e;
+  stroke: #16a34a;
+  stroke-width: 2;
+}
+
+.gps-track-point.end {
+  fill: #ef4444;
+  stroke: #dc2626;
+  stroke-width: 2;
+}
+
+/* GPS Tooltip */
+.gps-tooltip {
+  position: absolute;
+  background: rgba(0, 0, 0, 0.95);
+  color: white;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(4px);
+  z-index: 1001;
+  pointer-events: none;
+  white-space: nowrap;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.gps-tooltip::before {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: rgba(0, 0, 0, 0.95);
+}
+
+/* GPS Info in SelectedClipInfo */
+.gps-info-section {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.gps-info-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #10b981;
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.gps-coordinates {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.gps-coordinate {
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.gps-coordinate-label {
+  font-size: 11px;
+  color: #9ca3af;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.gps-coordinate-value {
+  font-size: 13px;
+  color: white;
+  font-family: 'Courier New', monospace;
+}
+
+.gps-track-info {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.gps-track-stat {
+  text-align: center;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.gps-track-stat-value {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: #10b981;
+  margin-bottom: 2px;
+}
+
+.gps-track-stat-label {
+  font-size: 10px;
+  color: #9ca3af;
+  text-transform: uppercase;
+}
+
+/* No GPS Data Message */
+.no-gps-message {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  text-align: center;
+  color: #6b7280;
+  font-size: 14px;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 8px;
+  border: 1px dashed rgba(255, 255, 255, 0.1);
+}
+
+.no-gps-icon {
+  margin-right: 8px;
+  font-size: 18px;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .gps-overlay {
+    right: 10px;
+    left: 10px;
+    max-width: none;
+    top: 50px;
+  }
+  
+  .gps-stats {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  
+  .gps-coordinates {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  
+  .gps-track-info {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+  
+  .gps-track-svg {
+    height: 150px;
+  }
+}
+
+/* Animation for GPS data loading */
+.gps-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.gps-loading-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top: 2px solid #10b981;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* GPS Error Message */
+.gps-error {
+  padding: 16px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 8px;
+  color: #fca5a5;
+  text-align: center;
+  font-size: 14px;
+}
+
+.gps-error-icon {
+  margin-right: 8px;
+  color: #ef4444;
+}

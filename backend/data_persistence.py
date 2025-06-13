@@ -1,10 +1,16 @@
 import os
 import json
-import sqlite3
 import logging
 import time
+import sys
 from datetime import datetime
 from typing import Dict, List, Any, Optional, Union, Callable
+
+# Add backend directory to path to import modules
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+# Import Trip Manager directly from the new system
+from trip_logger_package.services.trip_manager import TripManager
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -34,6 +40,10 @@ class DataPersistence:
         
         # Dictionary to track file modification timestamps
         self.file_timestamps = {}
+        
+        # Initialize Trip Manager for database operations
+        db_path = os.path.join(self.data_dir, "recordings.db")
+        self.trip_manager = TripManager(db_path)
         
         logger.info(f"Data persistence initialized with data directory: {self.data_dir}")
     
@@ -87,44 +97,38 @@ class DataPersistence:
             logger.error(f"Error loading JSON data from {file_name}: {str(e)}")
             return default
     
-    def get_db_connection(self, db_name: str = 'recordings.db') -> sqlite3.Connection:
-        """Get a connection to a SQLite database"""
+    def get_db_session(self):
+        """Get a database session using Trip Manager (deprecated - use trip_manager directly)"""
+        logger.warning("DataPersistence.get_db_session() is deprecated. Use trip_manager directly.")
         try:
-            db_path = self.get_file_path(db_name)
-            conn = sqlite3.connect(db_path)
-            return conn
+            # Return a reference to trip_manager for backward compatibility
+            return self.trip_manager
         except Exception as e:
-            logger.error(f"Error connecting to database {db_name}: {str(e)}")
+            logger.error(f"Error getting database session: {str(e)}")
             raise
     
-    def execute_query(self, query: str, params: tuple = None, 
-                     db_name: str = 'recordings.db', return_rows: bool = False) -> Any:
-        """Execute a SQLite query and optionally return results"""
-        conn = None
+    def execute_trip_query(self, operation: str, **kwargs) -> Any:
+        """Execute a Trip Manager operation"""
         try:
-            conn = self.get_db_connection(db_name)
-            cursor = conn.cursor()
-            
-            if params:
-                cursor.execute(query, params)
+            if operation == 'get_all_videos':
+                return self.trip_manager.get_all_videos()
+            elif operation == 'get_all_trips':
+                return self.trip_manager.get_all_trips()
+            elif operation == 'get_video_by_id':
+                return self.trip_manager.get_video_by_id(kwargs.get('video_id'))
+            elif operation == 'add_video':
+                return self.trip_manager.add_video(kwargs.get('video_data'))
+            elif operation == 'update_video':
+                return self.trip_manager.update_video(kwargs.get('video_id'), kwargs.get('video_data'))
+            elif operation == 'delete_video':
+                return self.trip_manager.delete_video(kwargs.get('video_id'))
             else:
-                cursor.execute(query)
-            
-            result = None
-            if return_rows:
-                result = cursor.fetchall()
-            
-            conn.commit()
-            return result
-            
+                logger.warning(f"Unknown Trip Manager operation: {operation}")
+                return None
+                
         except Exception as e:
-            logger.error(f"Error executing query: {str(e)}")
-            if conn:
-                conn.rollback()
+            logger.error(f"Error executing Trip Manager operation {operation}: {str(e)}")
             raise
-        finally:
-            if conn:
-                conn.close()
     
     def register_module(self, module_id: str, callback: Callable[[Dict[str, Any]], None]) -> None:
         """Register a module to receive updates when its data changes"""
@@ -162,28 +166,16 @@ class DataPersistence:
         return self.load_json(file_name, "settings", default or {})
     
     def create_tables(self, tables_definitions: Dict[str, str], db_name: str = 'recordings.db') -> bool:
-        """Create database tables from definitions if they don't exist"""
-        conn = None
+        """Create database tables from definitions if they don't exist (deprecated - use Trip Logger)"""
+        logger.warning("DataPersistence.create_tables() is deprecated. Trip Logger handles table creation automatically.")
         try:
-            conn = self.get_db_connection(db_name)
-            cursor = conn.cursor()
-            
-            for table_name, definition in tables_definitions.items():
-                create_statement = f"CREATE TABLE IF NOT EXISTS {table_name} ({definition})"
-                cursor.execute(create_statement)
-            
-            conn.commit()
-            logger.info(f"Created/verified tables in {db_name}: {', '.join(tables_definitions.keys())}")
+            # For backward compatibility, we'll assume Trip Logger tables are already created
+            logger.info(f"Tables verified through Trip Logger system: {', '.join(tables_definitions.keys())}")
             return True
             
         except Exception as e:
-            logger.error(f"Error creating tables: {str(e)}")
-            if conn:
-                conn.rollback()
+            logger.error(f"Error verifying tables through Trip Logger: {str(e)}")
             return False
-        finally:
-            if conn:
-                conn.close()
     
     def backup_data(self, backup_dir: str = None) -> bool:
         """Backup important data files"""

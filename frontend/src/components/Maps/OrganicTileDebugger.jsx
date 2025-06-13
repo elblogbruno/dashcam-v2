@@ -166,7 +166,7 @@ const OrganicTileDebugger = ({ tripId }) => {
   };
 
   return (
-    <div className="leaflet-bottom leaflet-right" style={{ zIndex: 1000, margin: '70px 10px 10px 0' }}>
+    <div className="leaflet-bottom leaflet-right" style={{ zIndex: 30, margin: '70px 10px 10px 0' }}>
       <div className="leaflet-control bg-white p-2 rounded-lg shadow-md max-w-sm">
         <h4 className="text-sm font-bold mb-2">Depurador de Tiles Offline</h4>
         <div className="mb-2">

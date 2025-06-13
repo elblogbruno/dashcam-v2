@@ -1,101 +1,122 @@
 import React from 'react';
-import { FaHdd, FaEject, FaPlug } from 'react-icons/fa';
+import { FaHdd, FaEject, FaPlug, FaCheckCircle, FaExclamationTriangle } from 'react-icons/fa';
+import { Card, Button } from '../common/UI';
+import { Grid, Flex } from '../common/Layout';
 
 function DiskInfoPanel({ diskInfo, actionLoading, formatBytes, onMount, onEject }) {
   return (
-    <div className="card bg-white shadow-xl rounded-xl border border-neutral-200 hover:shadow-2xl transition-all duration-500">
-      <div className="card-body p-0">
-        <div className="bg-gradient-to-r from-dashcam-600 to-dashcam-500 text-dashcam-content p-3 sm:p-4 font-semibold">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <div className="flex items-center gap-2 sm:gap-3">
-              <FaHdd className="text-xl sm:text-2xl" />
+    <Card className="p-3">
+      {/* Header simplificado */}
+      <Flex alignItems="center" className="mb-3">
+        <FaHdd className="text-primary-600 text-sm mr-2" />
+        <div>
+          <h2 className="text-sm font-semibold text-gray-900">Disco de Almacenamiento</h2>
+          <p className="text-xs text-gray-600">Estado del sistema de archivos</p>
+        </div>
+      </Flex>
+
+      {/* Estado del disco */}
+      <Flex alignItems="center" gap={3} className="mb-3">
+        <div className={`p-2 rounded text-white ${diskInfo.mounted ? 'bg-success-500' : 'bg-gray-400'}`}>
+          {diskInfo.mounted ? <FaCheckCircle className="text-sm" /> : <FaExclamationTriangle className="text-sm" />}
+        </div>
+        <div className="flex-1">
+          <p className="text-xs text-gray-500">Estado</p>
+          <p className={`text-sm font-medium ${diskInfo.mounted ? 'text-success-600' : 'text-gray-600'}`}>
+            {diskInfo.mounted ? 'Montado' : 'No montado'}
+          </p>
+        </div>
+        <Button
+          onClick={onMount}
+          disabled={actionLoading}
+          variant={diskInfo.mounted ? 'warning' : 'success'}
+          size="sm"
+        >
+          {diskInfo.mounted ? 'Desmontar' : 'Montar'}
+        </Button>
+      </Flex>
+
+      {diskInfo.mounted && (
+        <>
+          {/* Información del dispositivo */}
+          <div className="border-t border-gray-100 pt-3 mb-3">
+            <div className="text-xs text-gray-600 space-y-1">
               <div>
-                <h2 className="text-base sm:text-lg font-semibold">Disco de Almacenamiento</h2>
-                <p className="text-xs sm:text-sm opacity-80 hidden sm:block">Información y estado del sistema de archivos principal</p>
+                <span className="font-medium">Dispositivo:</span> {diskInfo.device}
+              </div>
+              <div>
+                <span className="font-medium">Punto de montaje:</span> {diskInfo.path}
               </div>
             </div>
-            <button 
-              onClick={onMount}
-              disabled={actionLoading}
-              className={`btn btn-sm w-full sm:w-auto ${
-                diskInfo.mounted 
-                  ? 'bg-warning-50 hover:bg-warning-100 text-warning-600 border border-warning-200' 
-                  : 'bg-success-50 hover:bg-success-100 text-success-600 border border-success-200'
-              } rounded-full px-3 sm:px-4 flex items-center justify-center gap-1 sm:gap-2`}
-            >
-              {diskInfo.mounted ? <FaEject /> : <FaPlug />}
-              <span className="text-sm">{diskInfo.mounted ? 'Desmontar' : 'Montar'}</span>
-            </button>
           </div>
-        </div>
 
-        <div className="p-3 sm:p-4">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4 mb-4 sm:mb-6">
-            {/* Estado del disco */}
-            <div className="bg-neutral-50 p-3 sm:p-4 rounded-xl border border-neutral-200">
-              <div className="flex items-center gap-2 sm:gap-3 mb-3 sm:mb-4">
-                <div className="bg-gradient-to-r from-dashcam-500 to-dashcam-600 p-2 rounded-lg text-dashcam-content">
-                  <FaHdd className="text-sm sm:text-lg" />
-                </div>
-                <div>
-                  <p className="text-xs sm:text-sm text-neutral-600">Estado</p>
-                  <p className={`text-sm sm:text-base font-medium ${diskInfo.mounted ? 'text-success-600' : 'text-neutral-600'}`}>
-                    {diskInfo.mounted ? 'Montado' : 'No montado'}
-                  </p>
-                </div>
+          {/* Uso de espacio */}
+          <div className="border-t border-gray-100 pt-3">
+            <Flex alignItems="center" gap={2} className="mb-2">
+              <div className="bg-primary-500 p-1.5 rounded text-white">
+                <FaHdd className="text-xs" />
               </div>
+              <div className="flex-1">
+                <p className="text-xs text-gray-500">Espacio utilizado</p>
+                <p className="text-sm font-medium">{formatBytes(diskInfo.used)} de {formatBytes(diskInfo.total)}</p>
+              </div>
+              <div className="text-right text-xs text-gray-500">
+                {diskInfo.percent}%
+              </div>
+            </Flex>
 
-              {diskInfo.mounted && (
-                <>
-                  <div className="space-y-2">
-                    <p className="text-xs sm:text-sm text-neutral-600">
-                      Dispositivo: <span className="font-medium break-all">{diskInfo.device}</span>
-                    </p>
-                    <p className="text-xs sm:text-sm text-neutral-600">
-                      Punto de montaje: <span className="font-medium break-all">{diskInfo.path}</span>
-                    </p>
-                  </div>
-                </>
-              )}
+            {/* Barra de progreso */}
+            <div className="w-full bg-gray-200 rounded-full h-1.5 mb-2">
+              <div 
+                className={`h-1.5 rounded-full transition-all duration-300 ${
+                  diskInfo.percent > 90 
+                    ? 'bg-error-500' 
+                    : diskInfo.percent > 70
+                    ? 'bg-warning-500'
+                    : 'bg-success-500'
+                }`}
+                style={{ width: `${diskInfo.percent}%` }}
+              />
             </div>
 
-            {/* Uso de espacio */}
-            {diskInfo.mounted && (
-              <div className="bg-neutral-50 p-3 sm:p-4 rounded-xl border border-neutral-200">
-                <div className="flex items-center gap-2 sm:gap-3 mb-3 sm:mb-4">
-                  <div className="bg-gradient-to-r from-dashcam-500 to-dashcam-600 p-2 rounded-lg text-dashcam-content">
-                    <FaHdd className="text-sm sm:text-lg" />
-                  </div>
-                  <div>
-                    <p className="text-xs sm:text-sm text-neutral-600">Uso de Espacio</p>
-                    <p className="text-sm sm:text-base font-medium">{formatBytes(diskInfo.used)} de {formatBytes(diskInfo.total)}</p>
-                  </div>
-                </div>
-
-                <div className="mt-2">
-                  <div className="w-full bg-neutral-200 rounded-full h-2">
-                    <div 
-                      className={`h-2 rounded-full transition-all duration-300 ${
-                        diskInfo.percent > 90 
-                          ? 'bg-error-500' 
-                          : diskInfo.percent > 70 
-                            ? 'bg-warning-500' 
-                            : 'bg-success-500'
-                      }`}
-                      style={{ width: `${diskInfo.percent}%` }}
-                    />
-                  </div>
-                  <div className="flex justify-between mt-2">
-                    <p className="text-xs sm:text-sm text-neutral-600">Libre: <span className="font-medium">{formatBytes(diskInfo.free)}</span></p>
-                    <p className="text-xs sm:text-sm text-neutral-600">Uso: <span className="font-medium">{diskInfo.percent}%</span></p>
-                  </div>
-                </div>
+            {/* Estadísticas compactas */}
+            <Grid cols={2} gap={2} className="text-xs">
+              <div className="text-center">
+                <p className="text-gray-500">Libre</p>
+                <p className="font-medium">{formatBytes(diskInfo.free)}</p>
               </div>
-            )}
+              <div className="text-center">
+                <p className="text-gray-500">Total</p>
+                <p className="font-medium">{formatBytes(diskInfo.total)}</p>
+              </div>
+            </Grid>
+          </div>
+        </>
+      )}
+
+      {/* Alerta para dispositivos USB */}
+      {diskInfo.isUsb && diskInfo.canEject && (
+        <div className="border-t border-gray-100 pt-3">
+          <div className="bg-warning-50 border border-warning-200 rounded p-2">
+            <Flex alignItems="center" gap={2}>
+              <FaEject className="text-warning-600 text-sm" />
+              <div className="flex-1">
+                <p className="text-xs text-warning-800 font-medium">Dispositivo USB</p>
+                <p className="text-xs text-warning-700">Puede expulsarse de forma segura</p>
+              </div>
+              <Button
+                onClick={() => onEject(diskInfo.device)}
+                disabled={actionLoading}
+                variant="warning"
+                size="sm"
+              >
+                Expulsar
+              </Button>
+            </Flex>
           </div>
         </div>
-      </div>
-    </div>
+      )}
+    </Card>
   );
 }
 

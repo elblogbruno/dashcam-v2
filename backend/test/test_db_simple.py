@@ -11,7 +11,7 @@ def main():
     """Función de prueba básica para la base de datos"""
     try:
         print("1. Importando LandmarksDB...")
-        from landmarks_db import LandmarksDB
+        from landmarks.core.landmarks_db import LandmarksDB
         print("Importación exitosa")
         
         print("2. Creando instancia de LandmarksDB...")

@@ -1,3 +1,4 @@
+// Mobile-optimized TripForm
 import React, { useState, useEffect } from 'react';
 import { toast } from 'react-hot-toast';
 import { FaMapMarkerAlt, FaCalendarAlt, FaPlus, FaTrash, FaSearch, FaSpinner, FaArrowUp, FaArrowDown, FaEdit, FaFileImport } from 'react-icons/fa';
@@ -7,7 +8,7 @@ import axios from 'axios';
 import KmlPreview from './KmlPreview';
 import { uploadKmlFile } from '../../services/kmlService';
 
-const TripForm = ({ initialData, onSubmit, onCancel }) => {
+const TripForm = ({ initialData, onSubmit, onCancel, hideHeader = false }) => {
   const [tripName, setTripName] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -350,448 +351,102 @@ const TripForm = ({ initialData, onSubmit, onCancel }) => {
   };
 
   return (
-    <div className="bg-white shadow-md rounded-lg mb-4 sm:mb-8 overflow-hidden">
-      <div className="bg-dashcam-700 text-white p-3 sm:p-4">
-        <h2 className="text-lg sm:text-xl font-semibold">
-          {initialData ? 'Edit Trip' : 'Plan a New Trip'}
-        </h2>
-      </div>
+    <div className={`trip-form ${hideHeader ? 'bg-transparent' : 'bg-white rounded-lg shadow-lg overflow-hidden'}`}>
+      {!hideHeader && (
+        <div className="bg-blue-600 text-white p-4">
+          <h2 className="text-lg sm:text-xl font-semibold">
+            {initialData ? 'Edit Trip' : 'Plan New Trip'}
+          </h2>
+        </div>
+      )}
       
-      <form onSubmit={handleSubmit} className="p-3 sm:p-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+      <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-4 sm:space-y-6">
+        {/* Basic Info Section - Mobile Optimized */}
+        <div className="space-y-4">
           <div>
-            <label className="block text-gray-700 mb-1 sm:mb-2 text-sm sm:text-base font-medium">Trip Name</label>
+            <label className="block text-gray-700 mb-2 text-sm font-medium">
+              Trip Name
+            </label>
             <input
               type="text"
               value={tripName}
               onChange={(e) => setTripName(e.target.value)}
-              className="w-full p-1.5 sm:p-2 border border-gray-300 text-sm sm:text-base rounded-md focus:border-dashcam-500 focus:ring focus:ring-dashcam-200"
+              className="w-full p-3 border border-gray-300 rounded-md focus:border-blue-500 focus:ring focus:ring-blue-200 text-base touch-manipulation"
               required
-              placeholder="Adventure to Grand Canyon"
+              placeholder="Enter trip name"
             />
           </div>
-          
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-4">
+
+          {/* Dates - Stacked on mobile */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-gray-700 mb-1 sm:mb-2 text-sm sm:text-base font-medium flex items-center">
-                <FaCalendarAlt className="mr-1 text-dashcam-600" />
+              <label className="block text-gray-700 mb-2 text-sm font-medium flex items-center">
+                <FaCalendarAlt className="mr-2 text-blue-600" />
                 Start Date
               </label>
               <input
                 type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
-                className="w-full p-1.5 sm:p-2 border border-gray-300 text-sm sm:text-base rounded-md focus:border-dashcam-500 focus:ring focus:ring-dashcam-200"
+                className="w-full p-3 border border-gray-300 rounded-md focus:border-blue-500 focus:ring focus:ring-blue-200 text-base touch-manipulation"
                 required
               />
             </div>
+            
             <div>
-              <label className="block text-gray-700 mb-1 sm:mb-2 text-sm sm:text-base font-medium flex items-center">
-                <FaCalendarAlt className="mr-1 text-dashcam-600" />
+              <label className="block text-gray-700 mb-2 text-sm font-medium flex items-center">
+                <FaCalendarAlt className="mr-2 text-blue-600" />
                 End Date
               </label>
               <input
                 type="date"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
-                className="w-full p-1.5 sm:p-2 border border-gray-300 text-sm sm:text-base rounded-md focus:border-dashcam-500 focus:ring focus:ring-dashcam-200"
+                className="w-full p-3 border border-gray-300 rounded-md focus:border-blue-500 focus:ring focus:ring-blue-200 text-base touch-manipulation"
                 required
               />
             </div>
           </div>
-          
-          <div className="md:col-span-2">
-            <label className="block text-gray-700 mb-1 sm:mb-2 text-sm sm:text-base font-medium flex items-center">
-              <FaMapMarkerAlt className="mr-1 text-dashcam-600" />
+        </div>
+
+        {/* Locations Section - Mobile Optimized */}
+        <div className="space-y-6">
+          {/* Start Location */}
+          <div className="bg-gray-50 p-4 rounded-lg">
+            <label className="block text-gray-700 mb-3 text-base font-medium flex items-center">
+              <FaMapMarkerAlt className="mr-2 text-green-600" />
               Start Location
             </label>
             
-            <div className="mb-2">
-              <label className="block text-gray-700 text-xs sm:text-sm mb-0.5 sm:mb-1">Location Name</label>
-              <input
-                type="text"
-                value={originName}
-                onChange={(e) => setOriginName(e.target.value)}
-                className="w-full p-1.5 sm:p-2 border border-gray-300 text-sm sm:text-base rounded-md focus:border-dashcam-500 focus:ring focus:ring-dashcam-200"
-                placeholder="Origin Name (e.g. Home, Office)"
-              />
-            </div>
-            
-            {isSearchingStart ? (
-              <div className="mb-3">
-                <div className="flex mb-2">
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="flex-1 p-1.5 sm:p-2 border border-gray-300 text-sm sm:text-base rounded-l-md focus:border-dashcam-500 focus:ring focus:ring-dashcam-200"
-                    placeholder="Search for a location..."
-                  />
-                  <button
-                    type="button"
-                    onClick={() => searchPlaces(searchQuery, 'start')}
-                    disabled={isSearching}
-                    className="bg-dashcam-600 hover:bg-dashcam-700 text-white p-1.5 sm:p-2 rounded-r-md flex items-center"
-                  >
-                    {isSearching && lastSearchType === 'start' ? (
-                      <FaSpinner className="animate-spin" />
-                    ) : (
-                      <FaSearch />
-                    )}
-                  </button>
-                </div>
-                
-                {searchResults.length > 0 && lastSearchType === 'start' && (
-                  <div className="border border-gray-200 rounded-md max-h-48 sm:max-h-60 overflow-y-auto bg-white shadow-md">
-                    {searchResults.map((place, index) => (
-                      <div 
-                        key={index}
-                        className="p-1.5 sm:p-2 border-b border-gray-100 hover:bg-dashcam-50 cursor-pointer"
-                        onClick={() => selectPlace(place, 'start')}
-                      >
-                        <div className="font-medium text-sm sm:text-base">{place.name || place.display_name.split(',')[0]}</div>
-                        <div className="text-xs text-gray-500 line-clamp-1">{place.display_name}</div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                
-                <div className="flex mt-2">
-                  <button
-                    type="button"
-                    onClick={() => setIsSearchingStart(false)}
-                    className="bg-gray-500 hover:bg-gray-600 text-white py-1 px-2 sm:px-3 rounded-md text-xs sm:text-sm mr-2"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => getCurrentLocation('start')}
-                    className="bg-dashcam-500 hover:bg-dashcam-600 text-white py-1 px-2 sm:px-3 rounded-md text-xs sm:text-sm flex items-center"
-                  >
-                    Use Current Location
-                  </button>
-                </div>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-gray-600 text-sm mb-1">Location Name</label>
+                <input
+                  type="text"
+                  value={originName}
+                  onChange={(e) => setOriginName(e.target.value)}
+                  className="w-full p-3 border border-gray-300 rounded-md focus:border-blue-500 focus:ring focus:ring-blue-200 text-base touch-manipulation"
+                  placeholder="Origin Name (e.g. Home, Office)"
+                />
               </div>
-            ) : (
-              <div className="flex flex-col sm:flex-row sm:space-x-2">
-                <div className="flex-grow grid grid-cols-2 gap-2 mb-2 sm:mb-0">
-                  <input
-                    type="number"
-                    value={startLat}
-                    onChange={(e) => setStartLat(e.target.value)}
-                    className="w-full p-1.5 sm:p-2 border border-gray-300 text-sm sm:text-base rounded-md focus:border-dashcam-500 focus:ring focus:ring-dashcam-200"
-                    required
-                    placeholder="Latitude"
-                    step="any"
-                  />
-                  <input
-                    type="number"
-                    value={startLon}
-                    onChange={(e) => setStartLon(e.target.value)}
-                    className="w-full p-1.5 sm:p-2 border border-gray-300 text-sm sm:text-base rounded-md focus:border-dashcam-500 focus:ring focus:ring-dashcam-200"
-                    required
-                    placeholder="Longitude"
-                    step="any"
-                  />
-                </div>
-                <div className="flex space-x-2 justify-end">
-                  <button
-                    type="button"
-                    onClick={() => setIsSearchingStart(true)}
-                    className="bg-dashcam-600 hover:bg-dashcam-700 text-white p-1.5 sm:p-2 rounded-md flex items-center"
-                    title="Search for location"
-                  >
-                    <FaSearch />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => getCurrentLocation('start')}
-                    className="bg-dashcam-500 hover:bg-dashcam-600 text-white p-1.5 sm:p-2 rounded-md flex items-center"
-                    title="Use current location"
-                  >
-                    <FaMapMarkerAlt />
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-          
-          <div className="md:col-span-2">
-            <label className="block text-gray-700 mb-1 sm:mb-2 text-sm sm:text-base font-medium flex items-center">
-              <FaMapMarkerAlt className="mr-1 text-dashcam-600" />
-              End Location
-            </label>
-            
-            <div className="mb-2">
-              <label className="block text-gray-700 text-xs sm:text-sm mb-0.5 sm:mb-1">Location Name</label>
-              <input
-                type="text"
-                value={destinationName}
-                onChange={(e) => setDestinationName(e.target.value)}
-                className="w-full p-1.5 sm:p-2 border border-gray-300 text-sm sm:text-base rounded-md focus:border-dashcam-500 focus:ring focus:ring-dashcam-200"
-                placeholder="Destination Name"
-              />
-            </div>
-            
-            {isSearchingEnd ? (
-              <div className="mb-3">
-                <div className="flex mb-2">
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="flex-1 p-1.5 sm:p-2 border border-gray-300 text-sm sm:text-base rounded-l-md focus:border-dashcam-500 focus:ring focus:ring-dashcam-200"
-                    placeholder="Search for a location..."
-                  />
-                  <button
-                    type="button"
-                    onClick={() => searchPlaces(searchQuery, 'end')}
-                    disabled={isSearching}
-                    className="bg-dashcam-600 hover:bg-dashcam-700 text-white p-1.5 sm:p-2 rounded-r-md flex items-center"
-                  >
-                    {isSearching && lastSearchType === 'end' ? (
-                      <FaSpinner className="animate-spin" />
-                    ) : (
-                      <FaSearch />
-                    )}
-                  </button>
-                </div>
-                
-                {searchResults.length > 0 && lastSearchType === 'end' && (
-                  <div className="border border-gray-200 rounded-md max-h-48 sm:max-h-60 overflow-y-auto bg-white shadow-md">
-                    {searchResults.map((place, index) => (
-                      <div 
-                        key={index}
-                        className="p-1.5 sm:p-2 border-b border-gray-100 hover:bg-dashcam-50 cursor-pointer"
-                        onClick={() => selectPlace(place, 'end')}
-                      >
-                        <div className="font-medium text-sm sm:text-base">{place.name || place.display_name.split(',')[0]}</div>
-                        <div className="text-xs text-gray-500 line-clamp-1">{place.display_name}</div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                
-                <div className="flex mt-2">
-                  <button
-                    type="button"
-                    onClick={() => setIsSearchingEnd(false)}
-                    className="bg-gray-500 hover:bg-gray-600 text-white py-1 px-2 sm:px-3 rounded-md text-xs sm:text-sm mr-2"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => getCurrentLocation('end')}
-                    className="bg-dashcam-500 hover:bg-dashcam-600 text-white py-1 px-2 sm:px-3 rounded-md text-xs sm:text-sm flex items-center"
-                  >
-                    Use Current Location
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="flex flex-col sm:flex-row sm:space-x-2">
-                <div className="flex-grow grid grid-cols-2 gap-2 mb-2 sm:mb-0">
-                  <input
-                    type="number"
-                    value={endLat}
-                    onChange={(e) => setEndLat(e.target.value)}
-                    className="w-full p-1.5 sm:p-2 border border-gray-300 text-sm sm:text-base rounded-md focus:border-dashcam-500 focus:ring focus:ring-dashcam-200"
-                    required
-                    placeholder="Latitude"
-                    step="any"
-                  />
-                  <input
-                    type="number"
-                    value={endLon}
-                    onChange={(e) => setEndLon(e.target.value)}
-                    className="w-full p-1.5 sm:p-2 border border-gray-300 text-sm sm:text-base rounded-md focus:border-dashcam-500 focus:ring focus:ring-dashcam-200"
-                    required
-                    placeholder="Longitude"
-                    step="any"
-                  />
-                </div>
-                <div className="flex space-x-2 justify-end">
-                  <button
-                    type="button"
-                    onClick={() => setIsSearchingEnd(true)}
-                    className="bg-dashcam-600 hover:bg-dashcam-700 text-white p-1.5 sm:p-2 rounded-md flex items-center"
-                    title="Search for location"
-                  >
-                    <FaSearch />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => getCurrentLocation('end')}
-                    className="bg-dashcam-500 hover:bg-dashcam-600 text-white p-1.5 sm:p-2 rounded-md flex items-center"
-                    title="Use current location"
-                  >
-                    <FaMapMarkerAlt />
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-          
-          {/* Waypoints section */}
-          <div className="md:col-span-2" id="waypoint-inputs">
-            <div className="flex justify-between items-center mb-1 sm:mb-2">
-              <label className="block text-gray-700 text-sm sm:text-base font-medium flex items-center">
-                <FaMapMarkerAlt className="mr-1 text-dashcam-600" />
-                Waypoints
-              </label>
-              <div className="flex items-center space-x-2">
-                <div className="text-xs sm:text-sm text-gray-600">
-                  {waypoints.length} waypoint{waypoints.length !== 1 ? 's' : ''}
-                </div>
-                
-                {/* Botón para importar KML/KMZ */}
-                <div className="relative">
-                  <input
-                    type="file"
-                    id="kml-file-input"
-                    accept=".kml,.kmz"
-                    className="sr-only"
-                    onChange={handleKmlFileUpload}
-                    disabled={isLoadingKml}
-                  />
-                  <label
-                    htmlFor="kml-file-input"
-                    className={`bg-green-600 hover:bg-green-700 text-white text-xs py-1 px-2 rounded-md flex items-center cursor-pointer ${
-                      isLoadingKml ? 'opacity-50 cursor-not-allowed' : ''
-                    }`}
-                    title="Importar puntos desde archivo KML/KMZ"
-                  >
-                    {isLoadingKml ? (
-                      <>
-                        <FaSpinner className="animate-spin mr-1" /> 
-                        Cargando...
-                      </>
-                    ) : (
-                      <>
-                        <FaFileImport className="mr-1" /> 
-                        Importar KML/KMZ
-                      </>
-                    )}
-                  </label>
-                </div>
-              </div>
-            </div>
-            
-            {waypoints.length > 0 && (
-              <div className="mb-3 border border-gray-200 rounded-md p-2 sm:p-3 bg-gray-50 max-h-60 sm:max-h-80 overflow-y-auto">
-                {waypoints.map((waypoint, index) => (
-                  <div 
-                    key={index} 
-                    className={`flex flex-col sm:flex-row sm:items-center mb-2 last:mb-0 p-1.5 sm:p-2 rounded
-                      ${editingWaypointIndex === index ? 'bg-dashcam-50 border border-dashcam-300' : 'hover:bg-gray-100'}`}
-                  >
-                    <div className="flex items-center mb-1 sm:mb-0 sm:mr-2">
-                      <span className="text-xs bg-dashcam-600 text-white px-2 py-0.5 rounded-full">{index + 1}</span>
-                    </div>
-                    <div className="flex-grow mb-1 sm:mb-0">
-                      <div className="mb-1">
-                        <input
-                          type="text"
-                          value={waypoint.name || `Waypoint ${index + 1}`}
-                          onChange={(e) => updateWaypointName(index, e.target.value)}
-                          className="w-full p-1 border border-gray-300 rounded-md text-xs sm:text-sm focus:border-dashcam-500 focus:ring focus:ring-dashcam-200"
-                        />
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <input
-                          type="number"
-                          value={waypoint.lat}
-                          onChange={(e) => updateWaypointCoord(index, 'lat', e.target.value)}
-                          className="p-1 border border-gray-300 rounded-md text-xs sm:text-sm focus:border-dashcam-500 focus:ring focus:ring-dashcam-200"
-                          step="any"
-                          placeholder="Latitude"
-                        />
-                        <input
-                          type="number"
-                          value={waypoint.lon}
-                          onChange={(e) => updateWaypointCoord(index, 'lon', e.target.value)}
-                          className="p-1 border border-gray-300 rounded-md text-xs sm:text-sm focus:border-dashcam-500 focus:ring focus:ring-dashcam-200"
-                          step="any"
-                          placeholder="Longitude"
-                        />
-                      </div>
-                    </div>
-                    <div className="flex sm:flex-col justify-end sm:ml-2">
-                      <div className="flex sm:mb-1">
-                        <button
-                          type="button"
-                          onClick={() => moveWaypointUp(index)}
-                          disabled={index === 0}
-                          className={`p-1 ${index === 0 ? 'text-gray-400' : 'text-gray-600 hover:text-gray-800'}`}
-                          title="Move up"
-                        >
-                          <FaArrowUp className="text-xs sm:text-sm" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => moveWaypointDown(index)}
-                          disabled={index === waypoints.length - 1}
-                          className={`p-1 ${index === waypoints.length - 1 ? 'text-gray-400' : 'text-gray-600 hover:text-gray-800'}`}
-                          title="Move down"
-                        >
-                          <FaArrowDown className="text-xs sm:text-sm" />
-                        </button>
-                      </div>
-                      <div className="flex">
-                        {editingWaypointIndex === index ? (
-                          <button
-                            type="button"
-                            onClick={cancelEditingWaypoint}
-                            className="p-1 text-gray-600 hover:text-gray-800"
-                            title="Cancel edit"
-                          >
-                            ✖
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => editWaypoint(index)}
-                            className="p-1 text-blue-500 hover:text-blue-700"
-                            title="Edit waypoint"
-                          >
-                            <FaEdit className="text-xs sm:text-sm" />
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => removeWaypoint(index)}
-                          className="p-1 text-red-500 hover:text-red-700"
-                          title="Remove waypoint"
-                        >
-                          <FaTrash className="text-xs sm:text-sm" />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-            
-            <div className="flex flex-col sm:flex-row sm:space-x-2 sm:items-end">
-              {isSearchingWaypoint ? (
-                <div className="w-full">
-                  <div className="flex mb-2">
+              
+              {isSearchingStart ? (
+                <div className="space-y-3">
+                  <div className="flex">
                     <input
                       type="text"
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      className="flex-1 p-1.5 sm:p-2 border border-gray-300 text-xs sm:text-sm rounded-l-md focus:border-dashcam-500 focus:ring focus:ring-dashcam-200"
-                      placeholder="Search for a waypoint location..."
+                      className="flex-1 p-3 border border-gray-300 rounded-l-md focus:border-blue-500 focus:ring focus:ring-blue-200 text-base touch-manipulation"
+                      placeholder="Search for a location..."
                     />
                     <button
                       type="button"
-                      onClick={() => searchPlaces(searchQuery, 'waypoint')}
+                      onClick={() => searchPlaces(searchQuery, 'start')}
                       disabled={isSearching}
-                      className="bg-dashcam-600 hover:bg-dashcam-700 text-white p-1.5 sm:p-2 rounded-r-md flex items-center"
+                      className="bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-r-md flex items-center min-w-[48px] touch-manipulation"
                     >
-                      {isSearching && lastSearchType === 'waypoint' ? (
+                      {isSearching && lastSearchType === 'start' ? (
                         <FaSpinner className="animate-spin" />
                       ) : (
                         <FaSearch />
@@ -799,148 +454,493 @@ const TripForm = ({ initialData, onSubmit, onCancel }) => {
                     </button>
                   </div>
                   
-                  {searchResults.length > 0 && lastSearchType === 'waypoint' && (
-                    <div className="border border-gray-200 rounded-md max-h-48 sm:max-h-60 overflow-y-auto bg-white shadow-md">
+                  {searchResults.length > 0 && lastSearchType === 'start' && (
+                    <div className="border border-gray-200 rounded-md max-h-60 overflow-y-auto bg-white shadow-md">
                       {searchResults.map((place, index) => (
                         <div 
                           key={index}
-                          className="p-1.5 sm:p-2 border-b border-gray-100 hover:bg-dashcam-50 cursor-pointer"
-                          onClick={() => selectPlace(place, 'waypoint')}
+                          className="p-3 border-b border-gray-100 hover:bg-blue-50 cursor-pointer touch-manipulation"
+                          onClick={() => selectPlace(place, 'start')}
                         >
-                          <div className="font-medium text-xs sm:text-sm">{place.name || place.display_name.split(',')[0]}</div>
-                          <div className="text-xs text-gray-500 line-clamp-1">{place.display_name}</div>
+                          <div className="font-medium text-base">{place.name || place.display_name.split(',')[0]}</div>
+                          <div className="text-sm text-gray-500 truncate">{place.display_name}</div>
                         </div>
                       ))}
                     </div>
                   )}
                   
-                  <div className="flex mt-2">
+                  <div className="flex flex-col sm:flex-row gap-2">
                     <button
                       type="button"
-                      onClick={() => setIsSearchingWaypoint(false)}
-                      className="bg-gray-500 hover:bg-gray-600 text-white py-1 px-2 rounded-md text-xs mr-2"
+                      onClick={() => setIsSearchingStart(false)}
+                      className="bg-gray-500 hover:bg-gray-600 text-white py-2 px-4 rounded-md text-base min-h-[44px] touch-manipulation"
                     >
                       Cancel
                     </button>
                     <button
                       type="button"
-                      onClick={() => getCurrentLocation('waypoint')}
-                      className="bg-dashcam-500 hover:bg-dashcam-600 text-white py-1 px-2 rounded-md text-xs flex items-center"
+                      onClick={() => getCurrentLocation('start')}
+                      className="bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-md text-base flex items-center justify-center min-h-[44px] touch-manipulation"
                     >
                       Use Current Location
                     </button>
                   </div>
                 </div>
               ) : (
-                <>
-                  <div className="flex-grow grid grid-cols-1 sm:grid-cols-3 gap-2 mb-2 sm:mb-0">
-                    <div className="sm:col-span-3">
-                      <input
-                        type="text"
-                        value={newWaypoint.name}
-                        onChange={(e) => setNewWaypoint({...newWaypoint, name: e.target.value})}
-                        className="w-full p-1.5 sm:p-2 border border-gray-300 text-xs sm:text-sm rounded-md focus:border-dashcam-500 focus:ring focus:ring-dashcam-200"
-                        placeholder={`Waypoint Name (${editingWaypointIndex >= 0 ? 'Editing' : 'New'})`}
-                      />
-                    </div>
-                    <div>
-                      <input
-                        type="number"
-                        value={newWaypoint.lat}
-                        onChange={(e) => setNewWaypoint({...newWaypoint, lat: e.target.value})}
-                        className="w-full p-1.5 sm:p-2 border border-gray-300 text-xs sm:text-sm rounded-md focus:border-dashcam-500 focus:ring focus:ring-dashcam-200"
-                        placeholder="Latitude"
-                        step="any"
-                      />
-                    </div>
-                    <div>
-                      <input
-                        type="number"
-                        value={newWaypoint.lon}
-                        onChange={(e) => setNewWaypoint({...newWaypoint, lon: e.target.value})}
-                        className="w-full p-1.5 sm:p-2 border border-gray-300 text-xs sm:text-sm rounded-md focus:border-dashcam-500 focus:ring focus:ring-dashcam-200"
-                        placeholder="Longitude"
-                        step="any"
-                      />
-                    </div>
-                    <div className="flex space-x-2">
-                      <button
-                        type="button"
-                        onClick={() => setIsSearchingWaypoint(true)}
-                        className="bg-dashcam-600 hover:bg-dashcam-700 text-white p-1.5 sm:p-2 rounded-md flex-grow flex justify-center items-center text-xs sm:text-sm"
-                        title="Search for location"
-                      >
-                        <FaSearch className="mr-1" /> Search
-                      </button>
-                    </div>
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      type="number"
+                      value={startLat}
+                      onChange={(e) => setStartLat(e.target.value)}
+                      className="w-full p-3 border border-gray-300 rounded-md focus:border-blue-500 focus:ring focus:ring-blue-200 text-base touch-manipulation"
+                      required
+                      placeholder="Latitude"
+                      step="any"
+                    />
+                    <input
+                      type="number"
+                      value={startLon}
+                      onChange={(e) => setStartLon(e.target.value)}
+                      className="w-full p-3 border border-gray-300 rounded-md focus:border-blue-500 focus:ring focus:ring-blue-200 text-base touch-manipulation"
+                      required
+                      placeholder="Longitude"
+                      step="any"
+                    />
                   </div>
-                  <div className="flex space-x-2">
+                  <div className="flex gap-2">
                     <button
                       type="button"
-                      onClick={() => getCurrentLocation('waypoint')}
-                      className="bg-dashcam-500 hover:bg-dashcam-600 text-white p-1.5 sm:p-2 rounded-md"
+                      onClick={() => setIsSearchingStart(true)}
+                      className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-md flex items-center justify-center min-h-[44px] touch-manipulation"
+                      title="Search for location"
+                    >
+                      <FaSearch className="mr-2" /> Search
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => getCurrentLocation('start')}
+                      className="flex-1 bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-md flex items-center justify-center min-h-[44px] touch-manipulation"
                       title="Use current location"
                     >
-                      <FaMapMarkerAlt className="text-xs sm:text-sm" />
+                      <FaMapMarkerAlt className="mr-2" /> Current
                     </button>
-                    {editingWaypointIndex >= 0 ? (
-                      <>
-                        <button
-                          type="button"
-                          onClick={addWaypoint}
-                          className="bg-blue-600 hover:bg-blue-700 text-white py-1 px-2 sm:px-3 rounded-md flex items-center text-xs sm:text-sm"
-                          title="Update waypoint"
-                        >
-                          Update
-                        </button>
-                        <button
-                          type="button"
-                          onClick={cancelEditingWaypoint}
-                          className="bg-gray-500 hover:bg-gray-600 text-white py-1 px-2 sm:px-3 rounded-md text-xs sm:text-sm"
-                          title="Cancel"
-                        >
-                          Cancel
-                        </button>
-                      </>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={addWaypoint}
-                        className="bg-dashcam-600 hover:bg-dashcam-700 text-white p-1.5 sm:p-2 rounded-md"
-                        title="Add waypoint"
-                      >
-                        <FaPlus className="text-xs sm:text-sm" />
-                      </button>
-                    )}
                   </div>
-                </>
+                </div>
               )}
             </div>
           </div>
-          
-          <div className="md:col-span-2">
-            <label className="block text-gray-700 mb-1 sm:mb-2 text-sm sm:text-base font-medium">Notes</label>
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              className="w-full p-1.5 sm:p-2 border border-gray-300 text-xs sm:text-sm rounded-md focus:border-dashcam-500 focus:ring focus:ring-dashcam-200"
-              rows="3"
-              placeholder="Any special notes or reminders about this trip"
-            ></textarea>
+
+          {/* End Location - Similar structure but red colored */}
+          <div className="bg-gray-50 p-4 rounded-lg">
+            <label className="block text-gray-700 mb-3 text-base font-medium flex items-center">
+              <FaMapMarkerAlt className="mr-2 text-red-600" />
+              End Location
+            </label>
+            
+            <div className="space-y-3">
+              <div>
+                <label className="block text-gray-600 text-sm mb-1">Location Name</label>
+                <input
+                  type="text"
+                  value={destinationName}
+                  onChange={(e) => setDestinationName(e.target.value)}
+                  className="w-full p-3 border border-gray-300 rounded-md focus:border-blue-500 focus:ring focus:ring-blue-200 text-base touch-manipulation"
+                  placeholder="Destination Name"
+                />
+              </div>
+              
+              {isSearchingEnd ? (
+                <div className="space-y-3">
+                  <div className="flex">
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="flex-1 p-3 border border-gray-300 rounded-l-md focus:border-blue-500 focus:ring focus:ring-blue-200 text-base touch-manipulation"
+                      placeholder="Search for a location..."
+                    />
+                    <button
+                      type="button"
+                      onClick={() => searchPlaces(searchQuery, 'end')}
+                      disabled={isSearching}
+                      className="bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-r-md flex items-center min-w-[48px] touch-manipulation"
+                    >
+                      {isSearching && lastSearchType === 'end' ? (
+                        <FaSpinner className="animate-spin" />
+                      ) : (
+                        <FaSearch />
+                      )}
+                    </button>
+                  </div>
+                  
+                  {searchResults.length > 0 && lastSearchType === 'end' && (
+                    <div className="border border-gray-200 rounded-md max-h-60 overflow-y-auto bg-white shadow-md">
+                      {searchResults.map((place, index) => (
+                        <div 
+                          key={index}
+                          className="p-3 border-b border-gray-100 hover:bg-blue-50 cursor-pointer touch-manipulation"
+                          onClick={() => selectPlace(place, 'end')}
+                        >
+                          <div className="font-medium text-base">{place.name || place.display_name.split(',')[0]}</div>
+                          <div className="text-sm text-gray-500 truncate">{place.display_name}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsSearchingEnd(false)}
+                      className="bg-gray-500 hover:bg-gray-600 text-white py-2 px-4 rounded-md text-base min-h-[44px] touch-manipulation"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => getCurrentLocation('end')}
+                      className="bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-md text-base flex items-center justify-center min-h-[44px] touch-manipulation"
+                    >
+                      Use Current Location
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      type="number"
+                      value={endLat}
+                      onChange={(e) => setEndLat(e.target.value)}
+                      className="w-full p-3 border border-gray-300 rounded-md focus:border-blue-500 focus:ring focus:ring-blue-200 text-base touch-manipulation"
+                      required
+                      placeholder="Latitude"
+                      step="any"
+                    />
+                    <input
+                      type="number"
+                      value={endLon}
+                      onChange={(e) => setEndLon(e.target.value)}
+                      className="w-full p-3 border border-gray-300 rounded-md focus:border-blue-500 focus:ring focus:ring-blue-200 text-base touch-manipulation"
+                      required
+                      placeholder="Longitude"
+                      step="any"
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsSearchingEnd(true)}
+                      className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-md flex items-center justify-center min-h-[44px] touch-manipulation"
+                      title="Search for location"
+                    >
+                      <FaSearch className="mr-2" /> Search
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => getCurrentLocation('end')}
+                      className="flex-1 bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-md flex items-center justify-center min-h-[44px] touch-manipulation"
+                      title="Use current location"
+                    >
+                      <FaMapMarkerAlt className="mr-2" /> Current
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
+
+        {/* Waypoints Section - Mobile Optimized */}
+        <div className="bg-blue-50 p-4 rounded-lg" id="waypoint-inputs">
+          <div className="flex justify-between items-center mb-4">
+            <label className="block text-gray-700 text-base font-medium flex items-center">
+              <FaMapMarkerAlt className="mr-2 text-blue-600" />
+              Waypoints ({waypoints.length})
+            </label>
+            
+            {/* Import KML Button */}
+            <div className="relative">
+              <input
+                type="file"
+                id="kml-file-input"
+                accept=".kml,.kmz"
+                className="sr-only"
+                onChange={handleKmlFileUpload}
+                disabled={isLoadingKml}
+              />
+              <label
+                htmlFor="kml-file-input"
+                className={`bg-green-600 hover:bg-green-700 text-white text-sm py-2 px-3 rounded-md flex items-center cursor-pointer min-h-[36px] touch-manipulation ${
+                  isLoadingKml ? 'opacity-50 cursor-not-allowed' : ''
+                }`}
+                title="Import waypoints from KML/KMZ file"
+              >
+                {isLoadingKml ? (
+                  <FaSpinner className="animate-spin mr-1" />
+                ) : (
+                  <FaFileImport className="mr-1" />
+                )}
+                <span className="hidden sm:inline">Import</span>
+              </label>
+            </div>
+          </div>
+
+          {/* Existing Waypoints List */}
+          {waypoints.length > 0 && (
+            <div className="space-y-3 mb-4 max-h-60 overflow-y-auto">
+              {waypoints.map((waypoint, index) => (
+                <div 
+                  key={index} 
+                  className={`bg-white p-3 rounded-lg border ${
+                    editingWaypointIndex === index ? 'border-blue-300 bg-blue-50' : 'border-gray-200'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm bg-blue-600 text-white px-2 py-1 rounded-full font-medium">
+                      {index + 1}
+                    </span>
+                    <div className="flex items-center space-x-2">
+                      <button
+                        type="button"
+                        onClick={() => moveWaypointUp(index)}
+                        disabled={index === 0}
+                        className={`p-1 ${index === 0 ? 'text-gray-400' : 'text-gray-600 hover:text-gray-800'} touch-manipulation`}
+                        title="Move up"
+                      >
+                        <FaArrowUp />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => moveWaypointDown(index)}
+                        disabled={index === waypoints.length - 1}
+                        className={`p-1 ${index === waypoints.length - 1 ? 'text-gray-400' : 'text-gray-600 hover:text-gray-800'} touch-manipulation`}
+                        title="Move down"
+                      >
+                        <FaArrowDown />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => editWaypoint(index)}
+                        className="p-1 text-blue-500 hover:text-blue-700 touch-manipulation"
+                        title="Edit waypoint"
+                      >
+                        <FaEdit />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => removeWaypoint(index)}
+                        className="p-1 text-red-500 hover:text-red-700 touch-manipulation"
+                        title="Remove waypoint"
+                      >
+                        <FaTrash />
+                      </button>
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <input
+                      type="text"
+                      value={waypoint.name || `Waypoint ${index + 1}`}
+                      onChange={(e) => updateWaypointName(index, e.target.value)}
+                      className="w-full p-2 border border-gray-300 rounded-md text-sm focus:border-blue-500 focus:ring focus:ring-blue-200 touch-manipulation"
+                      placeholder="Waypoint name"
+                    />
+                    <div className="grid grid-cols-2 gap-2">
+                      <input
+                        type="number"
+                        value={waypoint.lat}
+                        onChange={(e) => updateWaypointCoord(index, 'lat', e.target.value)}
+                        className="p-2 border border-gray-300 rounded-md text-sm focus:border-blue-500 focus:ring focus:ring-blue-200 touch-manipulation"
+                        step="any"
+                        placeholder="Latitude"
+                      />
+                      <input
+                        type="number"
+                        value={waypoint.lon}
+                        onChange={(e) => updateWaypointCoord(index, 'lon', e.target.value)}
+                        className="p-2 border border-gray-300 rounded-md text-sm focus:border-blue-500 focus:ring focus:ring-blue-200 touch-manipulation"
+                        step="any"
+                        placeholder="Longitude"
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Add New Waypoint Section */}
+          <div className="bg-white p-4 rounded-lg border border-gray-200">
+            <h4 className="text-sm font-medium text-gray-700 mb-3">
+              {editingWaypointIndex >= 0 ? 'Edit Waypoint' : 'Add New Waypoint'}
+            </h4>
+            
+            {isSearchingWaypoint ? (
+              <div className="space-y-3">
+                <div className="flex">
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="flex-1 p-3 border border-gray-300 rounded-l-md focus:border-blue-500 focus:ring focus:ring-blue-200 text-base touch-manipulation"
+                    placeholder="Search for a waypoint location..."
+                  />
+                  <button
+                    type="button"
+                    onClick={() => searchPlaces(searchQuery, 'waypoint')}
+                    disabled={isSearching}
+                    className="bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-r-md flex items-center min-w-[48px] touch-manipulation"
+                  >
+                    {isSearching && lastSearchType === 'waypoint' ? (
+                      <FaSpinner className="animate-spin" />
+                    ) : (
+                      <FaSearch />
+                    )}
+                  </button>
+                </div>
+                
+                {searchResults.length > 0 && lastSearchType === 'waypoint' && (
+                  <div className="border border-gray-200 rounded-md max-h-48 overflow-y-auto bg-white shadow-md">
+                    {searchResults.map((place, index) => (
+                      <div 
+                        key={index}
+                        className="p-3 border-b border-gray-100 hover:bg-blue-50 cursor-pointer touch-manipulation"
+                        onClick={() => selectPlace(place, 'waypoint')}
+                      >
+                        <div className="font-medium text-sm">{place.name || place.display_name.split(',')[0]}</div>
+                        <div className="text-xs text-gray-500 truncate">{place.display_name}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsSearchingWaypoint(false)}
+                    className="bg-gray-500 hover:bg-gray-600 text-white py-2 px-4 rounded-md text-base min-h-[44px] touch-manipulation"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => getCurrentLocation('waypoint')}
+                    className="bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-md text-base flex items-center justify-center min-h-[44px] touch-manipulation"
+                  >
+                    Use Current Location
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <input
+                  type="text"
+                  value={newWaypoint.name}
+                  onChange={(e) => setNewWaypoint({...newWaypoint, name: e.target.value})}
+                  className="w-full p-3 border border-gray-300 rounded-md focus:border-blue-500 focus:ring focus:ring-blue-200 text-base touch-manipulation"
+                  placeholder={`Waypoint Name (${editingWaypointIndex >= 0 ? 'Editing' : 'New'})`}
+                />
+                
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="number"
+                    value={newWaypoint.lat}
+                    onChange={(e) => setNewWaypoint({...newWaypoint, lat: e.target.value})}
+                    className="w-full p-3 border border-gray-300 rounded-md focus:border-blue-500 focus:ring focus:ring-blue-200 text-base touch-manipulation"
+                    placeholder="Latitude"
+                    step="any"
+                  />
+                  <input
+                    type="number"
+                    value={newWaypoint.lon}
+                    onChange={(e) => setNewWaypoint({...newWaypoint, lon: e.target.value})}
+                    className="w-full p-3 border border-gray-300 rounded-md focus:border-blue-500 focus:ring focus:ring-blue-200 text-base touch-manipulation"
+                    placeholder="Longitude"
+                    step="any"
+                  />
+                </div>
+                
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsSearchingWaypoint(true)}
+                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-md flex items-center justify-center min-h-[44px] touch-manipulation"
+                    title="Search for location"
+                  >
+                    <FaSearch className="mr-2" /> Search
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => getCurrentLocation('waypoint')}
+                    className="bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-md flex items-center justify-center min-h-[44px] touch-manipulation"
+                    title="Use current location"
+                  >
+                    <FaMapMarkerAlt />
+                  </button>
+                </div>
+                
+                <div className="flex gap-2">
+                  {editingWaypointIndex >= 0 ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={addWaypoint}
+                        className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-md min-h-[44px] touch-manipulation"
+                        title="Update waypoint"
+                      >
+                        Update Waypoint
+                      </button>
+                      <button
+                        type="button"
+                        onClick={cancelEditingWaypoint}
+                        className="bg-gray-500 hover:bg-gray-600 text-white py-2 px-4 rounded-md min-h-[44px] touch-manipulation"
+                        title="Cancel"
+                      >
+                        Cancel
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={addWaypoint}
+                      className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-md flex items-center justify-center min-h-[44px] touch-manipulation"
+                      title="Add waypoint"
+                    >
+                      <FaPlus className="mr-2" /> Add Waypoint
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Notes Section */}
+        <div>
+          <label className="block text-gray-700 mb-2 text-base font-medium">Notes</label>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            className="w-full p-3 border border-gray-300 rounded-md focus:border-blue-500 focus:ring focus:ring-blue-200 text-base touch-manipulation"
+            rows="4"
+            placeholder="Any special notes or reminders about this trip"
+          ></textarea>
+        </div>
         
-        <div className="mt-4 sm:mt-6 flex justify-end">
+        {/* Action Buttons */}
+        <div className="flex flex-col sm:flex-row gap-3 pt-4 border-t border-gray-200">
           <button
             type="button"
             onClick={onCancel}
-            className="bg-gray-500 hover:bg-gray-600 text-white py-1.5 sm:py-2 px-3 sm:px-4 rounded-md mr-2 text-xs sm:text-sm"
+            className="flex-1 sm:flex-none bg-gray-500 hover:bg-gray-600 text-white py-3 px-6 rounded-md text-base min-h-[48px] touch-manipulation"
           >
             Cancel
           </button>
           <button
             type="submit"
-            className="bg-dashcam-600 hover:bg-dashcam-700 text-white py-1.5 sm:py-2 px-3 sm:px-4 rounded-md text-xs sm:text-sm"
+            className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-3 px-6 rounded-md text-base min-h-[48px] touch-manipulation"
           >
             {initialData ? 'Update Trip' : 'Save Trip'}
           </button>

@@ -1,29 +1,48 @@
-import { useState, useEffect, useRef } from 'react';
-import axios from 'axios';
+import React, { useState, useEffect, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import { format } from 'date-fns';
-import { FaCalendarDay, FaVideo, FaFileDownload, FaMapMarkerAlt, FaCarSide, FaMobileAlt, FaClock, FaRoad, FaFilter, FaTags, FaCalendarAlt, FaPlayCircle } from 'react-icons/fa';
-import 'react-calendar/dist/Calendar.css';
+import axios from 'axios';
 
-// Importamos componentes
+// Hook personalizado para detectar el tamaño de pantalla
+function useWindowSize() {
+  const [windowSize, setWindowSize] = useState({
+    width: window.innerWidth,
+    height: window.innerHeight,
+  });
+  
+  useEffect(() => {
+    const handleResize = () => {
+      setWindowSize({
+        width: window.innerWidth,
+        height: window.innerHeight
+      });
+    };
+    
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+  
+  return windowSize;
+}
+
+// Importamos componentes del calendario
 import { 
-  CalendarSidebar,
-  VideoPlayer,
-  VideoTimeline, 
-  CameraSelector,
-  SelectedClipInfo,
-  VideoFilters,
-  AutoplayNestTimeline
+  CalendarSidebar, 
+  GooglePhotosTimeline
 } from '../components/CalendarView';
+ 
+import CalendarStatusBar from '../components/CalendarView/StatusBar';
 
-// Importamos el gestor de reproducción automática
-import { AutoplayTimelineManager } from '../components/CalendarView/AutoplayTimeline';
-
-// Importamos estilos consolidados para el calendario
-import '../components/CalendarView/calendar_core.css';
-import '../components/CalendarView/video_player.css';
+// Importamos estilos del StatusBar y calendario
 import '../components/CalendarView/responsive_fixes.css';
 
-function CalendarView() {
+import { VideoPlayer } from '../components/CalendarView/VideoPlayer';
+
+function Calendar({ darkMode }) {
+  const { width } = useWindowSize();
+  const location = useLocation();
+  const isMobile = width < 768;
+  
   // Estados
   const [date, setDate] = useState(new Date());
   const [calendarData, setCalendarData] = useState({});
@@ -33,170 +52,293 @@ function CalendarView() {
   const [selectedVideo, setSelectedVideo] = useState(null);
   const [videoClips, setVideoClips] = useState([]);
   const [timeZoneOffset, setTimeZoneOffset] = useState(0);
-  const [activeCamera, setActiveCamera] = useState('exterior'); // exterior, interior, both
+  const [activeCamera, setActiveCamera] = useState('exterior');
   const [secondaryVideo, setSecondaryVideo] = useState(null);
   const [selectedClip, setSelectedClip] = useState(null);
   const [calendarOpen, setCalendarOpen] = useState(false);
   
-  // Estado para el autoplay
-  const [isAutoplayEnabled, setIsAutoplayEnabled] = useState(true);
   const [scrollPosition, setScrollPosition] = useState(0);
+  
+  // Estados para el StatusBar
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   
   // Referencias para componentes DOM
   const timelineRef = useRef(null);
-  const autoplayManagerRef = useRef(null);
+  const initialUrlProcessed = useRef(false);
   
-  // Nuevos estados para filtros
+  // Estados para filtros
   const [filters, setFilters] = useState({
     showTrips: true,
     showExternalVideos: true,
     tags: [],
-    videoSource: 'all' // 'all', 'dashcam', 'external', 'insta360', 'gopro', etc.
+    videoSource: 'all'
   });
   const [allTags, setAllTags] = useState([]);
   const [sourceOptions, setSourceOptions] = useState(['all', 'dashcam', 'external']);
 
-  // Función para preparar clips y asegurar que tienen los campos necesarios
-  const prepareVideoClips = (clips) => {
-    return clips.map(clip => {
-      // Asegurarse que el clip tenga un timestamp válido
-      if (!clip.timestamp) {
-        // Si no tiene timestamp, intentamos extraerlo del nombre del archivo
-        if (clip.road_video_file) {
-          const matches = clip.road_video_file.match(/(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})/);
-          if (matches && matches[1]) {
-            const dateStr = matches[1].replace(/_/g, ' ').replace(/-/g, ':');
-            clip.timestamp = new Date(`${dateStr}`).toISOString();
-          }
-        }
-        // Si aún no tiene timestamp, usamos la fecha actual
-        if (!clip.timestamp) {
-          clip.timestamp = new Date().toISOString();
-        }
-      }
-      return clip;
-    });
-  };
-
-  // Función para obtener la URL correcta de un video
-  const getVideoUrl = (videoPath) => {
-    if (!videoPath) return '';
-    
-    // Eliminar prefijos relativos de la ruta si existen
-    let normalizedPath = videoPath;
-    if (normalizedPath.startsWith('../')) {
-      normalizedPath = normalizedPath.substring(3);
-    }
-    
-    // Para videos externos usar la API
-    if (normalizedPath.startsWith('external/')) {
-      return `/api/videos/${normalizedPath}`; 
-    }
-    
-    // Para videos locales usar la API adecuada
-    return `/api/videos/${normalizedPath}`;
-  };
-  
-  // Función para obtener la URL de miniatura
-  const getThumbnailUrl = (videoPath) => {
-    if (!videoPath) return '';
-    
-    // Eliminar prefijos relativos de la ruta si existen
-    let normalizedPath = videoPath;
-    if (normalizedPath.startsWith('../')) {
-      normalizedPath = normalizedPath.substring(3);
-    }
-    
-    // Para videos externos
-    if (normalizedPath.startsWith('external/')) {
-      return `/api/videos/thumbnail/${normalizedPath}`;
-    }
-    
-    // Para videos locales
-    return `/api/videos/thumbnail/${normalizedPath}`;
-  };
-  
-  // Función para reproducir un video con la URL correcta
-  const playVideo = (videoPath) => {
-    setSelectedVideo(getVideoUrl(videoPath));
-    // Limpiar video secundario al reproducir uno nuevo
-    setSecondaryVideo(null);
-  };
-
-  // Añadir clase al body para estilos específicos de calendario
+  // Cargar datos del calendario cuando cambia la fecha
   useEffect(() => {
-    // Añadir la clase 'calendar-page' al body cuando se monte el componente
-    document.body.classList.add('calendar-page');
-    
-    // Eliminar la clase cuando se desmonte el componente
-    return () => {
-      document.body.classList.remove('calendar-page');
-    };
-  }, []);
-
-  // Fetch calendar data on mount
-  useEffect(() => {
-    fetchCalendarData(date.getFullYear(), date.getMonth() + 1);
-  }, []);
-
-  // Fetch trips when date changes
-  useEffect(() => {
-    fetchTripsForDate(format(date, 'yyyy-MM-dd'));
-    setCalendarOpen(false); // Cerrar el calendario después de cambiar la fecha
+    loadCalendarData();
   }, [date]);
 
-  // Extraer todas las etiquetas y fuentes de videos cuando se cargan
+  // Manejar parámetros URL para navegación directa a videos - se ejecuta solo una vez
   useEffect(() => {
-    if (externalVideos.length > 0) {
-      // Extraer todas las etiquetas únicas de los videos externos
-      const tagSet = new Set();
-      const sourceSet = new Set(['all', 'dashcam', 'external']);
+    // Si ya procesamos la URL inicial, no volvemos a procesar
+    if (initialUrlProcessed.current) return;
+
+    const urlParams = new URLSearchParams(location.search);
+    const urlDate = urlParams.get('date');
+    const videoParam = urlParams.get('video');
+    const timeParam = urlParams.get('time');
+    const autoplayParam = urlParams.get('autoplay');
+
+    // Si hay una fecha en la URL, establecerla
+    if (urlDate) {
+      const parsedDate = new Date(urlDate);
+      if (!isNaN(parsedDate.getTime())) {
+        setDate(parsedDate);
+        initialUrlProcessed.current = true;
+      }
+    }
+  }, [location.search]);
+
+  // Procesar selección de video cuando hay clips disponibles
+  useEffect(() => {
+    if (!initialUrlProcessed.current) return;
+
+    const urlParams = new URLSearchParams(location.search);
+    const videoParam = urlParams.get('video');
+    const timeParam = urlParams.get('time');
+    const autoplayParam = urlParams.get('autoplay');
+    
+    // Si hay parámetros de video, procesar directamente aunque videoClips esté vacío
+    if (videoParam) {
+      const decodedVideoPath = decodeURIComponent(videoParam);
+      console.log('Processing video from URL:', decodedVideoPath);
       
-      externalVideos.forEach(video => {
-        // Procesar etiquetas
-        if (video.tags) {
-          const videoTags = video.tags.split(',').map(tag => tag.trim()).filter(tag => tag);
-          videoTags.forEach(tag => tagSet.add(tag));
+      // Si tenemos clips, intentar encontrar una coincidencia
+      if (videoClips.length > 0) {
+        const targetClip = videoClips.find(clip => 
+          clip.road_video_file === decodedVideoPath ||
+          clip.interior_video_file === decodedVideoPath ||
+          clip.filename === decodedVideoPath ||
+          clip.file_path === decodedVideoPath
+        );
+
+        if (targetClip) {
+          console.log('Found matching clip in data:', targetClip);
+          setSelectedClip(targetClip);
+          
+          // Determinar qué video reproducir
+          let primaryVideo = null;
+          if (targetClip.road_video_file === decodedVideoPath) {
+            primaryVideo = targetClip.road_video_file;
+            setActiveCamera('exterior');
+          } else if (targetClip.interior_video_file === decodedVideoPath) {
+            primaryVideo = targetClip.interior_video_file;
+            setActiveCamera('interior');
+          } else {
+            primaryVideo = targetClip.road_video_file || targetClip.filename || targetClip.file_path;
+          }
+
+          if (primaryVideo) {
+            const videoUrl = getVideoUrl(primaryVideo, targetClip);
+            console.log('Setting video URL from clip:', videoUrl);
+            setSelectedVideo(videoUrl);
+          }
+        } else {
+          // Si no encontramos el clip, crear uno temporal basado en la URL
+          createTemporaryClipFromUrl(decodedVideoPath, timeParam);
         }
-        
-        // Procesar fuentes de video
-        if (video.source && !sourceSet.has(video.source)) {
-          sourceSet.add(video.source);
+      } else {
+        // Si no hay clips, crear uno temporal basado en la URL
+        createTemporaryClipFromUrl(decodedVideoPath, timeParam);
+      }
+      
+      // Si autoplay está habilitado, iniciar reproducción
+      if (autoplayParam === 'true') {
+        setTimeout(() => {
+          setIsPlaying(true);
+        }, 1000); // Pequeño delay para asegurar que el video esté cargado
+      }
+    }
+  }, [videoClips, initialUrlProcessed.current, location.search]);
+  
+  // Función para crear un clip temporal a partir de una URL
+  const createTemporaryClipFromUrl = (videoPath, timeParam) => {
+    console.log('Creating temporary clip from URL:', videoPath);
+    
+    // Extraer fecha y hora del path o del timeParam
+    let timestamp = null;
+    const dateTimeMatch = videoPath.match(/(\d{4}-\d{2}-\d{2})[\/\\](\d{2}-\d{2}-\d{2})/);
+    
+    if (dateTimeMatch) {
+      const dateStr = dateTimeMatch[1]; // 2025-05-15
+      const timeStr = dateTimeMatch[2].replace(/-/g, ':'); // 18:19:28
+      timestamp = `${dateStr}T${timeStr}.000Z`;
+    } else if (timeParam) {
+      timestamp = timeParam;
+    } else {
+      timestamp = new Date().toISOString();
+    }
+    
+    // Crear un clip temporal con los datos mínimos necesarios
+    const tempClip = {
+      id: `temp-clip-${Date.now()}`,
+      road_video_file: videoPath,
+      timestamp: timestamp,
+      hasVideos: true,
+      isTemporaryClip: true
+    };
+    
+    console.log('Created temporary clip:', tempClip);
+    setSelectedClip(tempClip);
+    
+    // Configurar el video para reproducirlo directamente
+    const videoUrl = getVideoUrl(videoPath);
+    console.log('Setting direct video URL:', videoUrl);
+    setSelectedVideo(videoUrl);
+  };
+
+  // Actualizar videos cuando cambia la cámara activa o el clip seleccionado
+  useEffect(() => {
+    if (!selectedClip) return;
+    
+    let primaryVideo = null;
+    let secondaryVideoSrc = null;
+    
+    if (activeCamera === 'exterior') {
+      primaryVideo = selectedClip.road_video_file || selectedClip.filename || selectedClip.file_path;
+    } else if (activeCamera === 'interior') {
+      primaryVideo = selectedClip.interior_video_file;
+      // Si no hay video interior, usar exterior como fallback
+      if (!primaryVideo) {
+        primaryVideo = selectedClip.road_video_file || selectedClip.filename || selectedClip.file_path;
+      }
+    } else if (activeCamera === 'both') {
+      primaryVideo = selectedClip.road_video_file || selectedClip.filename || selectedClip.file_path;
+      secondaryVideoSrc = selectedClip.interior_video_file;
+    }
+    
+    // Convertir paths a URLs sólo cuando hay cambios reales en los videos
+    if (primaryVideo) {
+      const newVideoUrl = getVideoUrl(primaryVideo, selectedClip);
+      if (selectedVideo !== newVideoUrl) {
+        setSelectedVideo(newVideoUrl);
+      }
+    }
+    
+    if (secondaryVideoSrc) {
+      const newSecondaryUrl = getVideoUrl(secondaryVideoSrc, selectedClip);
+      if (secondaryVideo !== newSecondaryUrl) {
+        setSecondaryVideo(newSecondaryUrl);
+      }
+    } else if (secondaryVideo) {
+      setSecondaryVideo(null);
+    }
+  }, [activeCamera, selectedClip]);
+
+  // Función para cargar datos del calendario
+  const loadCalendarData = async () => {
+    setIsLoading(true);
+    try {
+      const response = await axios.get('/api/trips/calendar', {
+        params: {
+          year: date.getFullYear(),
+          month: date.getMonth() + 1
         }
       });
       
-      setAllTags(Array.from(tagSet));
-      setSourceOptions(Array.from(sourceSet));
-    }
-  }, [externalVideos]);
-
-  // Function to fetch calendar data for a month
-  const fetchCalendarData = async (year, month) => {
-    try {
-      const response = await axios.get(`/api/trips/calendar?year=${year}&month=${month}`);
-      setCalendarData(response.data);
+      setCalendarData(response.data || {});
+      
+      // Cargar datos del día seleccionado
+      loadDayData(date);
     } catch (error) {
-      console.error('Error fetching calendar data:', error);
+      console.error('Error loading calendar data:', error);
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  // Function to fetch trips for a specific date
-  const fetchTripsForDate = async (dateStr) => {
+  // Función para cargar datos de un día específico
+  const loadDayData = async (selectedDate) => {
+    // Evitamos recargar los datos si ya estamos cargando
+    if (isLoading) return;
+    
     setIsLoading(true);
     try {
-      const response = await axios.get(`/api/trips?date_str=${dateStr}`);
-      console.log("API Response:", response.data);  // Depuración: Ver la respuesta completa
-      setSelectedDayTrips(response.data.trips || []);
-      setExternalVideos(response.data.external_videos || []);
+      const dateStr = format(selectedDate, 'yyyy-MM-dd');
+      console.log('Loading day data for:', dateStr);
       
-      // Imprimir videos externos para depuración
-      console.log("Videos externos:", response.data.external_videos);
+      // Extraer la fecha de la URL para verificar si necesitamos cargar datos de una fecha diferente
+      const urlParams = new URLSearchParams(location.search);
+      const urlVideoPath = urlParams.get('video');
+      const urlTimeParam = urlParams.get('time');
       
-      // Preparar y luego establecer clips de video
-      const preparedClips = prepareVideoClips(response.data.video_clips || []);
-      setVideoClips(preparedClips);
+      // Si hay un video en la URL, intentar extraer su fecha del path
+      let urlVideoDate = null;
+      if (urlVideoPath) {
+        const dateMatch = decodeURIComponent(urlVideoPath).match(/(\d{4}-\d{2}-\d{2})/);
+        if (dateMatch) {
+          urlVideoDate = dateMatch[1];
+        }
+      }
+      
+      // Si hay una fecha de tiempo en la URL, extraerla
+      let urlTimestampDate = null;
+      if (urlTimeParam) {
+        const parsedTime = new Date(urlTimeParam);
+        if (!isNaN(parsedTime.getTime())) {
+          urlTimestampDate = format(parsedTime, 'yyyy-MM-dd');
+        }
+      }
+      
+      // Usar la fecha del video o timestamp si está disponible y es diferente
+      const finalDateStr = urlVideoDate || urlTimestampDate || dateStr;
+      console.log('Using date for data loading:', finalDateStr);
+      
+      const response = await axios.get('/api/trips', {
+        params: {
+          date_str: finalDateStr
+        }
+      });
+      
+      console.log('Day data response:', response.data);
+      
+      const trips = response.data.trips || [];
+      const videos = response.data.external_videos || [];
+      const videoClips = response.data.video_clips || [];
+      
+      console.log('Parsed data:', { trips, videos, videoClips });
+      
+      setSelectedDayTrips(trips);
+      setExternalVideos(videos);
+      
+      // Combinar todos los clips y videos
+      const allClips = [...trips, ...videos, ...videoClips];
+      console.log('All clips combined:', allClips);
+      
+      setVideoClips(prepareVideoClips(allClips));
+      
+      // Extraer tags únicos para los filtros
+      const tags = new Set();
+      allClips.forEach(clip => {
+        if (clip.tags) {
+          clip.tags.split(',').forEach(tag => tags.add(tag.trim()));
+        }
+      });
+      setAllTags(Array.from(tags));
+      
+      // Marcamos que el procesamiento inicial de URL se ha completado
+      if (!initialUrlProcessed.current) {
+        initialUrlProcessed.current = true;
+      }
+      
     } catch (error) {
-      console.error('Error fetching trips:', error);
+      console.error('Error loading day data:', error);
       setSelectedDayTrips([]);
       setExternalVideos([]);
       setVideoClips([]);
@@ -205,413 +347,558 @@ function CalendarView() {
     }
   };
 
-  // Function to generate summary video
-  const generateSummary = async (dateStr) => {
-    try {
-      setIsLoading(true);
-      await axios.post(`/api/video/generate-summary?day=${dateStr}`);
-      alert('Started generating summary video. This may take a few minutes.');
-      // Refresh trips after a delay to show the new summary
-      setTimeout(() => {
-        fetchTripsForDate(dateStr);
-      }, 3000);
-    } catch (error) {
-      console.error('Error generating summary:', error);
-      alert('Error generating summary video. Please try again.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Manejar la selección de clips desde la línea de tiempo
-  const handleSelectClip = (clip, cameraType = 'exterior') => {
-    setSelectedClip(clip);
+  // Función para preparar clips
+  const prepareVideoClips = (clips) => {
+    console.log('Preparing video clips:', clips);
     
-    // Determinar qué video reproducir basado en el tipo de cámara seleccionada
-    if (activeCamera === 'exterior' || (activeCamera === 'both' && cameraType === 'exterior')) {
-      if (clip.road_video_file) {
-        setSelectedVideo(getVideoUrl(clip.road_video_file));
-        
-        if (activeCamera === 'both' && clip.interior_video_file) {
-          setSecondaryVideo(getVideoUrl(clip.interior_video_file));
-        } else {
-          setSecondaryVideo(null);
-        }
+    // Verificar si tenemos un video en la URL que debamos considerar
+    const urlParams = new URLSearchParams(location.search);
+    const urlVideoPath = urlParams.get('video');
+    let decodedVideoPath = null;
+    
+    if (urlVideoPath) {
+      decodedVideoPath = decodeURIComponent(urlVideoPath);
+      console.log('URL contains video:', decodedVideoPath);
+    }
+    
+    // Añadir un clip temporal para el video en URL si no hay clips o si no coincide con ninguno existente
+    let processedClips = [...clips];
+    if (decodedVideoPath && clips.length === 0) {
+      // La fecha se extrae automáticamente del path del video en createTemporaryClipFromUrl
+      const urlTimeParam = urlParams.get('time');
+      
+      // Crear el clip temporal y añadirlo a la lista
+      const dateTimeMatch = decodedVideoPath.match(/(\d{4}-\d{2}-\d{2})[\/\\](\d{2}-\d{2}-\d{2})/);
+      let timestamp = null;
+      
+      if (dateTimeMatch) {
+        const dateStr = dateTimeMatch[1]; // 2025-05-15
+        const timeStr = dateTimeMatch[2].replace(/-/g, ':'); // 18:19:28
+        timestamp = `${dateStr}T${timeStr}.000Z`;
+      } else if (urlTimeParam) {
+        timestamp = urlTimeParam;
       }
-    } else if (activeCamera === 'interior' || (activeCamera === 'both' && cameraType === 'interior')) {
-      if (clip.interior_video_file) {
-        setSelectedVideo(getVideoUrl(clip.interior_video_file));
-        
-        if (activeCamera === 'both' && clip.road_video_file) {
-          setSecondaryVideo(getVideoUrl(clip.road_video_file));
-        } else {
-          setSecondaryVideo(null);
-        }
+      
+      if (timestamp) {
+        const tempClip = {
+          id: `temp-clip-from-url-${Date.now()}`,
+          road_video_file: decodedVideoPath,
+          timestamp: timestamp,
+          isTemporaryClip: true
+        };
+        processedClips.push(tempClip);
+        console.log('Added temporary clip from URL:', tempClip);
       }
     }
-  };
-
-  // Manejar cambios en la selección de cámara
-  const handleCameraChange = (camera) => {
-    setActiveCamera(camera);
     
-    // Si hay un clip seleccionado, actualizar la vista según la cámara seleccionada
-    if (selectedClip) {
-      if (camera === 'exterior' && selectedClip.road_video_file) {
-        setSelectedVideo(getVideoUrl(selectedClip.road_video_file));
-        setSecondaryVideo(null);
-      } else if (camera === 'interior' && selectedClip.interior_video_file) {
-        setSelectedVideo(getVideoUrl(selectedClip.interior_video_file));
-        setSecondaryVideo(null);
-      } else if (camera === 'both') {
-        // Configurar PiP
-        if (selectedClip.road_video_file) {
-          setSelectedVideo(getVideoUrl(selectedClip.road_video_file));
-          if (selectedClip.interior_video_file) {
-            setSecondaryVideo(getVideoUrl(selectedClip.interior_video_file));
+    return processedClips.map((clip, index) => {
+      console.log('Processing clip:', clip);
+      
+      // Si el clip ya fue procesado (como un clip temporal) mantenerlo intacto
+      if (clip.isTemporaryClip) {
+        clip.hasVideos = true;
+        if (!clip.thumbnailUrl) {
+          clip.thumbnailUrl = 'https://placehold.co/600x400?text=Video+From+URL';
+        }
+        return clip;
+      }
+      
+      // Asegurar que el clip tenga un timestamp válido
+      if (!clip.timestamp) {
+        if (clip.start_time) {
+          clip.timestamp = clip.start_time;
+        } else if (clip.road_video_file) {
+          // Extraer timestamp del nombre del archivo si es posible
+          const matches = clip.road_video_file.match(/(\d{4}-\d{2}-\d{2})[\/\\]?[_-]?(\d{2}-\d{2}-\d{2})/);
+          if (matches && matches[1]) {
+            const dateStr = matches[1]; // 2025-05-15
+            const timeStr = matches[2].replace(/-/g, ':'); // 18:19:28
+            clip.timestamp = new Date(`${dateStr}T${timeStr}.000Z`).toISOString();
           }
-        } else if (selectedClip.interior_video_file) {
-          setSelectedVideo(getVideoUrl(selectedClip.interior_video_file));
-          setSecondaryVideo(null);
+        }
+        
+        // Si aún no hay timestamp, usar la fecha actual como fallback
+        if (!clip.timestamp) {
+          clip.timestamp = new Date().toISOString();
         }
       }
-    }
-  };
-
-  // Cerrar el reproductor de video
-  const handleClosePlayer = () => {
-    setSelectedVideo(null);
-    setSecondaryVideo(null);
-  };
-  
-  // Manejar cambios en los filtros
-  const handleFilterChange = (newFilters) => {
-    setFilters(newFilters);
-  };
-
-  // Función para filtrar videos según los filtros aplicados
-  const getFilteredVideos = () => {
-    // Primero aplicamos el filtro de tipo de video
-    let filteredExternalVideos = [...externalVideos];
-    
-    // Filtrar por fuente
-    if (filters.videoSource !== 'all') {
-      filteredExternalVideos = filteredExternalVideos.filter(
-        video => video.source === filters.videoSource
-      );
-    }
-    
-    // Filtrar por etiquetas si hay etiquetas seleccionadas
-    if (filters.tags.length > 0) {
-      filteredExternalVideos = filteredExternalVideos.filter(video => {
-        if (!video.tags) return false;
+      
+      // Asegurar que el clip tenga un ID único
+      if (!clip.id) {
+        clip.id = `clip-${index}-${Date.now()}`;
+      }
+      
+      // Asignar una URL de miniatura para cada clip
+      const getThumbnailForClip = (clip) => {
+        console.log('Generating thumbnail for clip:', clip);
+        // Determinar qué archivo de video usar para el thumbnail
+        let videoFile = null;
+        if (clip.road_video_file) {
+          videoFile = clip.road_video_file;
+        } else if (clip.interior_video_file) {
+          videoFile = clip.interior_video_file;
+        } else if (clip.filename || clip.file_path) {
+          videoFile = clip.filename || clip.file_path;
+        }
         
-        const videoTags = video.tags.split(',').map(tag => tag.trim());
-        // Debe contener al menos una de las etiquetas seleccionadas
-        return filters.tags.some(tag => videoTags.includes(tag));
+        if (!videoFile) return 'https://placehold.co/600x400?text=No+Preview';
+        
+        // Si es un video externo con ID, usar el endpoint específico para thumbnails externos
+        if (clip.isExternalVideo && clip.id) {
+          return `/api/videos/thumbnail/external/${clip.id}`;
+        }
+        
+        // Limpiar y normalizar el path del video
+        let normalizedPath = videoFile;
+        if (normalizedPath.startsWith('./')) {
+          normalizedPath = normalizedPath.substring(2);
+        } else if (normalizedPath.startsWith('../')) {
+          normalizedPath = normalizedPath.substring(3);
+        }
+        
+        return `/api/videos/thumbnail/${encodeURIComponent(normalizedPath)}`;
+      };
+      
+      clip.thumbnailUrl = getThumbnailForClip(clip);
+      
+      // Agregar información de GPS si está disponible
+      if (clip.start_lat && clip.start_lon) {
+        clip.hasGPS = true;
+      }
+      
+      // Agregar información de video paths válidos
+      if (clip.road_video_file || clip.interior_video_file || clip.file_path) {
+        clip.hasVideos = true;
+        // Para videos externos, asegurar que tengan el path correcto
+        if (clip.file_path && !clip.road_video_file) {
+          clip.road_video_file = clip.file_path;
+          clip.isExternalVideo = true;
+        }
+      }
+      
+      console.log('Processed clip:', clip);
+      return clip;
+    }).filter(clip => clip.hasVideos); // Solo mostrar clips que tengan videos
+  };
+
+  // Función para obtener la URL correcta de un video
+  const getVideoUrl = (videoPath, clip = null) => {
+    if (!videoPath) return '';
+    
+    console.log('Getting video URL for path:', videoPath);
+
+    // Comprobar si se trata de un video externo con ID, usar la ruta específica
+    if (clip && clip.isExternalVideo && clip.id) {
+      const externalUrl = `/api/videos/external/${clip.id}`;
+      console.log('External video URL:', externalUrl);
+      return externalUrl;
+    }
+
+    // Para videos internos o externos sin ID registrado, usamos la ruta directa
+    let normalizedPath = videoPath;
+    
+    // Manejar rutas relativas
+    if (normalizedPath.startsWith('./')) {
+      normalizedPath = normalizedPath.substring(2);
+    } else if (normalizedPath.startsWith('../')) {
+      normalizedPath = normalizedPath.substring(3);
+    }
+    
+    // Asegurarse de que la ruta comience con /api/videos/
+    if (!normalizedPath.startsWith('/api/videos/')) {
+      // Si ya tiene una barra inicial, quitarla antes de añadir el prefijo
+      if (normalizedPath.startsWith('/')) {
+        normalizedPath = normalizedPath.substring(1);
+      }
+      normalizedPath = `/api/videos/${normalizedPath}`;
+    }
+    
+    console.log('Normalized video URL:', normalizedPath);
+    return normalizedPath;
+  };
+
+  // Función para aplicar filtros a los clips
+  const getFilteredVideoClips = () => {
+    let filteredClips = [...videoClips];
+    
+    // Aplicar filtros de tipo de contenido
+    if (!filters.showTrips && !filters.showExternalVideos) {
+      return []; // Si ambos están desactivados, no mostrar nada
+    }
+    
+    if (!filters.showTrips) {
+      // Filtrar clips que vienen de trips (que tienen trip_id o road_video_file)
+      filteredClips = filteredClips.filter(clip => !clip.trip_id && !clip.road_video_file);
+    }
+    
+    if (!filters.showExternalVideos) {
+      // Filtrar videos externos
+      filteredClips = filteredClips.filter(clip => clip.trip_id || clip.road_video_file);
+    }
+    
+    // Aplicar filtros de fuente
+    if (filters.videoSource !== 'all') {
+      filteredClips = filteredClips.filter(clip => {
+        const videoSource = clip.source || (clip.road_video_file ? 'dashcam' : 'external');
+        return videoSource === filters.videoSource;
       });
     }
     
-    return filteredExternalVideos;
+    // Aplicar filtros de etiquetas
+    if (filters.tags.length > 0) {
+      filteredClips = filteredClips.filter(clip => {
+        if (!clip.tags) return false;
+        const clipTags = clip.tags.split(',').map(tag => tag.trim());
+        return filters.tags.some(tag => clipTags.includes(tag));
+      });
+    }
+    
+    return filteredClips;
   };
 
-  // Videos filtrados
-  const filteredExternalVideos = getFilteredVideos();
+  // Función para obtener conteos
+  const getTotalClipsCount = () => {
+    return videoClips.length;
+  };
 
-  // Manejar el cierre del calendario en móvil al hacer clic en el backdrop
-  const handleBackdropClick = (e) => {
-    // Solo cerrar si se hace clic en el fondo, no en el calendario
-    if (e.target === e.currentTarget) {
-      setCalendarOpen(false);
+  const getFilteredClipsCount = () => {
+    return getFilteredVideoClips().length;
+  };
+
+  // Funciones para el StatusBar
+  const handleToggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().then(() => {
+        setIsFullscreen(true);
+      }).catch(err => {
+        console.log(`Error attempting to enable fullscreen: ${err.message}`);
+      });
+    } else {
+      document.exitFullscreen().then(() => {
+        setIsFullscreen(false);
+      }).catch(err => {
+        console.log(`Error attempting to exit fullscreen: ${err.message}`);
+      });
+    }
+  };
+
+  const handleToggleCalendar = () => {
+    setCalendarOpen(!calendarOpen);
+  };
+
+  const handleExportDay = async () => {
+    if (!date) return;
+    
+    try {
+      const dateStr = format(date, 'yyyy-MM-dd');
+      const response = await fetch(`/api/export-day/${dateStr}`, {
+        method: 'GET',
+      });
+      
+      if (response.ok) {
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = url;
+        a.download = `dashcam_${dateStr}.zip`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      } else {
+        console.error('Error exporting day:', response.statusText);
+      }
+    } catch (error) {
+      console.error('Error exporting day:', error);
+    }
+  };
+
+  // Función para manejar cambio de mes en el calendario
+  const handleMonthChange = (newActiveDate) => {
+    console.log('Month changed to:', newActiveDate);
+    // Actualizar el estado de fecha si es diferente
+    if (newActiveDate && newActiveDate.getTime() !== date.getTime()) {
+      // Si solo cambia el mes/año pero no el día, mantener el día actual si es válido
+      const currentDay = date.getDate();
+      const newDate = new Date(newActiveDate);
+      
+      // Verificar si el día actual es válido en el nuevo mes
+      const lastDayOfNewMonth = new Date(newDate.getFullYear(), newDate.getMonth() + 1, 0).getDate();
+      if (currentDay <= lastDayOfNewMonth) {
+        newDate.setDate(currentDay);
+      }
+      
+      setDate(newDate);
+      // loadDayData se ejecutará automáticamente por el useEffect cuando cambie date
     }
   };
 
   // Renderizado del componente
   return (
-    <div className="nest-layout-container">
-      {/* Panel principal con el reproductor de video */}
-      <div className="nest-video-panel">
-        {/* Video Player ocupando espacio principal */}
-        <div className="nest-video-container w-full h-full">
-          <VideoPlayer 
-            videoSrc={selectedVideo}
-            secondaryVideoSrc={secondaryVideo}
-            isPictureInPicture={activeCamera === 'both' && secondaryVideo !== null}
-            onClose={handleClosePlayer}
-            isFullPlayer={true}
-            autoPlay={isAutoplayEnabled}
-          />
-        </div>
-        
-        {/* Información del clip seleccionado */}
-        {selectedClip && (
-          <SelectedClipInfo 
-            selectedClip={selectedClip}
-            getVideoUrl={getVideoUrl}
-            onClose={() => setSelectedClip(null)}
-          />
-        )}
-        
-        {/* Selector de cámara con estilo Nest */}
-        <div className="px-4 py-3">
-          <CameraSelector 
-            selectedCamera={activeCamera} 
-            onCameraChange={handleCameraChange} 
-          />
-        </div>
-      </div>
+    <div className={`h-screen min-h-screen w-full flex flex-col overflow-hidden ${darkMode ? 'bg-neutral-900 text-neutral-100' : 'bg-white text-neutral-800'} transition-colors duration-300`}>
+      {/* StatusBar del calendario - fijo en la parte superior */}
+      <CalendarStatusBar
+        selectedDate={date}
+        selectedClip={selectedClip}
+        isPlaying={isPlaying}
+        currentTime={currentTime}
+        duration={duration}
+        activeCamera={activeCamera}
+        onCameraChange={setActiveCamera}
+        darkMode={darkMode}
+        totalClipsCount={getTotalClipsCount()}
+        filteredClipsCount={getFilteredClipsCount()}
+        onToggleFullscreen={handleToggleFullscreen}
+        isFullscreen={isFullscreen}
+        onToggleCalendar={handleToggleCalendar}
+        isCalendarOpen={calendarOpen}
+        onExportDay={handleExportDay}
+      />
       
-      {/* Panel de cabecera que contiene la fecha y los selectores */}
-      <div className="nest-header-panel">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-medium text-nest-text-primary">{format(date, 'EEEE, d MMMM')}</h2>
-            <div className="text-sm text-nest-text-secondary">{videoClips.length + externalVideos.length} eventos</div>
-          </div>
-          
-          <button 
-            onClick={() => setCalendarOpen(true)} 
-            className="bg-transparent border-none flex items-center gap-1">
-            <span className="text-nest-text-secondary">Cambiar día</span>
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-              <path fillRule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z"/>
-            </svg>
-          </button>
-        </div>
-        
-        {/* Sidebar con calendario - ahora flota sobre el contenido */}
-        {calendarOpen && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 z-40 flex items-center justify-center md:justify-end p-4" 
-               onClick={handleBackdropClick}>
-            <CalendarSidebar 
-              date={date}
-              setDate={setDate}
-              calendarData={calendarData}
-              timeZoneOffset={timeZoneOffset}
-              setTimeZoneOffset={setTimeZoneOffset}
-              isMobileOpen={calendarOpen}
-              onMobileClose={() => setCalendarOpen(false)}
-            />
-          </div>
-        )}
-      </div>
-      
-      {/* Panel lateral con línea de tiempo vertical y eventos */}
-      <div className="nest-timeline-panel">
-        <div className="p-3 border-b border-nest-border flex justify-between items-center">
-          <div className="flex items-center">
-            <FaClock className="text-nest-accent mr-2" />
-            <span className="text-nest-text-primary font-medium">Eventos</span>
-          </div>
-          <div className="flex gap-2">
-            {externalVideos.length > 0 && (
-              <div className="bg-nest-selected text-white text-xs py-1 px-2 rounded-full flex items-center whitespace-nowrap">
-                <FaMobileAlt className="mr-1" />
-                <span>{externalVideos.length}</span>
+      {/* Contenido principal - ocupa el resto del espacio */}
+      <div className={`flex-1 overflow-hidden flex h-full min-h-[calc(100vh-64px)] ${darkMode ? 'bg-neutral-900' : 'bg-white'}`}>
+        {/* Sidebar del calendario - mejorado para móvil y desktop */}
+        {isMobile ? (
+          <div className={`fixed inset-0 z-[9999] transition-all duration-300 ease-in-out ${calendarOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+            {/* Backdrop con blur */}
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setCalendarOpen(false)} />
+            
+            {/* Contenedor del calendario */}
+            <div className={`absolute top-0 right-0 h-full w-full max-w-sm transform transition-all duration-300 ease-out ${calendarOpen ? 'translate-x-0' : 'translate-x-full'} ${darkMode ? 'bg-neutral-800 text-neutral-100 shadow-black/50' : 'bg-white shadow-xl'}`}>
+              {/* Contenido scrolleable sin header duplicado */}
+              <div className="h-full overflow-y-auto">
+                <CalendarSidebar
+                  date={date}
+                  setDate={setDate}
+                  calendarData={calendarData}
+                  timeZoneOffset={timeZoneOffset}
+                  setTimeZoneOffset={setTimeZoneOffset}
+                  isMobileOpen={calendarOpen}
+                  onMobileClose={() => setCalendarOpen(false)}
+                  onMonthChange={handleMonthChange}
+                />
               </div>
-            )}
-            {(selectedDayTrips.length > 0) && (
-              <button 
-                className="px-3 py-1 bg-nest-accent bg-opacity-90 hover:bg-opacity-100 text-white rounded-full transition-all duration-200 flex items-center text-xs"
-                onClick={() => generateSummary(format(date, 'yyyy-MM-dd'))}
-                disabled={isLoading}
-              >
-                {isLoading ? "Procesando..." : "Resumen"}
-              </button>
-            )}
-          </div>
-        </div>
-        
-        {/* Filtros de video */}
-        {(externalVideos.length > 0 || selectedDayTrips.length > 0) && (
-          <div className="p-3 border-b border-nest-border">
-            <VideoFilters 
-              filters={filters}
-              onFilterChange={handleFilterChange}
-              allTags={allTags}
-              sourceOptions={sourceOptions}
-            />
-          </div>
-        )}
-        
-        {isLoading ? (
-          <div className="nest-loading">
-            <div className="nest-spinner"></div>
-            <div>Cargando eventos...</div>
+            </div>
           </div>
         ) : (
-          <>
-            {videoClips.length === 0 && 
-             (!filters.showTrips || selectedDayTrips.length === 0) && 
-             (!filters.showExternalVideos || filteredExternalVideos.length === 0) ? (
-              <div className="nest-empty-view">
-                <FaVideo />
-                <div className="text-center">
-                  <p className="text-gray-500">No hay grabaciones para esta fecha {filters.tags.length > 0 || filters.videoSource !== 'all' ? 'con estos filtros' : ''}</p>
-                  <p className="text-gray-400 text-xs mt-1">Intenta seleccionar otro día o modificar los filtros</p>
-                </div>
-              </div>
-            ) : (
-              <div className="nest-timeline-content">
-                {/* Implementación del timeline vertical con autoplay al estilo Nest */}
-                {filters.showTrips && videoClips.length > 0 && (
-                  <AutoplayNestTimeline
-                    videoClips={videoClips}
-                    onSelectClip={handleSelectClip}
-                    getThumbnailUrl={getThumbnailUrl}
-                    autoplayEnabled={isAutoplayEnabled}
-                    emptyMessage="No hay grabaciones de video para esta fecha"
-                  />
-                )}
-                
-                {/* Trip recordings */}
-                {filters.showTrips && selectedDayTrips.length > 0 && (
-                  <div className="nest-section">
-                    <h3 className="nest-section-title">
-                      <FaCarSide className="nest-section-icon" />
-                      Viajes ({selectedDayTrips.length})
-                    </h3>
-                    <div className="nest-trips-grid">
-                      {selectedDayTrips.map((trip) => (
-                        <div key={trip.id} className="nest-trip-card">
-                          <div className="nest-trip-header">
-                            <div className="nest-trip-time">
-                              <FaClock className="nest-trip-icon" />
-                              {format(new Date(trip.start_time), 'h:mm a')}
-                              {trip.end_time && ` - ${format(new Date(trip.end_time), 'h:mm a')}`}
-                            </div>
-                            {trip.distance_km && (
-                              <div className="nest-trip-distance">
-                                <FaRoad className="nest-trip-icon-sm" />
-                                {trip.distance_km !== undefined ? trip.distance_km.toFixed(1) : '0.0'} km
-                              </div>
-                            )}
-                          </div>
-                                  
-                                                            <div className="nest-trip-actions">
-                            <div>
-                              {trip.landmarks && trip.landmarks.length > 0 && (
-                                <div className="nest-trip-landmarks">
-                                  <FaMapMarkerAlt className="nest-landmark-icon" />
-                                  {trip.landmarks.length}
-                                </div>
-                              )}
-                            </div>
-                            <div className="nest-trip-buttons">
-                              {(trip.video_files && Array.isArray(trip.video_files) && trip.video_files.length > 0) ? (
-                                <button 
-                                  className="nest-button nest-button-video"
-                                  onClick={() => playVideo(trip.video_files[0])}
-                                >
-                                  <FaVideo className="nest-button-icon" /> Video
-                                </button>
-                              ) : (
-                                <span className="nest-no-video">No hay videos</span>
-                              )}
-                              {trip.summary_file && (
-                                <button 
-                                  className="nest-button nest-button-summary"
-                                  onClick={() => playVideo(trip.summary_file)}
-                                >
-                                  <FaFileDownload className="nest-button-icon" /> Resumen
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                
-                {/* Videos externos con estilo Nest */}
-                {filters.showExternalVideos && filteredExternalVideos.length > 0 && (
-                  <div className="nest-section">
-                    <h3 className="nest-section-title nest-section-title-external">
-                      <FaMobileAlt className="nest-section-icon" />
-                      Videos Externos ({filteredExternalVideos.length})
-                    </h3>
-                    <div className="nest-external-video-grid">
-                      {filteredExternalVideos.map((video) => (
-                        <div key={video.id} className="nest-external-video-card">
-                          <div className="nest-external-video-thumbnail">
-                            <img 
-                              src={getThumbnailUrl(video.file_path)}
-                              alt="Vista previa"
-                              className="nest-external-thumbnail-image"
-                              onError={(e) => {e.target.src = 'https://placehold.co/600x400'; e.target.onerror = null;}}
-                            />
-                            <div className="nest-external-play-overlay" onClick={() => playVideo(`external/${video.id}`)}>
-                              <FaPlayCircle className="nest-external-play-icon" />
-                            </div>
-                            <div className="nest-external-source-badge">
-                              <FaMobileAlt className="nest-external-source-icon" />
-                              <span>{video.source || 'Externo'}</span>
-                            </div>
-                          </div>
-                          
-                          <div className="nest-external-video-content">
-                            <div className="nest-external-video-header">
-                              <h4 className="nest-external-video-title">
-                                {video.original_filename || `Video-${video.id}`}
-                              </h4>
-                              {video.upload_time && (
-                                <div className="nest-external-video-time">
-                                  <FaClock className="nest-external-time-icon" />
-                                  {format(new Date(video.upload_time), 'h:mm a')}
-                                </div>
-                              )}
-                            </div>
-                            
-                            {/* Etiquetas mejoradas */}
-                            {video.tags && (
-                              <div className="nest-external-tags-section">
-                                <div className="nest-external-tags-wrapper">
-                                  {video.tags.split(',').slice(0, 3).map((tag, idx) => (
-                                    <span key={idx} className="nest-external-tag">
-                                      {tag.trim()}
-                                    </span>
-                                  ))}
-                                  {video.tags.split(',').length > 3 && (
-                                    <span className="nest-external-tag-more">
-                                      +{video.tags.split(',').length - 3} más
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                            )}
-                            
-                            <div className="nest-external-video-footer">
-                              <div className="nest-external-video-meta">
-                                {video.lat && video.lon && (
-                                  <div className="nest-external-location-badge">
-                                    <FaMapMarkerAlt className="nest-external-location-icon" />
-                                    <span>Ubicación GPS</span>
-                                  </div>
-                                )}
-                              </div>
-                              
-                              <button 
-                                className="nest-external-play-button"
-                                onClick={() => playVideo(`external/${video.id}`)}
-                              >
-                                <FaPlayCircle className="nest-external-play-button-icon" /> 
-                                <span>Reproducir</span>
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </>
+          <div className={`transition-all duration-500 ease-in-out ${calendarOpen ? 'w-80' : 'w-0'} flex-shrink-0 overflow-hidden ${darkMode ? 'bg-neutral-800 border-neutral-700' : 'bg-gray-50 border-gray-200'} border-r`}>
+            <div className="h-full overflow-y-auto">
+              <CalendarSidebar
+                date={date}
+                setDate={setDate}
+                calendarData={calendarData}
+                timeZoneOffset={timeZoneOffset}
+                setTimeZoneOffset={setTimeZoneOffset}
+                isMobileOpen={calendarOpen}
+                onMobileClose={() => setCalendarOpen(false)}
+                darkMode={darkMode}
+                onMonthChange={handleMonthChange}
+              />
+            </div>
+          </div>
         )}
+
+        {/* Área principal de contenido */}
+        <div className="flex-1 flex flex-col overflow-hidden h-full min-h-[calc(100vh-80px)]">
+          {/* Información del día */}
+          <div className={`p-4 border-b flex items-center justify-between ${darkMode ? 'bg-neutral-800 border-neutral-700' : 'bg-white border-gray-200'}`}>
+            <div className="flex items-center space-x-2 flex-wrap">
+              <span className={`font-semibold ${darkMode ? 'text-neutral-100' : 'text-gray-800'} ${isMobile ? 'text-base' : 'text-lg'}`}>
+                {format(date, 'dd MMMM yyyy')}
+              </span>
+              <span className={`${darkMode ? 'text-neutral-400' : 'text-gray-500'} ${isMobile ? 'text-xs' : 'text-sm'}`}>
+                {getFilteredClipsCount()} de {getTotalClipsCount()} clips disponibles
+              </span>
+            </div>
+          </div>
+
+          {/* Área de contenido principal */}
+          <div className={`flex-1 ${isMobile ? 'flex flex-col gap-0' : 'flex'} overflow-hidden h-full w-full`}>
+            {/* Área del reproductor de video - a la izquierda en desktop, arriba en móvil */}
+            <div className={`${isMobile ? 'w-full h-auto flex-shrink-0 aspect-video mb-0 pb-0' : 'flex-1'} flex flex-col overflow-hidden ${darkMode ? 'bg-neutral-900' : 'bg-white'}`}>
+              {selectedVideo ? (
+                <>
+                  <VideoPlayer
+                    videoSrc={selectedVideo}
+                    secondaryVideoSrc={secondaryVideo}
+                    clipMetadata={selectedClip}
+                    isFullPlayer={false}
+                    isPictureInPicture={activeCamera === 'both'}
+                    darkMode={darkMode}
+                    autoPlay={true}
+                    onLoadStart={() => setIsLoading(true)}
+                    onLoadComplete={() => setIsLoading(false)}
+                    onTimeUpdate={(time) => setCurrentTime(time)}
+                    onDurationChange={(duration) => setDuration(duration)}
+                    onPlayStateChange={(playing) => setIsPlaying(playing)}
+                    relatedClips={getFilteredVideoClips()}
+                    onSelectClip={(clip) => {
+                      setSelectedClip(clip);
+                      
+                      // Determinar qué video mostrar basado en la cámara activa
+                      let primaryVideo = null;
+                      let secondaryVideoSrc = null;
+                      
+                      if (activeCamera === 'exterior') {
+                        primaryVideo = clip.road_video_file || clip.filename || clip.file_path;
+                      } else if (activeCamera === 'interior') {
+                        primaryVideo = clip.interior_video_file;
+                        // Si no hay video interior, usar exterior como fallback
+                        if (!primaryVideo) {
+                          primaryVideo = clip.road_video_file || clip.filename || clip.file_path;
+                        }
+                      } else if (activeCamera === 'both') {
+                        primaryVideo = clip.road_video_file || clip.filename || clip.file_path;
+                        secondaryVideoSrc = clip.interior_video_file;
+                      }
+                      
+                      // Convertir paths a URLs
+                      if (primaryVideo) {
+                        setSelectedVideo(getVideoUrl(primaryVideo, clip));
+                      }
+                      if (secondaryVideoSrc) {
+                        setSecondaryVideo(getVideoUrl(secondaryVideoSrc, clip));
+                      } else {
+                        setSecondaryVideo(null);
+                      }
+                    }}
+                    getClipThumbnail={(clip) => {
+                      // Determinar qué archivo de video usar para el thumbnail
+                      let videoFile = null;
+                      if (clip.road_video_file) {
+                        videoFile = clip.road_video_file;
+                      } else if (clip.interior_video_file) {
+                        videoFile = clip.interior_video_file;
+                      } else if (clip.filename || clip.file_path) {
+                        videoFile = clip.filename || clip.file_path;
+                      }
+                      
+                      // Si es un video externo con ID, usar el endpoint específico para thumbnails externos
+                      if (clip.isExternalVideo && clip.id) {
+                        return `/api/videos/thumbnail/external/${clip.id}`;
+                      }
+                      
+                      // Para videos normales, usar el endpoint general de thumbnails
+                      if (!videoFile) return 'https://placehold.co/600x400?text=No+Preview';
+                      
+                      // Limpiar y normalizar el path del video
+                      let normalizedPath = videoFile;
+                      if (normalizedPath.startsWith('./')) {
+                        normalizedPath = normalizedPath.substring(2);
+                      } else if (normalizedPath.startsWith('../')) {
+                        normalizedPath = normalizedPath.substring(3);
+                      }
+                      
+                      return `/api/videos/thumbnail/${encodeURIComponent(normalizedPath)}`;
+                    }}
+                    getVideoUrl={getVideoUrl}
+                  />
+                </>
+              ) : (
+                <div className={`flex-1 flex items-center justify-center ${darkMode ? 'bg-neutral-800' : 'bg-gray-50'}`}>
+                  <div className="text-center">
+                    <div className="text-6xl mb-4">📹</div>
+                    <h3 className={`text-lg font-medium mb-2 ${darkMode ? 'text-neutral-200' : 'text-gray-700'}`}>
+                      Selecciona un video
+                    </h3>
+                    <p className={`${darkMode ? 'text-neutral-400' : 'text-gray-500'}`}>
+                      Elige un video del timeline para reproducirlo
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Timeline vertical - a la derecha en desktop, abajo en móvil */}
+            <div className={`${isMobile ? 'w-full h-auto flex-shrink-0 overflow-y-auto' : 'w-96'} ${isMobile ? 'border-t' : 'border-l'} ${darkMode ? 'border-neutral-700 bg-neutral-800' : 'border-gray-200 bg-gray-50'}`}>
+              <GooglePhotosTimeline
+                ref={timelineRef}
+                videoClips={getFilteredVideoClips()}
+                isMobile={isMobile}
+                darkMode={darkMode}
+                onSelectClip={(clip) => {
+                  // Función mejorada para seleccionar clips y determinar videos
+                  console.log('Clip seleccionado:', clip);
+                  setSelectedClip(clip);
+                  
+                  // Determinar qué video mostrar basado en la cámara activa
+                  let primaryVideo = null;
+                  let secondaryVideoSrc = null;
+                  
+                  if (activeCamera === 'exterior') {
+                    primaryVideo = clip.road_video_file || clip.filename || clip.file_path;
+                  } else if (activeCamera === 'interior') {
+                    primaryVideo = clip.interior_video_file;
+                    // Si no hay video interior, usar exterior como fallback
+                    if (!primaryVideo) {
+                      primaryVideo = clip.road_video_file || clip.filename || clip.file_path;
+                    }
+                  } else if (activeCamera === 'both') {
+                    primaryVideo = clip.road_video_file || clip.filename || clip.file_path;
+                    secondaryVideoSrc = clip.interior_video_file;
+                  }
+                  
+                  // Convertir paths a URLs
+                  if (primaryVideo) {
+                    setSelectedVideo(getVideoUrl(primaryVideo, clip));
+                  }
+                  if (secondaryVideoSrc) {
+                    setSecondaryVideo(getVideoUrl(secondaryVideoSrc, clip));
+                  } else {
+                    setSecondaryVideo(null);
+                  }
+                  
+                  console.log('Videos seleccionados:', { primaryVideo, secondaryVideoSrc });
+                }}
+                getThumbnailUrl={(clip) => {
+                  // Función mejorada para generar URL de thumbnail
+                  if (!clip) return 'https://placehold.co/600x400?text=No+Preview';
+                  
+                  // Determinar qué archivo de video usar para el thumbnail
+                  let videoFile = null;
+                  if (activeCamera === 'exterior' && clip.road_video_file) {
+                    videoFile = clip.road_video_file;
+                  } else if (activeCamera === 'interior' && clip.interior_video_file) {
+                    videoFile = clip.interior_video_file;
+                  } else if (clip.road_video_file) {
+                    videoFile = clip.road_video_file; // Default a exterior
+                  } else if (clip.interior_video_file) {
+                    videoFile = clip.interior_video_file;
+                  } else if (clip.filename || clip.file_path) {
+                    videoFile = clip.filename || clip.file_path; // Para videos externos
+                  }
+                  
+                  if (!videoFile) return 'https://placehold.co/600x400?text=No+Preview';
+                  
+                  // Si es un video externo con ID, usar el endpoint específico para thumbnails externos
+                  if (clip.isExternalVideo && clip.id) {
+                    return `/api/videos/thumbnail/external/${clip.id}`;
+                  }
+                  
+                  // Para videos normales, limpiar y normalizar el path del video
+                  let normalizedPath = videoFile;
+                  if (normalizedPath.startsWith('./')) {
+                    normalizedPath = normalizedPath.substring(2);
+                  } else if (normalizedPath.startsWith('../')) {
+                    normalizedPath = normalizedPath.substring(3);
+                  }
+                  
+                  // Generar URL del thumbnail usando el endpoint del backend
+                  return `/api/videos/thumbnail/${encodeURIComponent(normalizedPath)}`;
+                }}
+                emptyMessage="No hay videos para mostrar con los filtros actuales"
+                filters={filters}
+                onFiltersChange={setFilters}
+                allTags={allTags}
+                sourceOptions={sourceOptions}
+              />
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
 }
 
-export default CalendarView;
+export default Calendar;

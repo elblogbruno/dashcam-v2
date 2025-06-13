@@ -7,25 +7,28 @@ import React from 'react';
  * @param {Object} props - Propiedades del componente
  * @param {React.ReactNode} props.children - Contenido de la tarjeta
  * @param {string} props.title - Título opcional de la tarjeta
- * @param {Function} props.onPress - Función a ejecutar al pulsar la tarjeta (opcional)
+ * @param {Function} props.onClick - Función a ejecutar al hacer clic en la tarjeta (opcional)
+ * @param {Function} props.onPress - Función a ejecutar al pulsar la tarjeta (opcional, legacy)
  * @param {string} props.className - Clases adicionales para la tarjeta
  * @param {boolean} props.noPadding - Si es true, elimina el padding interno
  */
 const MobileCard = ({ 
   children, 
   title, 
-  onPress, 
+  onClick,
+  onPress, // Mantenemos compatibilidad con legacy
   className = '', 
-  noPadding = false 
+  noPadding = false,
+  ...props
 }) => {
-  const handlePress = () => {
-    if (onPress) onPress();
-  };
+  // Usar onClick preferentemente, pero mantener compatibilidad con onPress
+  const handleClick = onClick || onPress;
 
   return (
     <div 
-      className={`mobile-card bg-white ${!noPadding ? 'p-4' : ''} ${onPress ? 'active:bg-gray-50 cursor-pointer' : ''} ${className}`}
-      onClick={handlePress}
+      className={`mobile-card bg-white ${!noPadding ? 'p-4' : ''} ${handleClick ? 'active:bg-gray-50 cursor-pointer' : ''} ${className}`}
+      onClick={handleClick}
+      {...props}
     >
       {title && (
         <div className="mb-3 border-b border-gray-100 pb-2">

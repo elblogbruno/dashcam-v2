@@ -34,9 +34,9 @@ try:
     logger.info("Importando módulos...")
     from camera_manager import CameraManager
     from gps_reader import GPSReader
-    from landmark_checker import LandmarkChecker
+    from landmarks.core.landmark_checker import LandmarkChecker
     from audio_notifier import AudioNotifier
-    from trip_logger import TripLogger
+    from trip_logger_package.services.trip_manager import TripManager
     from video_maker import VideoMaker
     from shutdown_monitor import ShutdownMonitor
     from disk_manager import DiskManager
@@ -44,6 +44,8 @@ try:
     from data_persistence import get_persistence_manager  # Import our new persistence manager
     from auto_trip_manager import auto_trip_manager  # Import our new auto trip manager
     from hdd_copy_module import HDDCopyModule  # Import our new HDD copy module
+    from geocoding.services.reverse_geocoding_service import ReverseGeocodingService  # Import reverse geocoding service
+    from geocoding.workers.reverse_geocoding_worker import ReverseGeocodingWorker  # Import reverse geocoding worker
     logger.info("Módulos importados correctamente")
 except Exception as e:
     logger.error(f"Error importando módulos: {e}", exc_info=True)
@@ -54,10 +56,15 @@ try:
     logger.info("Importando rutas...")
     from routes import router as api_router
     
-    # Import new routes for offline maps, landmark images and geocoding
-    from routes import landmark_images
+    # Import new routes for offline maps and geocoding
     from routes import offline_maps
-    from routes import geocode
+    from geocoding.routes import geocode
+    
+    # Import landmark routes from reorganized landmarks module
+    from landmarks.routes import landmark_images
+    
+    # Import system control routes for shutdown/reboot functionality
+    from routes import system_control
     
     # Import WebRTC manager for proper shutdown - DISABLED
     # from routes.webrtc_modules.webrtc_helper import webrtc_manager
@@ -94,6 +101,12 @@ try:
     
     logger.info("Middleware CORS configurado")
 
+    # Global state - define before component initialization
+    connected_clients: Set[WebSocket] = set()
+    is_recording = False
+    current_location = {"lat": 0.0, "lon": 0.0, "speed": 0.0}
+    active_landmark = None
+
     # Inicializa los componentes con manejo de excepciones
     logger.info("Inicializando componentes...")
     
@@ -104,8 +117,8 @@ try:
     gps_reader = GPSReader()
     logger.info("GPSReader inicializado")
     
-    trip_logger = TripLogger(db_path=config.db_path)
-    logger.info("TripLogger inicializado")
+    trip_logger = TripManager(db_path=config.db_path)
+    logger.info("TripManager inicializado")
     
     # Configurar el trip_logger en el camera_manager
     camera_manager.set_trip_logger(trip_logger)
@@ -114,14 +127,62 @@ try:
     landmark_checker = LandmarkChecker(landmarks_file=config.landmarks_path)
     logger.info("LandmarkChecker inicializado")
     
+    # Inicializar componentes de geocodificación inversa (condicional)
+    reverse_geocoding_service = None
+    reverse_geocoding_worker = None
+    offline_geo_manager = None
+    trip_geo_manager = None
+    
+    if config.reverse_geocoding_enabled:
+        logger.info("Geocodificación inversa habilitada - inicializando componentes...")
+        
+        # Inicializar el servicio de geocodificación inversa
+        reverse_geocoding_service = ReverseGeocodingService(
+            cache_db_path=config.geocoding_db_path
+        )
+        logger.info("ReverseGeocodingService inicializado")
+        
+        # Inicializar el worker de geocodificación inversa
+        reverse_geocoding_worker = ReverseGeocodingWorker(
+            reverse_geocoding_service=reverse_geocoding_service, 
+            trip_manager=trip_logger,
+            connected_clients=connected_clients
+        )
+        logger.info("ReverseGeocodingWorker inicializado")
+    else:
+        logger.info("Geocodificación inversa deshabilitada")
+    
+    # Configure all dependencies in camera_manager for GPS and landmark integration
+    camera_manager.set_dependencies(trip_logger, gps_reader, landmark_checker, reverse_geocoding_service)
+    logger.info("Dependencias GPS, landmarks y reverse geocoding configuradas en CameraManager")
+    
     audio_notifier = AudioNotifier()
     logger.info("AudioNotifier inicializado")
-    
     video_maker = VideoMaker(data_path=config.data_path)
     logger.info("VideoMaker inicializado")
-    
-    shutdown_monitor = ShutdownMonitor()
+
+    shutdown_monitor = ShutdownMonitor(
+        trip_manager=trip_logger,
+        audio_notifier=audio_notifier,
+        shutdown_controller=shutdown_controller
+    )
     logger.info("ShutdownMonitor inicializado")
+    
+    # Configurar el shutdown monitor para los endpoints
+    from routes.shutdown import set_shutdown_monitor
+    set_shutdown_monitor(shutdown_monitor)
+    logger.info("ShutdownMonitor configurado para endpoints API")
+    
+    # Configurar las referencias globales para system_control
+    system_control.shutdown_monitor = shutdown_monitor
+    system_control.audio_notifier = audio_notifier
+    try:
+        from routes.mic_leds import LEDController
+        system_control.led_controller = LEDController.get_instance()
+    except Exception as e:
+        logger.warning(f"No se pudo configurar LED controller para system_control: {e}")
+        system_control.led_controller = None
+    logger.info("System control configurado con referencias de módulos")
     
     disk_manager = DiskManager(
         data_path=config.data_path,
@@ -133,15 +194,23 @@ try:
     # Inicializar el módulo de copia a HDD
     hdd_copy_module = HDDCopyModule(disk_manager, camera_manager, audio_notifier)
     logger.info("HDDCopyModule inicializado")
+    
+    # Inicializar el monitor de espacio en disco
+    from disk_space_monitor import get_disk_space_monitor
+    disk_space_monitor = get_disk_space_monitor(
+        data_path=config.data_path,
+        check_interval=30,  # Check every 30 seconds
+        enable_leds=True
+    )
+    logger.info("DiskSpaceMonitor inicializado")
+    
+    # Iniciar automáticamente el monitor de espacio en disco
+    disk_space_monitor.start()
+    logger.info("DiskSpaceMonitor iniciado automáticamente")
+    
 except Exception as e:
     logger.error(f"Error inicializando componentes: {e}", exc_info=True)
     raise
-
-# Global state
-is_recording = False
-current_location = {"lat": 0.0, "lon": 0.0, "speed": 0.0}
-active_landmark = None
-connected_clients: Set[WebSocket] = set()
 
 # Track landmark announcements to avoid repetitive announcements
 landmark_announcements: Dict[str, int] = {}  # {landmark_id: announcement_count}
@@ -157,7 +226,6 @@ def set_global_recording_state(state: bool):
 try:
     logger.info("Configurando módulos de rutas...")
     import routes.recording as recording_routes
-    import routes.landmarks as landmarks_routes
     import routes.trips as trips_routes
     import routes.storage as storage_routes
     import routes.system as system_routes
@@ -168,6 +236,12 @@ try:
     import routes.camera_reset as camera_reset_routes  # Importar el módulo de reinicio de cámaras
     import routes.kml_parser as kml_parser_routes  # Importar el nuevo módulo de rutas de KML
     import routes.file_explorer as file_explorer_routes  # Importar el módulo de explorador de archivos
+    import routes.planned_trip_actual_trips as planned_trip_actual_trips_routes
+    import routes.speed as speed_routes  # Importar el módulo de rutas de velocidad
+    import routes.disk_space_monitor as disk_space_monitor_routes  # Importar el módulo de monitor de espacio en disco
+    
+    # Import landmark routes from reorganized module
+    from landmarks.routes import landmarks as landmarks_routes
     
     # Set up shared components in the route modules
     recording_routes.camera_manager = camera_manager
@@ -178,6 +252,7 @@ try:
     
     trips_routes.trip_logger = trip_logger
     trips_routes.auto_trip_manager = auto_trip_manager
+    trips_routes.db_manager = trip_logger.db_manager  # Añadir el gestor de base de datos para consultas directas
     
     storage_routes.disk_manager = disk_manager
     
@@ -209,12 +284,19 @@ try:
     # Configurar módulo de almacenamiento con el componente de copia HDD
     storage_routes.hdd_copy_module = hdd_copy_module
     
+    # Configure planned trip actual trips routes
+    planned_trip_actual_trips_routes.trip_logger = trip_logger
+    
     # Initialize trip planner routes
     trip_planner_routes.landmark_checker = landmark_checker
     trip_planner_routes.trip_logger = trip_logger
     trip_planner_routes.config = config
     trip_planner_routes.audio_notifier = audio_notifier
     trip_planner_routes.initialize() # Call the new initialize function to load saved trips
+    
+    # Initialize trip geodata routes with dependencies
+    from geocoding.routes import trip_geodata as trip_geodata_routes
+    trip_geodata_routes.set_dependencies(trip_planner_routes.planned_trips, audio_notifier)
     
     # Proporcionar la lista de clientes WebSocket al audio_notifier
     audio_notifier.connected_clients = connected_clients
@@ -224,6 +306,7 @@ try:
     
     # Initialize file explorer routes
     file_explorer_routes.disk_manager = disk_manager
+    file_explorer_routes.trip_logger = trip_logger
     kml_parser_routes.planned_trips = trip_planner_routes.planned_trips
     kml_parser_routes.config = config
     
@@ -234,7 +317,19 @@ try:
     landmark_images.config = config
     offline_maps.config = config
     
-    # No need to configure geocode module as it doesn't require specific configuration
+    # Initialize landmark downloads routes
+    from landmarks.routes import landmark_downloads as landmark_downloads_routes
+    landmark_downloads_routes.set_global_dependencies(
+        landmark_checker, 
+        audio_notifier, 
+        settings_manager,
+        trip_planner_routes.planned_trips,
+        trip_planner_routes.save_trips_to_disk
+    )
+    
+    # Configure geocode module with the reverse geocoding service
+    geocode.reverse_geocoding_service = reverse_geocoding_service
+    geocode.reverse_geocoding_worker = reverse_geocoding_worker
     
     # Initialize the auto trip manager
     auto_trip_manager.initialize(
@@ -255,6 +350,9 @@ except Exception as e:
 try:
     logger.info("Incluyendo router API...")
     app.include_router(api_router)
+    
+    # Include system control router
+    app.include_router(system_control.router, prefix="/api/system", tags=["system"])
     
     # Initialize configuration for modules that need it
     import routes.offline_maps as offline_maps
@@ -293,6 +391,14 @@ def initialize_settings_subscriptions():
         "storage", 
         disk_manager.apply_settings
     )
+    
+    # Landmark settings for the landmark checker
+    settings_manager.register_module(
+        "landmark_checker",
+        "landmarks",
+        landmark_checker.apply_settings
+    )
+    
     logger.info("Suscripciones de configuración inicializadas")
 
 # WebSocket connections for real-time updates with connection deduplication
@@ -307,8 +413,9 @@ async def websocket_endpoint(websocket: WebSocket):
     stale_connections = []
     for existing_ws in list(connected_clients):
         try:
-            # Try to ping existing connection to check if it's alive
-            await existing_ws.ping()
+            # Try to send a test message to check if connection is alive
+            await existing_ws.send_text("ping")
+            # If we can send, the connection is alive
         except Exception:
             # Connection is stale, mark for removal
             stale_connections.append(existing_ws)
@@ -322,17 +429,35 @@ async def websocket_endpoint(websocket: WebSocket):
     connected_clients.add(websocket)
     logger.info(f"Nueva conexión WebSocket desde {client_info}. Total de clientes: {len(connected_clients)}")
     
+    # Variables para heartbeat del servidor
+    last_ping_time = time.time()
+    server_ping_interval = 20.0  # Enviar ping cada 20 segundos desde el servidor
+    
     try:
         while should_continue_loop("websocket"):
             # Keep the connection alive with heartbeat handling
             try:
-                message = await asyncio.wait_for(websocket.receive_text(), timeout=30.0)
+                message = await asyncio.wait_for(websocket.receive_text(), timeout=5.0)
                 # Handle heartbeat or other client messages
                 if message == "ping":
                     await websocket.send_text("pong")
+                elif message == "pong":
+                    # Cliente respondió a nuestro ping, todo bien
+                    pass
             except asyncio.TimeoutError:
-                # Send a ping to check if connection is still alive
-                await websocket.ping()
+                # Verificar si necesitamos enviar ping desde el servidor
+                current_time = time.time()
+                if current_time - last_ping_time >= server_ping_interval:
+                    try:
+                        # Enviar ping desde servidor al cliente
+                        await websocket.send_text("ping")
+                        last_ping_time = current_time
+                        logger.debug(f"Servidor envió ping a {client_info}")
+                    except Exception as ping_error:
+                        logger.warning(f"Error enviando ping a {client_info}: {ping_error}")
+                        break
+                # Continuar el bucle sin problemas
+                continue
     except Exception as e:
         logger.info(f"Cliente WebSocket desde {client_info} desconectado: {str(e)}")
     finally:
@@ -369,6 +494,14 @@ async def startup_event():
     trips_task = asyncio.create_task(check_scheduled_trips())
     register_task(trips_task, "scheduled_trips")
     
+    # Start reverse geocoding worker
+    if reverse_geocoding_worker:
+        logger.info("Iniciando worker de geocodificación inversa...")
+        geocoding_task = asyncio.create_task(reverse_geocoding_worker.start())
+        register_task(geocoding_task, "reverse_geocoding")
+    else:
+        logger.info("Worker de geocodificación inversa no disponible (deshabilitado)")
+    
     # Initialize WebRTC module - DISABLED
     # logger.info("Inicializando módulo WebRTC...")
     # try:
@@ -394,8 +527,9 @@ async def check_scheduled_trips():
             # Ask user for confirmation via notification
             audio_notifier.announce(f"Viaje programado encontrado: {trip_to_start.name}. Iniciando en 10 segundos. Pulse el botón de apagado para cancelar.")
             
-            # Wait 10 seconds to allow user to cancel if needed
-            await asyncio.sleep(10)
+            # Wait 10 seconds to allow user to cancel if needed (with interruption support)
+            from shutdown_control import interruptible_sleep
+            await interruptible_sleep(10.0, "auto_trip")
             
             # Start the trip
             success = await auto_trip_manager.start_scheduled_trip(trip_to_start)
@@ -458,6 +592,45 @@ async def update_location_task():
                 # Get system statistics
                 from routes.system import get_system_stats
                 system_stats = get_system_stats()
+                
+                # Get current speed information
+                current_speed_info = {
+                    "kmh": 0.0,
+                    "mph": 0.0,
+                    "source": "none"
+                }
+                
+                try:
+                    # Get speed from GPS if available
+                    gps_speed = location.get('speed', 0.0) or 0.0
+                    
+                    # Get calculated speed from trip logger
+                    calculated_speed = trip_logger.get_current_speed() if trip_logger else 0.0
+                    
+                    # Determine final speed and source
+                    if gps_speed > 0 and calculated_speed > 0:
+                        # Combined speed with weighted average
+                        final_speed = (gps_speed * 0.7) + (calculated_speed * 0.3)
+                        source = "combined"
+                    elif gps_speed > 0:
+                        final_speed = gps_speed
+                        source = "gps"
+                    elif calculated_speed > 0:
+                        final_speed = calculated_speed
+                        source = "calculated"
+                    else:
+                        final_speed = 0.0
+                        source = "none"
+                    
+                    current_speed_info = {
+                        "kmh": round(final_speed, 1),
+                        "mph": round(final_speed * 0.621371, 1),
+                        "source": source,
+                        "gps_speed_kmh": round(gps_speed, 1),
+                        "calculated_speed_kmh": round(calculated_speed, 1)
+                    }
+                except Exception as speed_error:
+                    logger.debug(f"Error calculating speed: {speed_error}")
                     
                 # Broadcast updates to all connected clients with improved error handling
                 message = {
@@ -466,7 +639,8 @@ async def update_location_task():
                     "landmark": active_landmark,
                     "recording": is_recording,
                     "camera_status": camera_status,
-                    "system_stats": system_stats
+                    "system_stats": system_stats,
+                    "speed": current_speed_info
                 }
                 
                 # Send messages to clients with connection validation
@@ -543,13 +717,13 @@ async def shutdown_event():
     # Solicitar cierre ordenado del sistema
     shutdown_controller.request_shutdown()
     
-    # Cancelar todas las tasks registradas
+    # Cancelar todas las tasks registradas (timeout reducido para desarrollo)
     logger.info("Cancelando todas las tasks asyncio registradas...")
-    await shutdown_controller.cancel_all_tasks(timeout=3.0)
+    await shutdown_controller.cancel_all_tasks(timeout=1.0)
     
-    # Detener todos los threads registrados
+    # Detener todos los threads registrados (timeout reducido para desarrollo)
     logger.info("Deteniendo todos los threads registrados...")
-    shutdown_controller.stop_all_threads(timeout=2.0)
+    shutdown_controller.stop_all_threads(timeout=1.0)
     
     # Cerrar los clientes WebSocket de forma ordenada
     for websocket in list(connected_clients):
@@ -575,7 +749,7 @@ async def shutdown_event():
     try:
         if gps_reader:
             logger.info("Limpiando recursos de GPSReader...")
-            gps_reader.cleanup()
+            gps_reader.shutdown()
     except Exception as e:
         logger.error(f"Error al limpiar GPSReader: {e}")
         
@@ -621,6 +795,14 @@ async def shutdown_event():
                 hdd_copy_module.cleanup()
     except Exception as e:
         logger.error(f"Error al limpiar HDDCopyModule: {e}")
+    
+    # Limpiar el monitor de espacio en disco
+    try:
+        if disk_space_monitor:
+            logger.info("Deteniendo DiskSpaceMonitor...")
+            disk_space_monitor.stop()
+    except Exception as e:
+        logger.error(f"Error al detener DiskSpaceMonitor: {e}")
     
     # Cleanup WebRTC manager explicitly - DISABLED
     # try:
@@ -695,7 +877,7 @@ async def close_all_streaming_connections():
         
         # Llamamos primero a shutdown y luego inicializamos de nuevo
         await mjpeg_stream_routes.shutdown_mjpeg()
-        await asyncio.sleep(0.2)  # Esperamos un momento para asegurar limpieza
+        await asyncio.sleep(0.05)  # Sleep mínimo para desarrollo rápido
         
         # Iniciar un nuevo worker limpio
         asyncio.create_task(mjpeg_stream_routes.initialize_mjpeg())
@@ -713,7 +895,14 @@ if __name__ == "__main__":
     try:
         logger.info("Iniciando servidor Uvicorn en puerto 8000...")
         print("Iniciando servidor Uvicorn en puerto 8000...")
-        uvicorn.run("main:app", host="0.0.0.0", port=8000, log_level="info")
+        uvicorn.run(
+            "main:app", 
+            host="0.0.0.0", 
+            port=8000, 
+            log_level="info",
+            workers=1,     # Force single worker to avoid multiprocessing issues
+            loop="asyncio" # Use asyncio event loop explicitly
+        )
     except Exception as e:
         logger.critical(f"Error fatal al iniciar Uvicorn: {e}", exc_info=True)
         print(f"Error fatal al iniciar Uvicorn: {e}")

@@ -34,7 +34,9 @@ if __name__ == "__main__":
             host="0.0.0.0", 
             port=8000, 
             log_level="info",
-            reload=False  # Deshabilitar recarga automática para entorno de producción
+            reload=False,  # Deshabilitar recarga automática para entorno de producción
+            workers=1,     # Force single worker to avoid multiprocessing issues
+            loop="asyncio" # Use asyncio event loop explicitly
         )
     except KeyboardInterrupt:
         logger.info("Servidor detenido manualmente con Ctrl+C")

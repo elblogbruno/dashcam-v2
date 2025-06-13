@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, UploadFile, Form, File, BackgroundTasks
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import JSONResponse, FileResponse, RedirectResponse
 import os
 import time
 import shutil
@@ -231,6 +231,66 @@ async def bulk_upload_videos(
     
     return {"results": results}
 
+# Ruta para obtener miniaturas de videos externos
+@router.get("/thumbnail/external/{video_id}")
+async def get_external_video_thumbnail(video_id: str):
+    """
+    Genera y sirve una miniatura para un video externo almacenado en la base de datos
+    
+    Args:
+        video_id: ID del video externo
+    """
+    try:
+        # Obtener la información del video desde la base de datos
+        logger.info(f"Buscando video externo con ID: {video_id}")
+        video_info = trip_logger.get_external_video(video_id)
+        
+        if not video_info:
+            logger.error(f"No se encontró video externo con ID: {video_id}")
+            raise HTTPException(status_code=404, detail="Video externo no encontrado")
+        
+        # Obtener la ruta al archivo de video
+        video_path = video_info.get("file_path")
+        logger.info(f"Ruta del archivo de video externo: {video_path}")
+        
+        if not video_path:
+            logger.error(f"Video externo con ID {video_id} no tiene ruta de archivo definida")
+            raise HTTPException(status_code=404, detail="Ruta de archivo no definida para video externo")
+            
+        if not os.path.isfile(video_path):
+            logger.error(f"Archivo de video externo no encontrado en la ruta: {video_path}")
+            raise HTTPException(status_code=404, detail="Archivo de video externo no encontrado")
+        
+        # Crear directorio para miniaturas si no existe
+        thumbnails_dir = os.path.join(config.data_path, "thumbnails", "external")
+        os.makedirs(thumbnails_dir, exist_ok=True)
+        
+        # Ruta para la miniatura
+        thumbnail_path = os.path.join(
+            thumbnails_dir,
+            f"{video_id}.jpg"
+        )
+        
+        # Generar miniatura si no existe
+        if not os.path.exists(thumbnail_path):
+            logger.info(f"Generando miniatura para video externo {video_id}")
+            generated_path = generate_thumbnail(video_path, thumbnail_path)
+            if not generated_path:
+                logger.error(f"Error al generar miniatura para video externo {video_id}")
+                raise HTTPException(status_code=500, detail="No se pudo generar la miniatura")
+            logger.info(f"Miniatura generada correctamente: {generated_path}")
+        else:
+            logger.info(f"Se encontró miniatura existente: {thumbnail_path}")
+        
+        # Devolver la imagen de miniatura
+        return FileResponse(thumbnail_path, media_type="image/jpeg")
+        
+    except Exception as e:
+        logger.error(f"Error sirviendo miniatura para video externo {video_id}: {str(e)}")
+        if isinstance(e, HTTPException):
+            raise
+        raise HTTPException(status_code=500, detail=f"Error al procesar la solicitud: {str(e)}")
+
 # Ruta para obtener miniaturas de videos (incluye externos)
 @router.get("/thumbnail/{path:path}")
 async def get_video_thumbnail(path: str):
@@ -253,6 +313,13 @@ async def get_video_thumbnail(path: str):
             # Normalizar la ruta: eliminar path relativo y data/videos si existen
             if path.startswith("../"):
                 path = path.replace("../", "", 1)
+            
+            # Si el path comienza con "external/", redirigir al endpoint específico
+            if path.startswith("external/"):
+                video_id = path.split("external/")[1]
+                logger.info(f"Redirigiendo solicitud de miniatura a endpoint específico para video_id: {video_id}")
+                return RedirectResponse(url=f"/api/videos/thumbnail/external/{video_id}")
+                
             # Si es un video externo (en uploads), buscar en uploads
             if path.startswith("uploads/") or "/uploads/" in path:
                 # Quitar cualquier prefijo innecesario
@@ -294,52 +361,6 @@ async def get_video_thumbnail(path: str):
 
     except Exception as e:
         logger.error(f"Error sirviendo miniatura para {path}: {str(e)}")
-        if isinstance(e, HTTPException):
-            raise
-        raise HTTPException(status_code=500, detail=f"Error al procesar la solicitud: {str(e)}")
-
-# Ruta para obtener miniaturas de videos externos
-@router.get("/thumbnail/external/{video_id}")
-async def get_external_video_thumbnail(video_id: str):
-    """
-    Genera y sirve una miniatura para un video externo almacenado en la base de datos
-    
-    Args:
-        video_id: ID del video externo
-    """
-    try:
-        # Obtener la información del video desde la base de datos
-        video_info = trip_logger.get_external_video(video_id)
-        
-        if not video_info:
-            raise HTTPException(status_code=404, detail="Video externo no encontrado")
-        
-        # Obtener la ruta al archivo de video
-        video_path = video_info.get("file_path")
-        if not video_path or not os.path.isfile(video_path):
-            raise HTTPException(status_code=404, detail="Archivo de video externo no encontrado")
-        
-        # Crear directorio para miniaturas si no existe
-        thumbnails_dir = os.path.join(config.data_path, "thumbnails", "external")
-        os.makedirs(thumbnails_dir, exist_ok=True)
-        
-        # Ruta para la miniatura
-        thumbnail_path = os.path.join(
-            thumbnails_dir,
-            f"{video_id}.jpg"
-        )
-        
-        # Generar miniatura si no existe
-        if not os.path.exists(thumbnail_path):
-            generated_path = generate_thumbnail(video_path, thumbnail_path)
-            if not generated_path:
-                raise HTTPException(status_code=500, detail="No se pudo generar la miniatura")
-        
-        # Devolver la imagen de miniatura
-        return FileResponse(thumbnail_path, media_type="image/jpeg")
-        
-    except Exception as e:
-        logger.error(f"Error sirviendo miniatura para video externo {video_id}: {str(e)}")
         if isinstance(e, HTTPException):
             raise
         raise HTTPException(status_code=500, detail=f"Error al procesar la solicitud: {str(e)}")

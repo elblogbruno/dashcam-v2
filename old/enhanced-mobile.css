@@ -1,0 +1,93 @@
+/* 
+ * ENHANCED-MOBILE.CSS
+ * Mejoras adicionales para la experiencia móvil 
+ */
+
+/* Mejoras para el scroll y rendimiento */
+* {
+  -webkit-overflow-scrolling: touch; /* Scroll suave en iOS */
+}
+
+/* Mejoras para dispositivos móviles */
+@media (max-width: 767px) {
+  /* Optimizaciones de rendimiento */
+  .google-photos-timeline {
+    overscroll-behavior: contain; /* Prevenir scroll en cascada */
+    will-change: transform; /* Optimización de rendimiento */
+  }
+
+  /* Mejoras de tamaño para vista táctil */
+  .timeline-event-thumbnail {
+    min-height: 120px; /* Altura mínima para mejor toque */
+  }
+  
+  /* Botones más grandes para uso táctil */
+  button, 
+  .view-btn,
+  .filter-btn {
+    min-height: 44px; /* Altura mínima recomendada para elementos táctiles */
+    min-width: 44px;
+  }
+
+  /* Reducir animaciones que puedan causar problemas de rendimiento */
+  .video-with-transition {
+    transition: opacity 0.2s ease-in-out; /* Transición más corta */
+  }
+
+  /* Mostrar menos clips a la vez para mejorar el rendimiento */
+  .timeline-segment {
+    max-height: none;
+    overflow: visible;
+  }
+
+  /* Mejoras en la visualización de videos */
+  .video-player-container {
+    height: 40vh; /* Altura fija en móviles */
+  }
+  
+  /* Mejoras de espaciado y tamaños */
+  .clip-info {
+    padding: 8px; /* Reducir padding */
+  }
+  
+  /* Simplificar interfaz en móviles */
+  .secondary-controls {
+    display: flex;
+    flex-wrap: wrap;
+  }
+  
+  /* Optimizaciones para la vista de timeline */
+  .timeline-content {
+    padding: 0;
+  }
+  
+  /* Mejorar contraste y legibilidad */
+  .clip-title {
+    font-weight: 600;
+  }
+}
+
+/* Mejoras para evitar el "layout shift" */
+.video-container {
+  aspect-ratio: 16/9; /* Mantener proporciones consistentes */
+}
+
+/* Optimizaciones de rendimiento para reducir "jank" */
+.timeline-content {
+  contain: content; /* Optimización de rendimiento */
+}
+
+/* Prevenir selección de texto no intencional al hacer scroll */
+.timeline-segment {
+  user-select: none;
+}
+
+/* Hacer los controles más fáciles de tocar */
+.control-btn {
+  margin: 4px; /* Espacio entre botones para evitar toques accidentales */
+}
+
+/* Prevenir que las imágenes ralenticen el scroll */
+.timeline-event-thumbnail img {
+  content-visibility: auto; /* Mejora de rendimiento para navegadores que lo soportan */
+}

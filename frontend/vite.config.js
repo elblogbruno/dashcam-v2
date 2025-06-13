@@ -9,14 +9,13 @@ export default defineConfig({
     port: 5173, // Use Vite's default port to match dev.sh script
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        target: 'http://127.0.0.1:8000',
         changeOrigin: true,
-        // Remove the rewrite to preserve /api in the path
         secure: false,
         ws: false,
       },
       '/ws': {
-        target: 'ws://localhost:8000',
+        target: 'ws://127.0.0.1:8000',
         ws: true,
         changeOrigin: true,
         secure: false,

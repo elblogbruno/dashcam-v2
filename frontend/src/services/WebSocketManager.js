@@ -15,8 +15,8 @@ class WebSocketManager {
     this.connectionId = null;
     this.heartbeatInterval = null;
     this.heartbeatTimeout = null;
-    this.pingInterval = 25000; // Send ping every 25 seconds
-    this.pongTimeout = 5000; // Wait 5 seconds for pong
+    this.pingInterval = 15000; // Send ping every 15 seconds (más frecuente que servidor)
+    this.pongTimeout = 10000; // Wait 10 seconds for pong (más tiempo para respuesta)
     
     // Bind methods to preserve context
     this.connect = this.connect.bind(this);
@@ -71,13 +71,22 @@ class WebSocketManager {
           try {
             // Handle text messages
             if (typeof event.data === 'string') {
-              // Handle heartbeat pong
+              // Handle heartbeat pong from server
               if (event.data === 'pong') {
                 // Clear timeout - connection is alive
                 if (this.heartbeatTimeout) {
                   clearTimeout(this.heartbeatTimeout);
                   this.heartbeatTimeout = null;
                 }
+                console.log('Recibido pong del servidor');
+                return;
+              }
+              
+              // Handle heartbeat ping from server
+              if (event.data === 'ping') {
+                // Responder con pong al servidor
+                this.socket.send('pong');
+                console.log('Recibido ping del servidor, enviando pong');
                 return;
               }
               
@@ -254,17 +263,18 @@ class WebSocketManager {
     this.heartbeatInterval = setInterval(() => {
       if (this.isConnected()) {
         // Enviar ping
+        console.log('Cliente enviando ping al servidor');
         this.socket.send('ping');
         
         // Establecer timeout para pong
         this.heartbeatTimeout = setTimeout(() => {
-          console.warn('No se recibió pong del servidor, cerrando conexión');
+          console.warn('No se recibió pong del servidor dentro del timeout, cerrando conexión');
           this.socket.close(1000, 'Heartbeat timeout');
         }, this.pongTimeout);
       }
     }, this.pingInterval);
     
-    console.log('Heartbeat iniciado');
+    console.log(`Heartbeat iniciado: ping cada ${this.pingInterval/1000}s, timeout de pong: ${this.pongTimeout/1000}s`);
   }
 
   /**

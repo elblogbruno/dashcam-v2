@@ -31,7 +31,7 @@ const PlaceholderTileAlert = ({ mapSource }) => {
   if (!visible) return null;
   
   return (
-    <div className="leaflet-top leaflet-right" style={{ zIndex: 1000, margin: '10px 10px 0 0', maxWidth: '300px' }}>
+    <div className="leaflet-top leaflet-right" style={{ zIndex: 35, margin: '10px 10px 0 0', maxWidth: '300px' }}>
       <div className="leaflet-control bg-yellow-100 border-2 border-yellow-400 p-3 rounded-lg shadow-md">
         <div className="flex items-start">
           <div className="mr-2 flex-shrink-0">

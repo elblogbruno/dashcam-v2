@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 # Referencias a módulos que serán inicializados desde main.py
 disk_manager = None
+trip_logger = None
 
 # Modelos para los parámetros
 class FileMoveRequest(BaseModel):
@@ -369,56 +370,28 @@ async def index_external_video(request: IndexFileRequest):
             mtime = os.path.getmtime(file_path)
             file_date = datetime.datetime.fromtimestamp(mtime).strftime('%Y-%m-%d')
         
-        # Indexar en la base de datos
-        import sqlite3
-        conn = sqlite3.connect(disk_manager.db_path)
-        cursor = conn.cursor()
+        # Use the new trip logger system to add external video
+        # Create metadata for the external video
+        metadata = {
+            'file_path': file_path,
+            'file_size': file_size,
+            'original_filename': os.path.basename(file_path),
+            'lat': request.latitude,
+            'lon': request.longitude,
+            'source': request.source or "external",
+            'tags': request.tags
+        }
         
-        # Comprobar si la tabla recordings existe
-        cursor.execute("""
-            SELECT name FROM sqlite_master 
-            WHERE type='table' AND name='recordings'
-        """)
+        # Convert file_date to proper date format for trip_logger
+        try:
+            from datetime import datetime
+            upload_date = datetime.strptime(file_date, '%Y-%m-%d').date()
+        except ValueError:
+            # Use current date if parsing fails
+            upload_date = datetime.now().date()
         
-        if not cursor.fetchone():
-            # Crear la tabla si no existe
-            cursor.execute("""
-                CREATE TABLE recordings (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    file_path TEXT,
-                    file_size INTEGER,
-                    start_time TEXT,
-                    end_time TEXT,
-                    latitude REAL,
-                    longitude REAL,
-                    distance_km REAL,
-                    source TEXT,
-                    tags TEXT,
-                    backed_up INTEGER,
-                    backup_path TEXT
-                )
-            """)
-            conn.commit()
-        
-        # Insertar el registro
-        cursor.execute("""
-            INSERT INTO recordings 
-            (file_path, file_size, start_time, end_time, latitude, longitude, source, tags)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            file_path,
-            file_size,
-            f"{file_date} 00:00:00",  # Usar medianoche como hora de inicio
-            f"{file_date} 23:59:59",  # Usar final del día como hora de fin
-            request.latitude,
-            request.longitude,
-            request.source or "external",
-            request.tags
-        ))
-        
-        video_id = cursor.lastrowid
-        conn.commit()
-        conn.close()
+        # Add external video using the new system
+        video_id = trip_logger.add_external_video(upload_date, metadata)
         
         # Generar miniatura (en segundo plano)
         try:
@@ -445,9 +418,6 @@ async def index_external_video(request: IndexFileRequest):
             "file_path": file_path,
             "file_date": file_date
         }
-    except sqlite3.Error as sql_err:
-        logger.error(f"Error de base de datos: {sql_err}")
-        raise HTTPException(status_code=500, detail=f"Error en la base de datos: {str(sql_err)}")
     except HTTPException:
         raise
     except Exception as e:

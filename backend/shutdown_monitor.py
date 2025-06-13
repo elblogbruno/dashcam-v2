@@ -5,17 +5,31 @@ import threading
 import subprocess
 import platform
 from shutdown_control import should_continue_loop, register_thread
+from enhanced_shutdown import EnhancedShutdownManager
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 class ShutdownMonitor:
-    def __init__(self, gpio_pin=17):
+    def __init__(self, gpio_pin=17, trip_manager=None, audio_notifier=None, shutdown_controller=None):
         self.gpio_pin = gpio_pin  # Default GPIO pin for power monitoring
         self.running = False
         self.monitor_thread = None
         self.mock_mode = False
+        self.trip_manager = trip_manager  # Reference to trip manager for stopping current trip
+        
+        # Enhanced shutdown manager
+        self.enhanced_shutdown = EnhancedShutdownManager(
+            audio_notifier=audio_notifier,
+            led_controller=None,  # Se configurará dinámicamente
+            shutdown_controller=shutdown_controller,
+            trip_manager=trip_manager
+        )
+        
+        # Estado del botón para el sistema mejorado
+        self.button_pressed = False
+        self.last_button_state = True  # Pull-up, así que True = no presionado
         
         # Check platform and GPIO library availability
         self._check_platform()
@@ -140,15 +154,26 @@ class ShutdownMonitor:
                 GPIO.setmode(GPIO.BCM)
                 GPIO.setup(self.gpio_pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
                 
-                # Monitor pin state
+                # Monitor pin state for enhanced shutdown
                 while self.running:
-                    if GPIO.input(self.gpio_pin) == GPIO.LOW:
-                        # Power loss detected
-                        logger.info("Power loss detected! Triggering safe shutdown...")
-                        self._perform_shutdown()
-                        break
+                    current_state = GPIO.input(self.gpio_pin)
                     
-                    time.sleep(0.1)
+                    # Detectar cambio de estado del botón
+                    if current_state != self.last_button_state:
+                        if current_state == GPIO.LOW and self.last_button_state == GPIO.HIGH:
+                            # Botón presionado (falling edge)
+                            logger.info("🔴 Botón de apagado presionado")
+                            self.button_pressed = True
+                            self.enhanced_shutdown.on_button_press()
+                        elif current_state == GPIO.HIGH and self.last_button_state == GPIO.LOW:
+                            # Botón liberado (rising edge)
+                            logger.info("⬆️ Botón de apagado liberado")
+                            self.button_pressed = False
+                            self.enhanced_shutdown.on_button_release()
+                        
+                        self.last_button_state = current_state
+                    
+                    time.sleep(0.05)  # Polling más frecuente para mejor detección
                     
                 # Clean up
                 GPIO.cleanup()
@@ -167,9 +192,10 @@ class ShutdownMonitor:
                     from gpiozero import Button
                     self.power_button = Button(self.gpio_pin)
                 
-                # Set up pin monitoring with callback
+                # Set up pin monitoring with enhanced callbacks
                 self.power_button.when_pressed = self._power_button_pressed
-                logger.info("Monitoreo con gpiozero configurado correctamente")
+                self.power_button.when_released = self._power_button_released
+                logger.info("Monitoreo con gpiozero configurado correctamente con callbacks mejorados")
                 
                 # Keep thread alive
                 while self.running and should_continue_loop("shutdown_monitor"):
@@ -182,35 +208,72 @@ class ShutdownMonitor:
                 self._mock_monitor()
                 
     def _power_button_pressed(self):
-        """Callback for gpiozero when power button is pressed (power loss)"""
-        logger.info("Power loss detected via gpiozero! Triggering safe shutdown...")
-        self._perform_shutdown()
+        """Callback para gpiozero cuando se presiona el botón (enhanced)"""
+        logger.info("🔴 Botón de apagado presionado (gpiozero)")
+        self.button_pressed = True
+        self.enhanced_shutdown.on_button_press()
+        
+    def _power_button_released(self):
+        """Callback para gpiozero cuando se libera el botón"""
+        logger.info("⬆️ Botón de apagado liberado (gpiozero)")
+        self.button_pressed = False
+        self.enhanced_shutdown.on_button_release()
         
     def _mock_monitor(self):
-        """Mock power monitoring for testing"""
-        logger.info("Mock power monitoring active. Use 'touch /tmp/trigger_shutdown' to simulate power loss.")
+        """Mock power monitoring for testing with enhanced shutdown"""
+        logger.info("Mock power monitoring active. Use 'touch /tmp/trigger_shutdown' to simulate button press.")
+        logger.info("Use 'touch /tmp/release_shutdown' to simulate button release.")
+        
+        button_pressed = False
         
         while self.running and should_continue_loop("shutdown_monitor"):
-            # Check for existence of trigger file
-            if os.path.exists("/tmp/trigger_shutdown"):
-                logger.info("Mock power loss detected! Triggering safe shutdown...")
+            # Check for button press trigger
+            if os.path.exists("/tmp/trigger_shutdown") and not button_pressed:
+                logger.info("🔴 Mock button press detected!")
+                button_pressed = True
+                self.enhanced_shutdown.on_button_press()
                 
                 # Remove trigger file
                 try:
                     os.remove("/tmp/trigger_shutdown")
                 except:
                     pass
+            
+            # Check for button release trigger
+            if os.path.exists("/tmp/release_shutdown") and button_pressed:
+                logger.info("⬆️ Mock button release detected!")
+                button_pressed = False
+                self.enhanced_shutdown.on_button_release()
+                
+                # Remove trigger file
+                try:
+                    os.remove("/tmp/release_shutdown")
+                except:
+                    pass
+            
+            # Check for immediate shutdown trigger (legacy)
+            if os.path.exists("/tmp/trigger_immediate_shutdown"):
+                logger.info("⚡ Mock immediate shutdown detected!")
+                
+                # Remove trigger file
+                try:
+                    os.remove("/tmp/trigger_immediate_shutdown")
+                except:
+                    pass
                     
-                self._perform_shutdown()
+                self.enhanced_shutdown.force_shutdown()
                 break
                 
-            time.sleep(1)
+            time.sleep(0.5)
             
     def _perform_shutdown(self):
         """Perform a safe system shutdown"""
         try:
             # Log shutdown
             logger.info("Performing safe shutdown...")
+            
+            # Stop current trip if trip manager is available
+            self._stop_current_trip()
             
             # Execute shutdown command based on platform
             system = platform.system()
@@ -231,6 +294,31 @@ class ShutdownMonitor:
                 
         except Exception as e:
             logger.error(f"Error performing shutdown: {str(e)}")
+    
+    def _stop_current_trip(self):
+        """Stop the current trip before shutdown"""
+        if not self.trip_manager:
+            logger.warning("No trip manager available - skipping trip stop")
+            return
+            
+        try:
+            logger.info("Stopping current trip before shutdown...")
+            
+            # Check if there's an active trip
+            active_trip = self.trip_manager.get_active_trip()
+            if active_trip:
+                logger.info(f"Found active trip (ID: {active_trip.id}) - ending it")
+                trip_id = self.trip_manager.end_trip()
+                if trip_id:
+                    logger.info(f"Successfully ended trip {trip_id}")
+                else:
+                    logger.warning("Failed to end current trip")
+            else:
+                logger.info("No active trip found - nothing to stop")
+                
+        except Exception as e:
+            logger.error(f"Error stopping current trip: {str(e)}")
+            # Continue with shutdown even if trip stop fails
             
     def __del__(self):
         """Clean up resources"""

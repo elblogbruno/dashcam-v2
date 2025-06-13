@@ -2,14 +2,32 @@
 
 /* Variables globales para el tema */
 :root {
+  /* Sistema de colores azules unificado */
   --primary-color: #3b82f6;
   --primary-hover: #2563eb;
+  --primary-light: #60a5fa;
+  --primary-lighter: #93c5fd;
+  --primary-dark: #1d4ed8;
+  --primary-50: #eff6ff;
+  --primary-100: #dbeafe;
+  --primary-200: #bfdbfe;
+  --primary-500: #3b82f6;
+  --primary-600: #2563eb;
+  --primary-700: #1d4ed8;
+  
+  /* Colores secundarios */
   --secondary-color: #64748b;
   --secondary-hover: #475569;
   --success-color: #10b981;
   --warning-color: #f59e0b;
   --danger-color: #ef4444;
-  --info-color: #3b82f6;
+  
+  /* Alias para compatibilidad */
+  --info-color: var(--primary-color);
+  --dashcam-primary: var(--primary-color);
+  --dashcam-secondary: var(--primary-hover);
+  
+  /* Colores de texto y fondo */
   --text-color: #1f2937;
   --text-muted: #6b7280;
   --border-color: #e5e7eb;
@@ -21,14 +39,26 @@
 
 /* Tema oscuro */
 .dark-mode {
+  /* Sistema de colores azules unificado para tema oscuro */
   --primary-color: #60a5fa;
   --primary-hover: #3b82f6;
+  --primary-light: #93c5fd;
+  --primary-lighter: #bfdbfe;
+  --primary-dark: #2563eb;
+  
+  /* Colores secundarios */
   --secondary-color: #94a3b8;
   --secondary-hover: #cbd5e1;
   --success-color: #34d399;
   --warning-color: #fbbf24;
   --danger-color: #f87171;
-  --info-color: #60a5fa;
+  
+  /* Alias para compatibilidad */
+  --info-color: var(--primary-color);
+  --dashcam-primary: var(--primary-color);
+  --dashcam-secondary: var(--primary-hover);
+  
+  /* Colores de texto y fondo */
   --text-color: #f9fafb;
   --text-muted: #d1d5db;
   --border-color: #374151;

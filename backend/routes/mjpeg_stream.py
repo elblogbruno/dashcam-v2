@@ -4,7 +4,7 @@ import time
 from fastapi import APIRouter, Response, Request
 from fastapi.responses import StreamingResponse
 from typing import Dict, Any
-from shutdown_control import should_continue_loop, register_task
+from shutdown_control import should_continue_loop, register_task, interruptible_sleep
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -54,11 +54,13 @@ async def cleanup_inactive_clients():
                 logger.info(f"Limpiando cliente inactivo: {client_id}")
                 await cleanup_client(client_id, "inactividad")
             
-            await asyncio.sleep(10)  # Verificar cada 10 segundos
+            # Sleep interrumpible de 10 segundos
+            await interruptible_sleep(10.0, "mjpeg")
             
         except Exception as e:
             logger.error(f"Error en limpieza de clientes: {e}")
-            await asyncio.sleep(5)
+            # Sleep interrumpible de 5 segundos para errores
+            await interruptible_sleep(5.0, "mjpeg")
     
     logger.info("🛑 Cleanup de clientes MJPEG terminado")
 

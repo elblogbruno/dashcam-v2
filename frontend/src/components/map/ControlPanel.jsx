@@ -5,6 +5,7 @@ import {
   FaSatellite, FaMap, FaLocationArrow, FaCompress, FaExpand, FaCog
 } from 'react-icons/fa';
 import { MdAddLocation, MdCloudDownload, MdDeleteForever, MdHelp, MdTerrain, MdScreenRotation } from 'react-icons/md';
+import MapSourceSelector from '../Maps/MapSourceSelector';
 
 function ControlPanel({ 
   isRecording, 
@@ -20,7 +21,12 @@ function ControlPanel({
   downloadLandmarks,
   createLandmark,
   centerOnPosition,
-  clearPlannedTrip
+  clearPlannedTrip,
+  // Props para el selector de mapas
+  mapSource,
+  setMapSource,
+  offlineMapsAvailable,
+  tripId
 }) {
   // Estado para controlar la visibilidad del menú de opciones
   const [showMoreOptions, setShowMoreOptions] = useState(false);
@@ -209,8 +215,21 @@ function ControlPanel({
       
       {/* Menú de configuración - posicionado encima del panel de control */}
       {showSettingsMenu && (
-        <div className="absolute bottom-full mb-2 bg-black bg-opacity-90 rounded-lg shadow-lg p-3 max-h-60 overflow-y-auto w-full">
+        <div className="absolute bottom-full mb-2 bg-black bg-opacity-90 rounded-lg shadow-lg p-3 max-h-60 overflow-y-auto w-full min-w-[280px] z-[200]">
           <h3 className="text-white text-sm font-medium mb-2 border-b border-gray-700 pb-1">Configuración del mapa</h3>
+          
+          {/* Selector de fuente de mapas */}
+          <div className="mb-3 relative z-[250]">
+            <label className="text-white text-xs font-medium mb-2 block">Fuente de mapas:</label>
+            <div className="w-full relative">
+              <MapSourceSelector
+                mapSource={mapSource}
+                setMapSource={setMapSource}
+                offlineMapsAvailable={offlineMapsAvailable}
+                tripId={tripId}
+              />
+            </div>
+          </div>
           
           <div className="grid grid-cols-2 gap-2">
             {/* Botones para cambiar el tipo de mapa */}

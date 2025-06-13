@@ -10,6 +10,10 @@ import {
 } from 'react-icons/fa'
 import webSocketManager from '../services/WebSocketManager'
 
+// Importar el nuevo sistema de diseño
+import { PageLayout, Section, Grid, Stack, Flex } from '../components/common/Layout'
+import { Button, Card, Alert, Badge, Spinner } from '../components/common/UI'
+
 // Importar los componentes individuales del Dashboard
 import {
   AlertBanner,
@@ -79,6 +83,7 @@ const RequestController = {
 function Dashboard({ darkMode }) {
   const navigate = useNavigate();
   const [location, setLocation] = useState({ lat: 0, lon: 0, speed: 0 })
+  const [speed, setSpeed] = useState({ kmh: 0, mph: 0, source: 'none', gps_speed_kmh: 0, calculated_speed_kmh: 0 })
   const [landmark, setLandmark] = useState(null)
   const [isRecording, setIsRecording] = useState(false)
   const [isMicEnabled, setIsMicEnabled] = useState(true)
@@ -413,6 +418,11 @@ function Dashboard({ darkMode }) {
             // Update location and speed
             if (data.location) {
               setLocation(data.location);
+            }
+            
+            // Update speed information
+            if (data.speed) {
+              setSpeed(data.speed);
             }
             
             // Update nearby landmark
@@ -995,24 +1005,44 @@ function Dashboard({ darkMode }) {
     touchStartRef.current = null;
   };
 
+    if (simplifiedView) {
+    return (
+      <SimplifiedView
+        streamingMode={streamingMode}
+        cameraStatus={cameraStatus}
+        cameraImages={cameraImages}
+        isRefreshing={isRefreshing}
+        location={location}
+        landmark={landmark}
+        speed={speed}
+        isRecording={isRecording}
+        isMicEnabled={isMicEnabled}
+        activeTrip={activeTrip}
+        systemStatus={systemStatus}
+        tripStats={tripStats}
+        currentSlide={currentSlide}
+        showNavbar={showNavbar}
+        onPrevSlide={prevSlide}
+        onNextSlide={nextSlide}
+        onToggleNavbar={toggleNavbar}
+        onToggleView={toggleSimplifiedView}
+        onManualRefreshCamera={manualRefreshCamera}
+        onStartRecording={startRecording}
+        onStopRecording={stopRecording}
+        onToggleMicrophone={toggleMicrophone}
+        onStartNavigation={startNavigation}
+        formatBytes={formatBytes}
+        formatTime={formatTime}
+      />
+    )
+  }
+
   return (
-    <div className={`p-3 sm:p-4 h-screen flex flex-col transition-colors duration-200 ${
-      darkMode 
-        ? 'bg-gray-900 text-white' 
-        : 'bg-gray-100 text-gray-900'
-    }`}>
-      <div className="flex justify-between items-center mb-4">
-        <h1 className={`text-xl sm:text-2xl font-bold flex items-center ${
-          darkMode ? 'text-blue-400' : 'text-dashcam-800'
-        }`}>
-          <FaTachometerAlt className={`mr-2 ${
-            darkMode ? 'text-blue-500' : 'text-dashcam-500'
-          }`} /> 
-          Dashboard
-        </h1>
-        
-        {/* Barra de acciones rápidas */}
-        <div className="flex items-center space-x-2">
+    <PageLayout 
+      title="Dashboard"
+      icon={<FaTachometerAlt size={20} />}
+      actions={
+        <Flex gap={2}>
           {/* Botón para alternar entre los modos de streaming */}
           <StreamingModeSelector 
             streamingMode={streamingMode} 
@@ -1023,182 +1053,160 @@ function Dashboard({ darkMode }) {
           
           {/* Toggle between normal and simplified view - solo visible en Raspberry Pi */}
           {isRaspberryPi && (
-            <button 
+            <Button 
+              variant="outline"
+              size="sm"
               onClick={toggleSimplifiedView}
-              className={`flex items-center px-3 py-1 rounded-md text-sm transition-colors ${
-                darkMode 
-                  ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' 
-                  : 'bg-gray-200 hover:bg-gray-300 text-gray-800'
-              }`}
-              aria-label={simplifiedView ? 'Cambiar a vista normal' : 'Cambiar a vista simplificada'}
-              title={simplifiedView ? 'Cambiar a vista normal' : 'Cambiar a vista simplificada'}
+              leftIcon={simplifiedView ? <FaDesktop /> : <FaMobileAlt />}
+              rightIcon={<FaRaspberryPi className="text-error-500" />}
             >
-              {simplifiedView ? (
-                <>
-                  <FaDesktop className="mr-1" /> <span className="hidden sm:inline">Vista Normal</span>
-                </>
-              ) : (
-                <>
-                  <FaMobileAlt className="mr-1" /> <span className="hidden sm:inline">Vista Simplificada</span>
-                </>
-              )}
-              <FaRaspberryPi className="ml-2 text-red-600" />
-            </button>
+              <span className="hidden sm:inline">
+                {simplifiedView ? 'Vista Normal' : 'Vista Simplificada'}
+              </span>
+            </Button>
           )}
-        </div>
-      </div>
+        </Flex>
+      }
+    >
+      {/* System alerts */}
+      {cameraStatus.errors && cameraStatus.errors.length > 0 && (
+        <Section className="mb-4">
+          <Alert 
+            variant="warning"
+            onClose={() => setCameraStatus(prev => ({ ...prev, errors: [] }))}
+          >
+            <Stack gap={2}>
+              {cameraStatus.errors.map((error, index) => (
+                <div key={index} className="flex items-center justify-between">
+                  <span>{error}</span>
+                  <Button 
+                    size="sm" 
+                    variant="outline"
+                    onClick={() => manualRefreshCamera('all')}
+                  >
+                    Reintentar
+                  </Button>
+                </div>
+              ))}
+            </Stack>
+          </Alert>
+        </Section>
+      )}
       
-      {simplifiedView ? (
-        <SimplifiedView
-          streamingMode={streamingMode}
-          cameraStatus={cameraStatus}
-          cameraImages={cameraImages}
-          isRefreshing={isRefreshing}
-          webrtcErrors={webrtcErrors}
-          location={location}
-          landmark={landmark}
-          isRecording={isRecording}
-          isMicEnabled={isMicEnabled}
-          activeTrip={activeTrip}
-          systemStatus={systemStatus}
-          tripStats={tripStats}
-          currentSlide={currentSlide}
-          showNavbar={showNavbar}
-          handleStreamError={handleStreamError}
-          manualRefreshCamera={manualRefreshCamera}
-          startRecording={startRecording}
-          stopRecording={stopRecording}
-          toggleMicrophone={toggleMicrophone}
-          startNavigation={startNavigation}
-          nextSlide={nextSlide}
-          prevSlide={prevSlide}
-          toggleNavbar={toggleNavbar}
-          toggleSimplifiedView={toggleSimplifiedView}
-          handleTouchStart={handleTouchStart}
-          handleTouchEnd={handleTouchEnd}
-          formatBytes={formatBytes}
-          darkMode={darkMode}
-        />
-      ) : (
-        /* VISTA NORMAL - OPTIMIZADA PARA ESPACIO HORIZONTAL */
-        <div className="flex-1 overflow-y-auto">
-          {/* System alerts */}
-          <AlertBanner 
-            errors={cameraStatus.errors} 
-            onRefreshCameras={() => manualRefreshCamera('all')} 
+      {/* Active planned trip card */}
+      {activeTrip && (
+        <Section className="mb-4">
+          <ActiveTripBanner 
+            activeTrip={activeTrip} 
+            onStartNavigation={startNavigation} 
             darkMode={darkMode}
           />
-          
-          {/* Active planned trip card */}
-          {activeTrip && (
-            <ActiveTripBanner 
-              activeTrip={activeTrip} 
-              onStartNavigation={startNavigation} 
-              darkMode={darkMode}
-            />
-          )}
-          
-          {/* Layout optimizado para pantallas anchas - uso de grid y flex para mejor organización */}
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 mb-4">
-            {/* Lado izquierdo: Cámaras (ocupando 3/4 en dispositivos grandes) */}
-            <div className="lg:col-span-3 grid gap-4">
-              {/* Primera fila: Cámaras */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Main camera view */}
-                <CameraView 
-                  cameraType="road"
-                  streamingMode={streamingMode}
-                  cameraStatus={cameraStatus}
-                  cameraImages={cameraImages}
-                  isRefreshing={isRefreshing}
-                  onRefresh={manualRefreshCamera}
-                  onError={handleStreamError}
-                  title="Cámara Frontal"
-                  showSpeedOverlay={true}
-                  speedData={location}
-                  landmarkData={landmark}
-                  isRecording={isRecording}
-                  showStats={showPerformanceStats}
-                  darkMode={darkMode}
-                />
-                
-                {/* Interior camera view */}
-                <CameraView 
-                  cameraType="interior"
-                  streamingMode={streamingMode}
-                  cameraStatus={cameraStatus}
-                  cameraImages={cameraImages}
-                  isRefreshing={isRefreshing}
-                  onRefresh={manualRefreshCamera}
-                  onError={handleStreamError}
-                  title="Cámara Interior"
-                  showSpeedOverlay={false}
-                  showStats={showPerformanceStats}
-                  darkMode={darkMode}
-                />
-              </div>
+        </Section>
+      )}
+      
+      {/* Layout principal optimizado */}
+      <Grid cols={4} gap={4} className="mb-6">
+        {/* Lado izquierdo: Cámaras (ocupando 3/4 en dispositivos grandes) */}
+        <div className="lg:col-span-3">
+          <Stack gap={4}>
+            {/* Primera fila: Cámaras */}
+            <Grid cols={2} gap={4}>
+              {/* Main camera view */}
+              <CameraView 
+                cameraType="road"
+                streamingMode={streamingMode}
+                cameraStatus={cameraStatus}
+                cameraImages={cameraImages}
+                isRefreshing={isRefreshing}
+                onRefresh={manualRefreshCamera}
+                onError={handleStreamError}
+                title="Cámara Frontal"
+                showSpeedOverlay={true}
+                speedData={location}
+                landmarkData={landmark}
+                isRecording={isRecording}
+                showStats={showPerformanceStats}
+                darkMode={darkMode}
+              />
               
-              {/* Segunda fila: Estado del sistema e información de ubicación */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* System health */}
-                <SystemStatus 
-                  systemStatus={systemStatus}
-                  formatBytes={formatBytes}
-                  darkMode={darkMode}
-                />
-                
-                {/* Location information */}
-                <LocationInfo 
-                  location={location}
-                  landmark={landmark}
-                  darkMode={darkMode}
-                />
-              </div>
+              {/* Interior camera view */}
+              <CameraView 
+                cameraType="interior"
+                streamingMode={streamingMode}
+                cameraStatus={cameraStatus}
+                cameraImages={cameraImages}
+                isRefreshing={isRefreshing}
+                onRefresh={manualRefreshCamera}
+                onError={handleStreamError}
+                title="Cámara Interior"
+                showSpeedOverlay={false}
+                showStats={showPerformanceStats}
+                darkMode={darkMode}
+              />
+            </Grid>
+            
+            {/* Segunda fila: Estado del sistema e información de ubicación */}
+            <Grid cols={2} gap={4}>
+              {/* System health */}
+              <SystemStatus 
+                systemStatus={systemStatus}
+                formatBytes={formatBytes}
+                darkMode={darkMode}
+              />
+              
+              {/* Location information */}
+              <LocationInfo 
+                location={location}
+                landmark={landmark}
+                speed={speed}
+                darkMode={darkMode}
+              />
+            </Grid>
+          </Stack>
+        </div>
+        
+        {/* Lado derecho: Panel de control (ocupando 1/4 en dispositivos grandes) */}
+        <div className="lg:col-span-1">
+          <Stack gap={3}>
+            {/* Recording controls */}
+            <div className="flex-grow min-h-[450px]">
+              <RecordingControls 
+                isRecording={isRecording}
+                isMicEnabled={isMicEnabled}
+                activeTrip={activeTrip}
+                onStartRecording={startRecording}
+                onStopRecording={stopRecording}
+                onToggleMicrophone={toggleMicrophone}
+                onStartNavigation={startNavigation}
+                darkMode={darkMode}
+              />
             </div>
             
-            {/* Lado derecho: Panel de control (ocupando 1/4 en dispositivos grandes) */}
-            <div className="lg:col-span-1 flex flex-col gap-3">
-              {/* Recording controls - con mayor altura para mejor visibilidad */}
-              <div className="flex-grow" style={{ display: 'flex', flexDirection: 'column', minHeight: '450px' }}>
-                <RecordingControls 
-                  isRecording={isRecording}
-                  isMicEnabled={isMicEnabled}
-                  activeTrip={activeTrip}
-                  onStartRecording={startRecording}
-                  onStopRecording={stopRecording}
-                  onToggleMicrophone={toggleMicrophone}
-                  onStartNavigation={startNavigation}
-                  darkMode={darkMode}
-                />
-              </div>
-              
-              {/* Trip stats - con un tamaño más compacto */}
-              <div className="flex-shrink-0">
-                <TripStats 
-                  tripStats={tripStats} 
-                  darkMode={darkMode}
-                />
-              </div>
-            </div>
-          </div>
-          
-          <div className={`text-xs text-right mt-3 ${
-            darkMode ? 'text-gray-400' : 'text-gray-500'
-          }`}>
-            <span className="mr-2">
-              <FaInfoCircle className="inline mr-1" />
-              Versión del Sistema: {systemStatus.version || 'Desconocida'}
-            </span>
-            {systemStatus.uptime && (
-              <span>
-                <FaClock className="inline mr-1" />
-                Tiempo activo: {systemStatus.uptime}
-              </span>
-            )}
-          </div>
+            {/* Trip stats */}
+            <TripStats 
+              tripStats={tripStats} 
+              darkMode={darkMode}
+            />
+          </Stack>
         </div>
-      )}
-    </div>
+      </Grid>
+      
+      {/* Footer con información del sistema */}
+      <Section variant="card" className="mt-6">
+        <Flex justify="between" align="center" className="text-sm text-muted">
+          <Flex align="center" gap={2}>
+            <FaInfoCircle />
+            <span>Versión del Sistema: {systemStatus.version || 'Desconocida'}</span>
+          </Flex>
+          {systemStatus.uptime && (
+            <Flex align="center" gap={2}>
+              <FaClock />
+              <span>Tiempo activo: {systemStatus.uptime}</span>
+            </Flex>
+          )}
+        </Flex>
+      </Section>
+    </PageLayout>
   )
 }
 

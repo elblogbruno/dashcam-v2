@@ -1,18 +1,42 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import axios from 'axios'
 import { 
-  FaVolumeMute, FaVolumeUp, FaSync, FaCog, FaUpload, 
-  FaWifi, FaFileUpload, FaCamera, FaCheck, FaExclamationTriangle,
-  FaSearch, FaVideo, FaMicrophone, FaBell, FaBug
+  FaVolumeUp, FaSync, FaCog, 
+  FaWifi, FaCheck, FaExclamationTriangle,
+  FaVideo, FaMicrophone, FaBell, FaBug, FaMapMarkerAlt
 } from 'react-icons/fa'
 
+// Importar el nuevo sistema de diseño
+import { PageLayout, Section, Grid, Stack, Flex } from '../components/common/Layout'
+import { Button, Card, Input, Select, Alert, Badge, Spinner } from '../components/common/UI'
+
 function Settings() {
+  const navigate = useNavigate()
+  
   const [audioSettings, setAudioSettings] = useState({
     enabled: true,
     volume: 80,
     engine: 'pyttsx3'
   })
   
+  // Función para hacer scroll suave a una sección
+  const scrollToSection = (sectionId) => {
+    // Pequeño retraso para asegurar que el DOM está completamente renderizado
+    setTimeout(() => {
+      const element = document.getElementById(sectionId);
+      if (element) {
+        element.scrollIntoView({ 
+          behavior: 'smooth', 
+          block: 'start',
+          inline: 'nearest'
+        });
+      } else {
+        console.log(`Elemento con ID '${sectionId}' no encontrado`);
+      }
+    }, 100);
+  };
+
   // Navegar a la sección especificada en el hash de la URL al cargar
   useEffect(() => {
     const hash = window.location.hash;
@@ -20,7 +44,11 @@ function Settings() {
       const element = document.querySelector(hash);
       if (element) {
         setTimeout(() => {
-          element.scrollIntoView({ behavior: 'smooth' });
+          element.scrollIntoView({ 
+            behavior: 'smooth', 
+            block: 'start',
+            inline: 'nearest'
+          });
         }, 100);
       }
     }
@@ -29,9 +57,7 @@ function Settings() {
   const [videoSettings, setVideoSettings] = useState({
     roadQuality: 'high',
     interiorQuality: 'medium',
-    autoStartRecording: true,
-    roadCamera: '/dev/video0',
-    interiorCamera: '/dev/video1'
+    autoStartRecording: true
   })
   
   const [wifiSettings, setWifiSettings] = useState({
@@ -40,27 +66,13 @@ function Settings() {
     enabled: true
   })
   
-  const [uploadFile, setUploadFile] = useState(null)
-  const [uploadDate, setUploadDate] = useState('')
-  const [uploadLocation, setUploadLocation] = useState({ lat: '', lon: '' })
-  const [isUploading, setIsUploading] = useState(false)
+
   
-  // Camera detection state
-  const [availableCameras, setAvailableCameras] = useState([])
-  const [isDetectingCameras, setIsDetectingCameras] = useState(false)
-  const [cameraTestPreview, setCameraTestPreview] = useState(null)
-  const [testingCamera, setTestingCamera] = useState(false)
-  const [cameraTestInfo, setCameraTestInfo] = useState(null)
-  const [cameraDetectionError, setCameraDetectionError] = useState(null)
-  
-  // Active section state - para mostrar todas las secciones incluso durante la detección de cámaras
+  // Active section state
   const [activeSections, setActiveSections] = useState({
-    cameras: true,
     audio: true,
     video: true,
     wifi: true,
-    landmarks: true,
-    upload: true,
     debug: true
   })
 
@@ -69,7 +81,6 @@ function Settings() {
     fetchAudioSettings()
     fetchVideoSettings()
     fetchWifiSettings()
-    // detectCameras()
   }, [])
 
   // Function to fetch audio settings
@@ -146,495 +157,286 @@ function Settings() {
     }
   }
 
-  // Function to detect available cameras
-  // const detectCameras = async () => {
-  //   setIsDetectingCameras(true)
-  //   setCameraDetectionError(null)
-    
-  //   try {
-  //     const response = await axios.get('/api/system/cameras')
-      
-  //     // Sort cameras: working cameras first, then by suggested use
-  //     const cameras = response.data.cameras || []
-  //     cameras.sort((a, b) => {
-  //       // First, sort by working status
-  //       if (a.working !== b.working) {
-  //         return a.working ? -1 : 1
-  //       }
-        
-  //       // Then by suggested use (road cameras first)
-  //       if (a.suggested_use && b.suggested_use) {
-  //         return a.suggested_use.includes('Road') ? -1 : 1
-  //       }
-        
-  //       // Then by device ID
-  //       return a.device_id - b.device_id
-  //     })
-      
-  //     setAvailableCameras(cameras)
-      
-  //     // Auto-suggest cameras if none are currently selected
-  //     if (cameras.length > 0 && (!videoSettings.roadCamera || !videoSettings.interiorCamera)) {
-  //       const updatedSettings = {...videoSettings}
-        
-  //       // Find a working road camera
-  //       const roadCam = cameras.find(c => c.working && c.suggested_use?.includes('Road'))
-  //       if (roadCam && !videoSettings.roadCamera) {
-  //         updatedSettings.roadCamera = roadCam.device
-  //       }
-        
-  //       // Find a working interior camera
-  //       const interiorCam = cameras.find(c => c.working && c.suggested_use?.includes('Interior'))
-  //       if (interiorCam && !videoSettings.interiorCamera) {
-  //         updatedSettings.interiorCamera = interiorCam.device
-  //       }
-        
-  //       // If we only have one camera, use it for road view
-  //       if (cameras.length === 1 && cameras[0].working && !videoSettings.roadCamera) {
-  //         updatedSettings.roadCamera = cameras[0].device
-  //       }
-        
-  //       // Update settings if we made changes
-  //       if (updatedSettings.roadCamera !== videoSettings.roadCamera || 
-  //           updatedSettings.interiorCamera !== videoSettings.interiorCamera) {
-  //         setVideoSettings(updatedSettings)
-  //       }
-  //     }
-  //   } catch (error) {
-  //     console.error('Error detecting cameras:', error)
-  //     setCameraDetectionError(
-  //       error.response?.data?.detail || 
-  //       'Failed to detect cameras. Please make sure your cameras are properly connected.'
-  //     )
-  //   } finally {
-  //     setIsDetectingCameras(false)
-  //   }
-  // }
-  
-  // // Function to test a camera
-  // const testCamera = async (cameraPath) => {
-  //   setTestingCamera(true)
-  //   setCameraTestPreview(null)
-  //   setCameraTestInfo(null)
-    
-  //   try {
-  //     // First try to get the preview image through the API
-  //     const response = await axios.post('/api/system/test-camera', { camera_path: cameraPath })
-      
-  //     if (response.data.preview_url) {
-  //       // Get the actual image data from the preview endpoint
-  //       const previewResponse = await axios.get(response.data.preview_url)
-        
-  //       // If we got the image, set it and camera info
-  //       if (previewResponse.data.image_data_uri) {
-  //         setCameraTestPreview(previewResponse.data.image_data_uri)
-          
-  //         // Store additional camera info
-  //         setCameraTestInfo({
-  //           resolution: `${response.data.width}x${response.data.height}`,
-  //           fps: response.data.fps,
-  //           camera: getCameraLabel(cameraPath)
-  //         })
-  //       } else {
-  //         throw new Error('Failed to get camera preview image')
-  //       }
-  //     } else {
-  //       throw new Error('Camera test didn\'t return a preview URL')
-  //     }
-  //   } catch (error) {
-  //     console.error('Error testing camera:', error)
-  //     alert(`Failed to test camera: ${error.response?.data?.detail || error.message}`)
-  //   } finally {
-  //     setTestingCamera(false)
-  //   }
-  // }
-  
-  // Function to get camera name/label from device path
-  const getCameraLabel = (cameraPath) => {
-    const camera = availableCameras.find(cam => cam.device === cameraPath)
-    if (!camera) return cameraPath
-    
-    let label = camera.name
-    
-    // Add camera type if available
-    if (camera.type) {
-      label += ` (${camera.type})`
-    }
-    
-    // Add suggested use if available
-    if (camera.suggested_use) {
-      label += ` - ${camera.suggested_use}`
-    }
-    
-    return label
-  }
-  
-  // Get a shorter camera label for display in dropdowns
-  const getShortCameraLabel = (camera) => {
-    if (!camera) return '-- Select Camera --'
-    
-    let label = camera.name || `Camera ${camera.device_id}`
-    
-    // Add resolution
-    if (camera.resolution && camera.resolution !== 'Unknown') {
-      label += ` (${camera.resolution})`
-    }
-    
-    // Add a tag if it's not working
-    if (camera.working === false) {
-      label += ' - Not working'
-    }
-    
-    return label
-  }
-
-  // Function to handle file upload
-  const handleFileUpload = async (e) => {
-    e.preventDefault()
-    
-    if (!uploadFile || !uploadDate) {
-      alert('Please select a file and date')
-      return
-    }
-    
-    setIsUploading(true)
-    
-    const formData = new FormData()
-    formData.append('file', uploadFile)
-    formData.append('date', uploadDate)
-    
-    if (uploadLocation.lat && uploadLocation.lon) {
-      formData.append('lat', uploadLocation.lat)
-      formData.append('lon', uploadLocation.lon)
-    }
-    
-    try {
-      await axios.post('/api/videos/upload', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data'
-        }
-      })
-      
-      alert('File uploaded successfully')
-      setUploadFile(null)
-      setUploadDate('')
-      setUploadLocation({ lat: '', lon: '' })
-      
-    } catch (error) {
-      console.error('Error uploading file:', error)
-      alert('Failed to upload file')
-    } finally {
-      setIsUploading(false)
-    }
-  }
-
   return (
-    <div className="p-2 sm:p-4 bg-gray-100 min-h-screen">
-      <h1 className="text-xl sm:text-2xl font-bold text-dashcam-800 flex items-center mb-4 sm:mb-6">
-        <FaCog className="mr-2" /> 
-        Configuración
-      </h1>
-      
-      {/* Sección de navegación rápida - eliminando el botón de landmarks */}
-      <div className="flex flex-wrap gap-2 mb-4">
-        <button 
-          onClick={() => document.getElementById('audio-section').scrollIntoView({ behavior: 'smooth' })}
-          className="btn btn-secondary text-sm flex items-center"
-        >
-          <FaVolumeUp className="mr-1" /> Audio
-        </button>
-        <button 
-          onClick={() => document.getElementById('video-section').scrollIntoView({ behavior: 'smooth' })}
-          className="btn btn-secondary text-sm flex items-center"
-        >
-          <FaVideo className="mr-1" /> Video
-        </button>
-        <button 
-          onClick={() => document.getElementById('wifi-section').scrollIntoView({ behavior: 'smooth' })}
-          className="btn btn-secondary text-sm flex items-center"
-        >
-          <FaWifi className="mr-1" /> WiFi
-        </button>
-      </div>
-      
-      {/* Resumen de configuración actual - quitando sección de cámaras */}
-      <div className="card mb-4 p-4 bg-gray-50">
-        <h2 className="text-lg font-medium mb-3">Configuración Actual</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">          
-          <div className="border rounded-lg p-3 bg-white">
-            <h3 className="font-medium mb-2 flex items-center">
-              <FaVideo className="mr-1 text-dashcam-600" /> Configuración de Video
-            </h3>
-            <div className="text-sm">
-              <p className="mb-1"><span className="font-medium">Calidad Frontal:</span> {videoSettings.roadQuality}</p>
-              <p className="mb-1"><span className="font-medium">Calidad Interior:</span> {videoSettings.interiorQuality}</p>
-              <p><span className="font-medium">Auto-iniciar:</span> {videoSettings.autoStartRecording ? "Activado" : "Desactivado"}</p>
-            </div>
+    <PageLayout 
+      title="Configuración"
+      icon={<FaCog size={20} />}
+      subtitle="Ajusta la configuración de tu sistema DashCam"
+    >
+      {/* Navegación rápida */}
+      <Section className="mb-6">
+        <Flex gap={2} wrap={true}>
+          <Button 
+            variant="outline" 
+            size="sm"
+            leftIcon={<FaVolumeUp />}
+            onClick={() => scrollToSection('audio-section')}
+          >
+            Audio
+          </Button>
+          <Button 
+            variant="outline" 
+            size="sm"
+            leftIcon={<FaVideo />}
+            onClick={() => scrollToSection('video-section')}
+          >
+            Video
+          </Button>
+          <Button 
+            variant="outline" 
+            size="sm"
+            leftIcon={<FaWifi />}
+            onClick={() => scrollToSection('wifi-section')}
+          >
+            Wi-Fi
+          </Button>
+          <Button 
+            variant="outline" 
+            size="sm"
+            leftIcon={<FaBug />}
+            onClick={() => scrollToSection('debug-section')}
+          >
+            Debug
+          </Button>
+        </Flex>
+      </Section>
+
+      {/* Configuración de Audio */}
+      <Section
+        id="audio-section"
+        title="Configuración de Audio"
+        variant="card"
+        className="mb-6"
+      >
+        <Grid cols={2} gap={4}>
+          <div>
+            <label className="form-label flex items-center">
+              <FaVolumeUp className="mr-2" />
+              Audio Habilitado
+            </label>
+            <Button
+              variant={audioSettings.enabled ? "success" : "outline"}
+              onClick={() => setAudioSettings(prev => ({ ...prev, enabled: !prev.enabled }))}
+              className="w-full"
+            >
+              {audioSettings.enabled ? 'Habilitado' : 'Deshabilitado'}
+            </Button>
           </div>
           
-          <div className="border rounded-lg p-3 bg-white">
-            <h3 className="font-medium mb-2 flex items-center">
-              <FaVolumeUp className="mr-1 text-dashcam-600" /> Audio y WiFi
-            </h3>
-            <div className="text-sm">
-              <p className="mb-1"><span className="font-medium">Audio:</span> {audioSettings.enabled ? "Activado" : "Desactivado"}</p>
-              <p className="mb-1"><span className="font-medium">Volumen:</span> {audioSettings.volume}%</p>
-              <p><span className="font-medium">WiFi:</span> {wifiSettings.enabled ? `Activado (${wifiSettings.ssid})` : "Desactivado"}</p>
-            </div>
+          <div>
+            <label className="form-label">Volumen: {audioSettings.volume}%</label>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value={audioSettings.volume}
+              onChange={(e) => setAudioSettings(prev => ({ ...prev, volume: parseInt(e.target.value) }))}
+              className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+            />
           </div>
-        </div>
-      </div>
-      
-      {/* Eliminando temporalmente la sección de configuración de cámaras */}
-      
-      {/* Audio Settings */}
-      <div id="audio-section" className="card mb-4 p-0 overflow-hidden">
-        <div className="bg-dashcam-700 text-white p-3">
-          <h2 className="text-lg font-medium flex items-center">
-            <FaVolumeUp className="mr-2" />
-            Configuración de Audio
-          </h2>
+        </Grid>
+        
+        <div className="mt-4">
+          <Select
+            label="Motor de Síntesis de Voz"
+            value={audioSettings.engine}
+            onChange={(e) => setAudioSettings(prev => ({ ...prev, engine: e.target.value }))}
+            options={[
+              { value: 'pyttsx3', label: 'pyttsx3' },
+              { value: 'espeak', label: 'eSpeak' },
+              { value: 'festival', label: 'Festival' }
+            ]}
+          />
         </div>
         
-        <div className="p-4">
-          <div className="flex justify-between items-center mb-3">
-            <p className="text-sm text-gray-600">
-              Configura las notificaciones de audio del sistema.
-            </p>
-            <button 
-              className="btn btn-secondary text-sm"
-              onClick={testAudio}
+        <div className="mt-4">
+          <Button 
+            variant="primary"
+            leftIcon={<FaSync />}
+            onClick={updateAudioSettings}
+          >
+            Guardar Configuración de Audio
+          </Button>
+        </div>
+      </Section>
+
+      {/* Configuración de Video */}
+      <Section
+        id="video-section"
+        title="Configuración de Video"
+        variant="card"
+        className="mb-6"
+      >
+        <Grid cols={2} gap={4}>
+          <Select
+            label="Calidad Cámara Principal"
+            value={videoSettings.roadQuality}
+            onChange={(e) => setVideoSettings(prev => ({ ...prev, roadQuality: e.target.value }))}
+            options={[
+              { value: 'low', label: 'Baja (480p)' },
+              { value: 'medium', label: 'Media (720p)' },
+              { value: 'high', label: 'Alta (1080p)' },
+              { value: 'ultra', label: 'Ultra (4K)' }
+            ]}
+          />
+          
+          <Select
+            label="Calidad Cámara Interior"
+            value={videoSettings.interiorQuality}
+            onChange={(e) => setVideoSettings(prev => ({ ...prev, interiorQuality: e.target.value }))}
+            options={[
+              { value: 'low', label: 'Baja (480p)' },
+              { value: 'medium', label: 'Media (720p)' },
+              { value: 'high', label: 'Alta (1080p)' }
+            ]}
+          />
+        </Grid>
+        
+        <div className="mt-4">
+          <label className="form-label flex items-center">
+            <input
+              type="checkbox"
+              checked={videoSettings.autoStartRecording}
+              onChange={(e) => setVideoSettings(prev => ({ ...prev, autoStartRecording: e.target.checked }))}
+              className="mr-2"
+            />
+            Iniciar grabación automáticamente
+          </label>
+        </div>
+
+
+        
+        <div className="mt-4">
+          <Button 
+            variant="primary"
+            leftIcon={<FaSync />}
+            onClick={updateVideoSettings}
+          >
+            Guardar Configuración de Video
+          </Button>
+        </div>
+      </Section>
+
+      {/* Configuración Wi-Fi */}
+      <Section
+        id="wifi-section"
+        title="Configuración Wi-Fi"
+        variant="card"
+        className="mb-6"
+      >
+        <Stack gap={4}>
+          <div>
+            <label className="form-label flex items-center">
+              <FaWifi className="mr-2" />
+              Hotspot Habilitado
+            </label>
+            <Button
+              variant={wifiSettings.enabled ? "success" : "outline"}
+              onClick={() => setWifiSettings(prev => ({ ...prev, enabled: !prev.enabled }))}
+              className="w-full"
             >
-              Probar Audio
-            </button>
+              {wifiSettings.enabled ? 'Habilitado' : 'Deshabilitado'}
+            </Button>
           </div>
           
-          <div className="space-y-3">
-            <div>
-              <label className="flex items-center mb-2">
-                <input 
-                  type="checkbox" 
-                  checked={audioSettings.enabled} 
-                  onChange={() => setAudioSettings({...audioSettings, enabled: !audioSettings.enabled})}
-                  className="mr-2"
-                />
-                Activar Notificaciones de Audio
-              </label>
-            </div>
-            
-            <div>
-              <label className="block mb-1 text-sm">Motor de Voz</label>
-              <select 
-                value={audioSettings.engine} 
-                onChange={(e) => setAudioSettings({...audioSettings, engine: e.target.value})}
-                className="input w-full"
-                disabled={!audioSettings.enabled}
-              >
-                <option value="pyttsx3">PyTTSX3 (Predeterminado)</option>
-                <option value="espeak">eSpeak (Linux)</option>
-                <option value="piper">Piper (Neural TTS)</option>
-              </select>
-              <p className="text-xs text-gray-500 mt-1">
-                {audioSettings.engine === 'piper' && 'Piper ofrece la mejor calidad de voz con tecnología neural'}
-                {audioSettings.engine === 'espeak' && 'eSpeak es ligero y funciona bien en sistemas Linux'}
-                {audioSettings.engine === 'pyttsx3' && 'PyTTSX3 es compatible con múltiples plataformas'}
-              </p>
-            </div>
-            
-            <div>
-              <label className="block mb-1 text-sm">Volumen: {audioSettings.volume}%</label>
-              <input 
-                type="range" 
-                min="0" 
-                max="100" 
-                value={audioSettings.volume} 
-                onChange={(e) => setAudioSettings({...audioSettings, volume: parseInt(e.target.value)})}
-                className="w-full"
-                disabled={!audioSettings.enabled}
-              />
-            </div>
-            
-            <button 
-              className="btn btn-primary w-full"
-              onClick={updateAudioSettings}
-            >
-              Guardar Configuración de Audio
-            </button>
-          </div>
-        </div>
-      </div>
-      
-      {/* Video Settings */}
-      <div id="video-section" className="card mb-4 p-0 overflow-hidden">
-        <div className="bg-dashcam-700 text-white p-3">
-          <h2 className="text-lg font-medium flex items-center">
-            <FaCog className="mr-2" />
-            Configuración de Video
-          </h2>
-        </div>
-        
-        <div className="p-4">
-          <div className="space-y-3">
-            <div>
-              <label className="block mb-1 text-sm">Calidad de Cámara Frontal</label>
-              <select 
-                value={videoSettings.roadQuality} 
-                onChange={(e) => setVideoSettings({...videoSettings, roadQuality: e.target.value})}
-                className="input w-full"
-              >
-                <option value="low">Baja (480p)</option>
-                <option value="medium">Media (720p)</option>
-                <option value="high">Alta (1080p)</option>
-              </select>
-            </div>
-            
-            <div>
-              <label className="block mb-1 text-sm">Calidad de Cámara Interior</label>
-              <select 
-                value={videoSettings.interiorQuality} 
-                onChange={(e) => setVideoSettings({...videoSettings, interiorQuality: e.target.value})}
-                className="input w-full"
-              >
-                <option value="low">Baja (480p)</option>
-                <option value="medium">Media (720p)</option>
-                <option value="high">Alta (1080p)</option>
-              </select>
-            </div>
-            
-            <div>
-              <label className="flex items-center mb-2">
-                <input 
-                  type="checkbox" 
-                  checked={videoSettings.autoStartRecording} 
-                  onChange={() => setVideoSettings({...videoSettings, autoStartRecording: !videoSettings.autoStartRecording})}
-                  className="mr-2"
-                />
-                Iniciar grabación automáticamente al detectar energía
-              </label>
-            </div>
-            
-            <button 
-              className="btn btn-primary w-full"
-              onClick={updateVideoSettings}
-            >
-              Guardar Configuración de Video
-            </button>
-          </div>
-        </div>
-      </div>
-      
-      {/* WiFi Hotspot Settings */}
-      <div id="wifi-section" className="card mb-4 p-0 overflow-hidden">
-        <div className="bg-dashcam-700 text-white p-3">
-          <h2 className="text-lg font-medium flex items-center">
-            <FaWifi className="mr-2" />
-            Configuración de WiFi
-          </h2>
-        </div>
-        
-        <div className="p-4">
-          <div className="space-y-3">
-            <div>
-              <label className="block mb-1 text-sm">Nombre de Red (SSID)</label>
-              <input 
-                type="text" 
-                value={wifiSettings.ssid} 
-                onChange={(e) => setWifiSettings({...wifiSettings, ssid: e.target.value})}
-                className="input w-full"
-                placeholder="DashCam"
-              />
-            </div>
-            
-            <div>
-              <label className="block mb-1 text-sm">Contraseña (dejar vacío para red abierta)</label>
-              <input 
-                type="password" 
-                value={wifiSettings.password} 
-                onChange={(e) => setWifiSettings({...wifiSettings, password: e.target.value})}
-                className="input w-full"
-                placeholder="Contraseña"
-              />
-            </div>
-            
-            <div>
-              <label className="flex items-center mb-2">
-                <input 
-                  type="checkbox" 
-                  checked={wifiSettings.enabled} 
-                  onChange={() => setWifiSettings({...wifiSettings, enabled: !wifiSettings.enabled})}
-                  className="mr-2"
-                />
-                Activar Punto de Acceso WiFi
-              </label>
-            </div>
-            
-            <button 
-              className="btn btn-primary w-full"
-              onClick={updateWifiSettings}
-            >
-              Guardar Configuración de WiFi
-            </button>
-          </div>
-        </div>
-      </div>
-      
-      {/* Debug Tools Section */}
-      <div id="debug-section" className="card mb-4 p-0 overflow-hidden">
-        <div className="bg-gray-800 text-white p-3">
-          <h2 className="text-lg font-medium flex items-center">
-            <FaBug className="mr-2" />
-            Herramientas de Depuración
-          </h2>
-        </div>
-        
-        <div className="p-4">
-          <div className="bg-yellow-50 border-l-4 border-yellow-400 p-3 mb-4">
-            <p className="text-sm text-yellow-800">
-              <strong>Nota:</strong> Estas herramientas son para desarrolladores y soporte técnico. Su uso incorrecto puede afectar el funcionamiento del sistema.
-            </p>
-          </div>
+          <Input
+            label="Nombre de Red (SSID)"
+            value={wifiSettings.ssid}
+            onChange={(e) => setWifiSettings(prev => ({ ...prev, ssid: e.target.value }))}
+          />
           
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <a href="/notifications" className="bg-gray-100 hover:bg-gray-200 transition rounded-lg p-4 flex items-center border border-gray-300">
-              <div className="w-12 h-12 bg-gray-800 text-white rounded-full flex items-center justify-center mr-3">
+          <Input
+            label="Contraseña"
+            type="password"
+            value={wifiSettings.password}
+            onChange={(e) => setWifiSettings(prev => ({ ...prev, password: e.target.value }))}
+          />
+        </Stack>
+        
+        <div className="mt-4">
+          <Button 
+            variant="primary"
+            leftIcon={<FaSync />}
+            onClick={updateWifiSettings}
+          >
+            Guardar Configuración Wi-Fi
+          </Button>
+        </div>
+      </Section>
+
+      {/* Herramientas de Debug */}
+      <Section
+        id="debug-section"
+        title="Herramientas de Depuración"
+        variant="card"
+        className="mb-6"
+      >
+        <Alert variant="warning" className="mb-4">
+          <strong>Nota:</strong> Estas herramientas son para desarrolladores y soporte técnico. Su uso incorrecto puede afectar el funcionamiento del sistema.
+        </Alert>
+        
+        <Grid cols={3} gap={4}>
+          <Card 
+            title="Probador de Notificaciones"
+            subtitle="Prueba diferentes tipos de notificaciones del sistema"
+            hoverable
+            className="cursor-pointer"
+            onClick={() => navigate('/notifications')}
+          >
+            <div className="flex items-center justify-center py-4">
+              <div className="w-12 h-12 bg-primary-500 text-white rounded-full flex items-center justify-center">
                 <FaBell className="text-xl" />
               </div>
-              <div>
-                <h3 className="font-medium">Probador de Notificaciones</h3>
-                <p className="text-xs text-gray-600 mt-1">
-                  Prueba diferentes tipos de notificaciones del sistema
-                </p>
-              </div>
-            </a>
-            
-            <a href="/mic-led-tester" className="bg-gray-100 hover:bg-gray-200 transition rounded-lg p-4 flex items-center border border-gray-300">
-              <div className="w-12 h-12 bg-gray-800 text-white rounded-full flex items-center justify-center mr-3">
+            </div>
+          </Card>
+          
+          <Card 
+            title="LEDs del Micrófono"
+            subtitle="Control directo de LEDs del ReSpeaker 2mic HAT"
+            hoverable
+            className="cursor-pointer"
+            onClick={() => navigate('/mic-led-tester')}
+          >
+            <div className="flex items-center justify-center py-4">
+              <div className="w-12 h-12 bg-primary-500 text-white rounded-full flex items-center justify-center">
                 <FaMicrophone className="text-xl" />
               </div>
-              <div>
-                <h3 className="font-medium">LEDs del Micrófono</h3>
-                <p className="text-xs text-gray-600 mt-1">
-                  Control directo de LEDs del ReSpeaker 2mic HAT
-                </p>
-              </div>
-            </a>
-          </div>
-          
-          <div className="mt-4 bg-gray-100 rounded-lg p-4 border border-gray-300">
-            <h3 className="font-medium mb-2 flex items-center">
-              <FaCog className="mr-2" />
-              Información del Sistema
-            </h3>
-            
-            <div className="text-sm">
-              <p className="mb-1"><strong>Versión:</strong> Dashcam v2.0</p>
-              <p className="mb-1"><strong>Fecha:</strong> {new Date().toLocaleDateString()}</p>
-              <p><strong>Hardware:</strong> ReSpeaker 2mic HAT detectado</p>
             </div>
-          </div>
-        </div>
-      </div>
-    </div>
+          </Card>
+
+          <Card 
+            title="Probador de Geocodificación"
+            subtitle="Prueba y depura las capacidades de geocodificación online y offline"
+            hoverable
+            className="cursor-pointer"
+            onClick={() => navigate('/geocoding-tester')}
+          >
+            <div className="flex items-center justify-center py-4">
+              <div className="w-12 h-12 bg-green-500 text-white rounded-full flex items-center justify-center">
+                <FaMapMarkerAlt className="text-xl" />
+              </div>
+            </div>
+          </Card>
+        </Grid>
+        
+        <Card title="Información del Sistema" className="mt-4">
+          <Stack gap={2} className="text-sm">
+            <Flex justify="between">
+              <span><strong>Versión:</strong></span>
+              <span>Dashcam v2.0</span>
+            </Flex>
+            <Flex justify="between">
+              <span><strong>Fecha:</strong></span>
+              <span>{new Date().toLocaleDateString()}</span>
+            </Flex>
+            <Flex justify="between">
+              <span><strong>Hardware:</strong></span>
+              <Badge variant="success">ReSpeaker 2mic HAT detectado</Badge>
+            </Flex>
+          </Stack>
+        </Card>
+      </Section>
+    </PageLayout>
   )
 }
 

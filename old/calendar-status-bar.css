@@ -1,0 +1,589 @@
+/* Calendar Status Bar Styles */
+.calendar-status-bar {
+  position: relative;
+  z-index: 1000;
+  background: linear-gradient(135deg, 
+    var(--nest-primary-darker, #1a365d) 0%, 
+    var(--nest-primary, #2d5a87) 100%
+  );
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
+  height: 64px;
+  min-height: 64px;
+  flex-shrink: 0;
+}
+
+.calendar-status-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 100%;
+  padding: 0 1rem;
+  max-width: 100%;
+}
+
+.calendar-status-left,
+.calendar-status-center,
+.calendar-status-right {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.calendar-status-left {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.calendar-status-center {
+  flex: 1 1 auto;
+  justify-content: center;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.calendar-status-right {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.calendar-status-section {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--nest-text-light, #e2e8f0);
+  font-size: 0.875rem;
+  font-weight: 500;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.calendar-status-icon {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  color: var(--nest-accent, #4fd1c7);
+}
+
+.calendar-status-text {
+  color: var(--nest-text-light, #e2e8f0);
+  font-size: 0.875rem;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.calendar-status-text.text-muted {
+  color: var(--nest-text-muted, #a0aec0);
+}
+
+.calendar-status-text.text-primary {
+  color: var(--nest-accent, #4fd1c7);
+}
+
+.calendar-status-text.text-success {
+  color: var(--nest-success, #48bb78);
+}
+
+/* Botón de toggle de calendario */
+.calendar-status-calendar-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  color: var(--nest-text-light, #e2e8f0);
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.calendar-status-calendar-toggle:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.3);
+  transform: translateY(-1px);
+}
+
+.calendar-status-calendar-toggle.active {
+  background: var(--nest-accent, #4fd1c7);
+  border-color: var(--nest-accent, #4fd1c7);
+  color: var(--nest-primary-darker, #1a365d);
+}
+
+.calendar-status-calendar-toggle.active .calendar-status-icon {
+  color: var(--nest-primary-darker, #1a365d);
+}
+
+/* Botones de acción */
+.calendar-status-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 0.5rem;
+  color: var(--nest-text-light, #e2e8f0);
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.calendar-status-action-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.3);
+  transform: translateY(-1px);
+}
+
+.calendar-status-action-btn:active {
+  transform: translateY(0);
+}
+
+/* === ESTILOS PARA FILTROS INTEGRADOS === */
+
+/* Toggle de filtros */
+.calendar-status-filter-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  border: none;
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--nest-text-light, #ffffff);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.calendar-status-filter-toggle:hover {
+  background: rgba(255, 255, 255, 0.2);
+  transform: translateY(-1px);
+}
+
+.calendar-status-filter-toggle.active {
+  background: var(--nest-accent, #3182ce);
+  box-shadow: 0 2px 8px rgba(49, 130, 206, 0.3);
+}
+
+.calendar-status-filter-badge {
+  position: absolute;
+  top: -0.25rem;
+  right: -0.25rem;
+  background: var(--nest-warning, #ed8936);
+  color: white;
+  font-size: 0.6rem;
+  font-weight: bold;
+  border-radius: 50%;
+  width: 1rem;
+  height: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1rem;
+}
+
+/* Checkboxes en el StatusBar */
+.calendar-status-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.375rem;
+  transition: background-color 0.2s ease;
+}
+
+.calendar-status-checkbox:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.calendar-status-checkbox input[type="checkbox"] {
+  appearance: none;
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-radius: 0.25rem;
+  background: rgba(255, 255, 255, 0.1);
+  cursor: pointer;
+  position: relative;
+  transition: all 0.2s ease;
+}
+
+.calendar-status-checkbox input[type="checkbox"]:checked {
+  background: var(--nest-accent, #3182ce);
+  border-color: var(--nest-accent, #3182ce);
+}
+
+.calendar-status-checkbox input[type="checkbox"]:checked::after {
+  content: '✓';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: white;
+  font-size: 0.75rem;
+  font-weight: bold;
+}
+
+/* Panel expandido de filtros */
+.calendar-status-filters-expanded {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: linear-gradient(135deg, 
+    var(--nest-background-secondary, #f7fafc) 0%, 
+    var(--nest-background, #ffffff) 100%
+  );
+  border-bottom: 1px solid var(--nest-border, #e2e8f0);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  z-index: 999;
+  animation: slideDown 0.2s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.calendar-status-filters-content {
+  padding: 1rem 1.5rem;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+/* Secciones de filtros */
+.calendar-status-filter-section {
+  margin-bottom: 1rem;
+}
+
+.calendar-status-filter-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--nest-text-primary, #2d3748);
+  margin-bottom: 0.5rem;
+}
+
+/* Botones de filtros */
+.calendar-status-filter-button {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.375rem 0.75rem;
+  margin: 0.125rem;
+  border: 1px solid var(--nest-border, #e2e8f0);
+  border-radius: 0.5rem;
+  background: var(--nest-background, #ffffff);
+  color: var(--nest-text-primary, #2d3748);
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.calendar-status-filter-button:hover {
+  border-color: var(--nest-accent, #3182ce);
+  background: var(--nest-accent-light, #ebf8ff);
+  transform: translateY(-1px);
+}
+
+.calendar-status-filter-button.active {
+  background: var(--nest-accent, #3182ce);
+  border-color: var(--nest-accent, #3182ce);
+  color: white;
+  box-shadow: 0 2px 4px rgba(49, 130, 206, 0.3);
+}
+
+/* Checkboxes en el panel expandido */
+.calendar-status-filter-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  padding: 0.5rem;
+  border-radius: 0.5rem;
+  transition: background-color 0.2s ease;
+}
+
+.calendar-status-filter-checkbox:hover {
+  background: var(--nest-accent-light, #ebf8ff);
+}
+
+.calendar-status-filter-checkbox input[type="checkbox"] {
+  appearance: none;
+  width: 1.125rem;
+  height: 1.125rem;
+  border: 2px solid var(--nest-border, #e2e8f0);
+  border-radius: 0.25rem;
+  background: var(--nest-background, #ffffff);
+  cursor: pointer;
+  position: relative;
+  transition: all 0.2s ease;
+}
+
+.calendar-status-filter-checkbox input[type="checkbox"]:checked {
+  background: var(--nest-accent, #3182ce);
+  border-color: var(--nest-accent, #3182ce);
+}
+
+.calendar-status-filter-checkbox input[type="checkbox"]:checked::after {
+  content: '✓';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: white;
+  font-size: 0.75rem;
+  font-weight: bold;
+}
+
+/* Botón de limpiar filtros */
+.calendar-status-clear-filters {
+  padding: 0.375rem 0.75rem;
+  border: 1px solid var(--nest-warning, #ed8936);
+  border-radius: 0.375rem;
+  background: transparent;
+  color: var(--nest-warning, #ed8936);
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.calendar-status-clear-filters:hover {
+  background: var(--nest-warning, #ed8936);
+  color: white;
+  transform: translateY(-1px);
+}
+
+/* === ESTILOS PARA DROPDOWN DE CÁMARA === */
+
+/* Botón principal del dropdown de cámara */
+.calendar-status-camera-dropdown {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0.75rem;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 0.5rem;
+  color: var(--nest-text-light, #e2e8f0);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-width: 100px;
+}
+
+.calendar-status-camera-dropdown:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.3);
+  transform: translateY(-1px);
+}
+
+.calendar-status-camera-dropdown.active {
+  background: var(--nest-accent, #4fd1c7);
+  border-color: var(--nest-accent, #4fd1c7);
+  color: var(--nest-primary-darker, #1a365d);
+}
+
+.calendar-status-camera-label {
+  flex: 1;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.calendar-status-dropdown-icon {
+  width: 12px;
+  height: 12px;
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+}
+
+.calendar-status-dropdown-icon.rotated {
+  transform: rotate(180deg);
+}
+
+/* Panel de opciones del dropdown */
+.calendar-status-camera-options {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  left: 0;
+  min-width: 140px;
+  background: var(--nest-bg-secondary, #2d3748);
+  border: 1px solid var(--nest-border, rgba(255, 255, 255, 0.1));
+  border-radius: 0.5rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  z-index: 1100;
+  overflow: hidden;
+  backdrop-filter: blur(10px);
+}
+
+/* Opciones individuales del dropdown */
+.calendar-status-camera-option {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: transparent;
+  border: none;
+  color: var(--nest-text-light, #e2e8f0);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  width: 100%;
+  text-align: left;
+}
+
+.calendar-status-camera-option:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--nest-accent, #4fd1c7);
+}
+
+.calendar-status-camera-option.active {
+  background: var(--nest-accent, #4fd1c7);
+  color: var(--nest-primary-darker, #1a365d);
+}
+
+.calendar-status-camera-option.active .calendar-status-option-icon {
+  color: var(--nest-primary-darker, #1a365d);
+}
+
+.calendar-status-option-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: var(--nest-accent, #4fd1c7);
+  transition: color 0.2s ease;
+}
+
+/* Cerrar dropdown cuando se hace clic fuera */
+.calendar-status-camera-options::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: -1;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .calendar-status-bar {
+    height: 56px;
+    min-height: 56px;
+  }
+
+  .calendar-status-content {
+    padding: 0 0.75rem;
+    gap: 0.75rem;
+  }
+
+  .calendar-status-left,
+  .calendar-status-center,
+  .calendar-status-right {
+    gap: 0.75rem;
+  }
+
+  .calendar-status-section {
+    font-size: 0.8rem;
+    gap: 0.375rem;
+  }
+
+  .calendar-status-icon {
+    width: 12px;
+    height: 12px;
+  }
+
+  .calendar-status-text {
+    font-size: 0.8rem;
+  }
+
+  .calendar-status-calendar-toggle {
+    padding: 0.375rem 0.5rem;
+    font-size: 0.8rem;
+  }
+
+  .calendar-status-action-btn {
+    width: 36px;
+    height: 36px;
+  }
+
+  /* Ocultar algunos elementos en móvil para ahorrar espacio */
+  .calendar-status-center .calendar-status-section:nth-child(n+3) {
+    display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .calendar-status-content {
+    padding: 0 0.5rem;
+    gap: 0.5rem;
+  }
+
+  .calendar-status-left,
+  .calendar-status-center,
+  .calendar-status-right {
+    gap: 0.5rem;
+  }
+
+  /* En móviles muy pequeños, mostrar solo lo esencial */
+  .calendar-status-left .calendar-status-section:nth-child(n+2) {
+    display: none;
+  }
+
+  .calendar-status-center .calendar-status-section:nth-child(n+2) {
+    display: none;
+  }
+}
+
+/* Animaciones suaves */
+.calendar-status-bar * {
+  transition: color 0.2s ease, background-color 0.2s ease;
+}
+
+/* Badge overrides dentro del status bar */
+.calendar-status-bar .badge {
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.375rem;
+}
+
+/* Estados de reproducción */
+.calendar-status-section .fa-play {
+  color: var(--nest-success, #48bb78);
+}
+
+.calendar-status-section .fa-pause {
+  color: var(--nest-warning, #ed8936);
+}
+
+/* GPS indicator */
+.calendar-status-section .fa-map-marker-alt.text-success {
+  color: var(--nest-success, #48bb78);
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}

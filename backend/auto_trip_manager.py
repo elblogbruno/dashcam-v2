@@ -3,6 +3,7 @@ import datetime
 from typing import List, Optional
 import asyncio
 import time
+from shutdown_control import should_continue_loop, interruptible_sleep
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -77,7 +78,7 @@ class AutoTripManager:
             self.audio_notifier.announce(f"Iniciando viaje programado: {trip.name}")
             
             # Log trip start
-            self.active_trip_id = self.trip_logger.start_trip()
+            self.active_trip_id = self.trip_logger.start_trip(planned_trip_id=trip.id)
             
             # Start recording
             self.camera_manager.start_recording()
@@ -111,7 +112,7 @@ class AutoTripManager:
             
         try:
             # Start the trip in the trip logger
-            self.active_trip_id = self.trip_logger.start_trip()
+            self.active_trip_id = self.trip_logger.start_trip(planned_trip_id=planned_trip_id)
             
             # Store the planned trip ID if provided
             if planned_trip_id:
@@ -227,12 +228,12 @@ class AutoTripManager:
         Bucle de monitoreo de viaje que se ejecuta mientras un viaje está activo.
         Actualiza la calidad de grabación y gestiona otras tareas periódicas.
         """
-        while self.is_active:
+        while self.is_active and should_continue_loop("auto_trip"):
             # Actualizar calidad de grabación
             await self.update_trip_recording_quality()
             
-            # Esperar un tiempo antes de la próxima actualización
-            await asyncio.sleep(10)  # Revisar cada 10 segundos
+            # Sleep interrumpible de 10 segundos
+            await interruptible_sleep(10.0, "auto_trip")
 
 # Create a singleton instance
 auto_trip_manager = AutoTripManager()

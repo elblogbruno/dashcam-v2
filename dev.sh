@@ -141,21 +141,44 @@ fi
 cleanup() {
   echo "Shutting down development services..."
   
-  # Matar procesos principales con más control
+  # Kill all uvicorn processes that might be spawned by reload
+  echo "Cleaning up uvicorn processes..."
+  pkill -f "uvicorn.*main:app" 2>/dev/null || true
+  
+  # Kill any remaining processes using our ports
+  kill_port_processes 8000
+  kill_port_processes 5173
+  
+  # Kill main tracked processes
   if [ -n "$BACKEND_PID" ]; then
-    echo "Deteniendo servidor backend (PID: $BACKEND_PID)..."
-    # Intentar primero un cierre limpio, luego forzado
-    kill -15 $BACKEND_PID 2>/dev/null || kill -9 $BACKEND_PID 2>/dev/null
+    echo "Stopping backend server (PID: $BACKEND_PID)..."
+    # Send SIGTERM first, wait a bit, then SIGKILL if needed
+    kill -TERM $BACKEND_PID 2>/dev/null || true
+    sleep 2
+    if kill -0 $BACKEND_PID 2>/dev/null; then
+      echo "Backend still running, force killing..."
+      kill -KILL $BACKEND_PID 2>/dev/null || true
+    fi
     wait $BACKEND_PID 2>/dev/null || true
   fi
   
   if [ -n "$FRONTEND_PID" ]; then
-    echo "Deteniendo servidor frontend (PID: $FRONTEND_PID)..."
-    kill -15 $FRONTEND_PID 2>/dev/null || kill -9 $FRONTEND_PID 2>/dev/null
+    echo "Stopping frontend server (PID: $FRONTEND_PID)..."
+    # Send SIGTERM first, wait a bit, then SIGKILL if needed
+    kill -TERM $FRONTEND_PID 2>/dev/null || true
+    sleep 2
+    if kill -0 $FRONTEND_PID 2>/dev/null; then
+      echo "Frontend still running, force killing..."
+      kill -KILL $FRONTEND_PID 2>/dev/null || true
+    fi
     wait $FRONTEND_PID 2>/dev/null || true
   fi
 
-  echo "Todos los recursos liberados."
+  # Clean up temporary files
+  rm -f start_dev_server.py
+  rm -f dev_mode_info.txt
+
+  echo "All resources freed."
   exit 0
 }
 
@@ -171,46 +194,60 @@ echo "Starting backend server in development mode with hot reloading..."
 > backend_dev_log.txt
 cd backend
 
-# Launch server with reload=True for hot reloading
-python3 -c "
+# Launch server with reload=True for hot reloading - using a separate script to handle signals better
+cat > ../start_dev_server.py << 'EOF'
 import sys
 import uvicorn
 import logging
+import signal
+import os
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler('../backend_dev_log.txt')
-    ]
-)
-logger = logging.getLogger('dashcam-dev')
-
-try:
-    logger.info('====== STARTING FASTAPI DEV SERVER WITH HOT RELOAD ======')
-    print('Starting Uvicorn server on port 8000 with hot reload...')
-    
-    uvicorn.run(
-        'main:app', 
-        host='0.0.0.0', 
-        port=8000, 
-        log_level='info',
-        reload=True,  # Enable hot reloading for development
-        reload_dirs=['$SCRIPT_DIR/backend'],  # Watch this directory for changes
-        timeout_keep_alive=120,  # Aumentar timeout para conexiones WebSocket persistentes
-        # Configuración específica para WebSockets
-        ws_max_size=16777216,  # 16MB para permitir transferencia de frames grandes
-        ws_ping_interval=30.0,  # Enviar ping cada 30 segundos para mantener conexión
-        ws_ping_timeout=60.0,   # Timeout para ping de 60 segundos
+if __name__ == '__main__':
+    # Configure logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.StreamHandler(sys.stdout),
+            logging.FileHandler('../backend_dev_log.txt')
+        ]
     )
-except Exception as e:
-    logger.critical(f'Fatal error starting Uvicorn: {e}', exc_info=True)
-    print(f'Fatal error starting Uvicorn: {e}')
-    sys.exit(1)
-" &
+    logger = logging.getLogger('dashcam-dev')
 
+    # Signal handler for clean shutdown
+    def signal_handler(signum, frame):
+        logger.info(f'Received signal {signum}, shutting down gracefully...')
+        os._exit(0)
+
+    # Set up signal handlers
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+
+    try:
+        logger.info('====== STARTING FASTAPI DEV SERVER WITH HOT RELOAD ======')
+        print('Starting Uvicorn server on port 8000 with hot reload...')
+        
+        uvicorn.run(
+            'main:app', 
+            host='0.0.0.0', 
+            port=8000, 
+            log_level='info',
+            reload=True,  # Enable hot reloading for development
+            reload_dirs=[os.path.dirname(os.path.abspath(__file__)) + '/backend'],  # Watch this directory for changes
+            timeout_keep_alive=120,  # Increase timeout for persistent WebSocket connections
+            # WebSocket specific configuration
+            ws_max_size=16777216,  # 16MB to allow transfer of large frames
+            ws_ping_interval=30.0,  # Send ping every 30 seconds to maintain connection
+            ws_ping_timeout=60.0,   # Timeout for ping of 60 seconds
+        )
+    except Exception as e:
+        logger.critical(f'Fatal error starting Uvicorn: {e}', exc_info=True)
+        print(f'Fatal error starting Uvicorn: {e}')
+        sys.exit(1)
+EOF
+
+# Start the development server
+python3 ../start_dev_server.py &
 BACKEND_PID=$!
 cd ..
 
@@ -285,19 +322,5 @@ echo "==================================================="
 echo ""
 
 # Keep script running until Ctrl+C
-while true; do
-  # Check if both processes are still running
-  if ! kill -0 $BACKEND_PID 2>/dev/null; then
-    echo "Backend process terminated. Shutting down..."
-    kill $FRONTEND_PID 2>/dev/null
-    exit 1
-  fi
-  
-  if ! kill -0 $FRONTEND_PID 2>/dev/null; then
-    echo "Frontend process terminated. Shutting down..."
-    kill $BACKEND_PID 2>/dev/null
-    exit 1
-  fi
-  
-  sleep 2
-done
+# Wait for processes to finish (this handles signals properly)
+wait $BACKEND_PID $FRONTEND_PID

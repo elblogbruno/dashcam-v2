@@ -4,6 +4,8 @@ import os
 import json
 import logging
 from settings_manager import settings_manager
+from data_persistence import get_persistence_manager
+from data_persistence import get_persistence_manager
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -117,3 +119,41 @@ async def update_wifi_settings(settings: Dict[str, Any]):
     except Exception as e:
         logger.error(f"Error updating WiFi settings: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to update WiFi settings: {str(e)}")
+
+# Get landmark settings
+@router.get("/landmarks")
+async def get_landmark_download_settings():
+    """Get the current landmark download settings"""
+    try:
+        # Import the function from landmarks module
+        from landmarks.routes.landmark_downloads import get_landmark_settings
+        settings = await get_landmark_settings()
+        return settings
+    except Exception as e:
+        logger.error(f"Error getting landmark settings: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get landmark settings: {str(e)}")
+
+# Update landmark settings
+@router.post("/landmarks")
+async def update_landmark_download_settings(settings: Dict[str, Any]):
+    """Update landmark download settings"""
+    try:
+        # Validate required fields
+        required_fields = ["auto_download_enabled", "download_radius_km", "max_landmarks_per_location"]
+        for field in required_fields:
+            if field not in settings:
+                raise HTTPException(status_code=400, detail=f"Missing required field: {field}")
+        
+        persistence = get_persistence_manager()
+        # Use the settings subdirectory
+        result = persistence.save_json(settings, 'landmark_settings.json', subdirectory='settings')
+        
+        if result:
+            return {"status": "success", "message": "Landmark settings updated successfully"}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to save landmark settings")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating landmark settings: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to update landmark settings: {str(e)}")

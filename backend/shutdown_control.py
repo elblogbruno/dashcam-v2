@@ -24,6 +24,7 @@ class ShutdownController:
         self.location_updates_running = True
         self.websocket_running = True
         self.shutdown_monitor_running = True
+        self.auto_trip_running = True
         
         # Tracking de tasks activos
         self.active_tasks: Set[asyncio.Task] = set()
@@ -60,6 +61,7 @@ class ShutdownController:
             self.location_updates_running = False
             self.websocket_running = False
             self.shutdown_monitor_running = False
+            self.auto_trip_running = False
             
             logger.info("✓ Todas las banderas de cierre activadas")
     
@@ -156,7 +158,8 @@ class ShutdownController:
                     "webrtc_running": self.webrtc_running,
                     "location_updates_running": self.location_updates_running,
                     "websocket_running": self.websocket_running,
-                    "shutdown_monitor_running": self.shutdown_monitor_running
+                    "shutdown_monitor_running": self.shutdown_monitor_running,
+                    "auto_trip_running": self.auto_trip_running
                 }
             }
 
@@ -164,6 +167,21 @@ class ShutdownController:
 shutdown_controller = ShutdownController()
 
 # Funciones de conveniencia para usar en otros módulos
+async def interruptible_sleep(duration: float, module_name: str = "general", check_interval: float = 0.5):
+    """
+    Sleep interrumpible que puede ser cancelado por shutdown
+    
+    Args:
+        duration: Duración total del sleep en segundos
+        module_name: Nombre del módulo para verificar shutdown específico
+        check_interval: Intervalo de verificación de shutdown (default 0.5s)
+    """
+    elapsed = 0.0
+    while elapsed < duration and should_continue_loop(module_name):
+        sleep_time = min(check_interval, duration - elapsed)
+        await asyncio.sleep(sleep_time)
+        elapsed += sleep_time
+
 def is_shutdown_requested() -> bool:
     """Verificar si se solicitó el cierre del servidor"""
     return shutdown_controller.is_shutdown_requested()
@@ -184,6 +202,8 @@ def should_continue_loop(module_name: str) -> bool:
         return shutdown_controller.websocket_running
     elif module_name == "shutdown_monitor":
         return shutdown_controller.shutdown_monitor_running
+    elif module_name == "auto_trip":
+        return shutdown_controller.auto_trip_running
     else:
         return not shutdown_controller.is_shutdown_requested()
 

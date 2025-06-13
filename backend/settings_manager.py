@@ -20,7 +20,8 @@ class SettingsManager:
             "storage": {},
             "audio": {},
             "video": {},
-            "wifi": {}
+            "wifi": {},
+            "landmarks": {}  # Agregar configuraciones de landmarks
         }
         
         # Mapping from settings type to file path
@@ -28,7 +29,8 @@ class SettingsManager:
             "storage": config.storage_settings_path,
             "audio": config.audio_settings_path,
             "video": config.video_settings_path,
-            "wifi": config.wifi_settings_path
+            "wifi": config.wifi_settings_path,
+            "landmarks": os.path.join(os.path.dirname(config.storage_settings_path), "landmark_settings.json")
         }
         
         # File modification timestamps to detect changes
@@ -39,7 +41,8 @@ class SettingsManager:
             "storage": [],
             "audio": [],
             "video": [],
-            "wifi": []
+            "wifi": [],
+            "landmarks": []  # Agregar suscriptores para landmarks
         }
         
         # Module references that have registered for updates
@@ -107,6 +110,12 @@ class SettingsManager:
                         "ssid": "DashCam",
                         "password": "",
                         "enabled": True
+                    }
+                elif settings_type == "landmarks":
+                    self.settings[settings_type] = {
+                        "enabled": True,
+                        "detectionThreshold": 0.5,
+                        "modelPath": "/path/to/landmark/model"
                     }
                 
                 # Save default settings

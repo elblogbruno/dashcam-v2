@@ -7,9 +7,12 @@ import BulkUploader from './pages/BulkUploader'
 import UnifiedStorageManager from './pages/UnifiedStorageManager'
 import RealTimeMap from './pages/RealTimeMap'
 import TripPlanner from './pages/TripPlanner'
+import ActualTripsManager from './pages/ActualTripsManager'
 import LandmarksManager from './pages/LandmarksManager'
 import NotificationTester from './pages/NotificationTester'
 import MicLEDTester from './pages/MicLEDTester'
+import DiskSpaceMonitor from './pages/DiskSpaceMonitor'
+import GeocodingTester from './components/GeocodingTester/GeocodingTester'
 import MapDiagnosticPanel from './components/Maps/MapDiagnosticPanel'
 import Navigation from './components/Navigation'
 import StatusBar from './components/StatusBar'
@@ -53,6 +56,10 @@ function App() {
 
   // Aplicar tema oscuro en el DOM cuando cambie el estado
   useEffect(() => {
+    // Añadir clase de transición para que el cambio no sea brusco
+    document.documentElement.classList.add('theme-transition');
+    
+    // Aplicar o quitar la clase de modo oscuro
     if (darkMode) {
       document.documentElement.classList.add('dark-mode');
     } else {
@@ -158,22 +165,24 @@ function App() {
 
   return (
     <NavigationProvider>
-      <div className="flex min-h-screen max-w-full pb-16 md:pb-0 relative desktop-layout">
+      <div className={`flex min-h-screen max-w-full pb-16 md:pb-0 relative desktop-layout ${darkMode ? 'bg-neutral-900' : 'bg-neutral-50'}`}>
         {/* Navigation for desktop - positioned at the left */}
         <div className="z-50 hidden md:block desktop-sidebar">
-          <Navigation />
+          <Navigation darkMode={darkMode} />
         </div>
 
         {/* Main content container with appropriate spacing for desktop sidebar */}
-        <div className="w-full desktop-content">
-          {/* Status bar - visible en todas las páginas, oculta solo en el mapa en desktop */}
-          <StatusBar 
-            isConnected={isConnected}
-            recordingStatus={recordingStatus}
-            isMapPage={isMapPage}
-            darkMode={darkMode}
-            onToggleDarkMode={toggleDarkMode}
-          />
+        <div className={`w-full desktop-content ${darkMode ? 'bg-neutral-900' : 'bg-neutral-50'}`}>
+          {/* Status bar - oculta completamente en la página del mapa */}
+          {!isMapPage && (
+            <StatusBar 
+              isConnected={isConnected}
+              recordingStatus={recordingStatus}
+              isMapPage={isMapPage}
+              darkMode={darkMode}
+              onToggleDarkMode={toggleDarkMode}
+            />
+          )}
         
           {/* Main content - usar estructura diferente para la página del mapa */}
           {isMapPage ? (
@@ -181,19 +190,22 @@ function App() {
               <RealTimeMap />
             </div>
           ) : (
-            <div className="flex-grow overflow-auto w-full relative content-scrollable momentum-scroll desktop-main-container mobile-main-content">
-              <div className="content-wrapper w-full px-4 py-3 pb-20 md:pb-8"> 
+            <div className={`flex-grow overflow-auto w-full relative content-scrollable momentum-scroll desktop-main-container mobile-main-content ${darkMode ? 'bg-neutral-900' : 'bg-neutral-50'}`}>
+              <div className={`content-wrapper w-full px-4 py-3 pb-20 md:pb-8 ${darkMode ? 'bg-neutral-900 text-neutral-100' : 'bg-neutral-50 text-neutral-800'}`}>
                 <Routes>
                   <Route path="/" element={<Dashboard darkMode={darkMode} />} />
-                  <Route path="/calendar" element={<Calendar />} />
+                  <Route path="/calendar" element={<Calendar darkMode={darkMode} />} />
                   {/* Ruta del mapa renderizada fuera de este contenedor */}
                   <Route path="/trips" element={<TripPlanner />} />
+                  <Route path="/trips/:plannedTripId/actual-trips" element={<ActualTripsManager />} />
                   <Route path="/landmarks-manager" element={<LandmarksManager />} />
                   <Route path="/uploader" element={<BulkUploader />} />
                   <Route path="/settings" element={<Settings />} />
                   <Route path="/storage" element={<UnifiedStorageManager />} />
+                  <Route path="/storage/disk-monitor" element={<DiskSpaceMonitor />} />
                   <Route path="/notifications" element={<NotificationTester />} />
                   <Route path="/mic-led-tester" element={<MicLEDTester />} />
+                  <Route path="/geocoding-tester" element={<GeocodingTester />} />
                   <Route path="/map-diagnostic" element={<MapDiagnosticPanel />} />
                 </Routes>
               </div>
@@ -203,7 +215,7 @@ function App() {
         
         {/* Navigation bar - solo visible en móvil (oculto en desktop) */}
         <div className="z-50 md:hidden">
-          <Navigation />
+          <Navigation darkMode={darkMode} />
         </div>
         
         {/* Sistema de notificaciones */}

@@ -1,58 +1,67 @@
-/* filepath: /root/dashcam-v2/frontend/src/index.css */
-@import './styles/theme.css'; /* Importar estilos de tema (debe ir antes de cualquier otra regla) */
+/* Sistema de diseño unificado para DashCam */
+
+/* Importar design tokens primero */
+@import './styles/design-tokens.css';
+
+/* Importar componentes base */
+@import './styles/components.css';
+
+/* Importar tema (debe ir antes de Tailwind para permitir sobrescritura) */
+@import './styles/theme.css';
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* Definición de variables para Nest Doorbell */
+
+/* Variables CSS para el sistema de altura dinámica */
 :root {
-  --nest-background: #202124;
-  --nest-card-bg: #2e3033;
-  --nest-text-primary: #ffffff;
-  --nest-text-secondary: rgba(255, 255, 255, 0.7);
-  --nest-accent: #8ab4f8;
-  --nest-border: rgba(255, 255, 255, 0.1);
-  --nest-event-indicator: #8ab4f8;
-  --nest-selected: #4285f4;
-  --nest-header-height: 56px;
-  --nest-timeline-bg: #282a2d;
-  --nest-event-bg: #2e3033;
-  --nest-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  --topbar-height: 100px; /* Altura por defecto del TopBar */
+  --topbar-min-height: 60px; /* Altura mínima */
+  --topbar-max-height: 140px; /* Altura máxima */
 }
 
-/* Estilos base */
+
+/* Reset básico y estilos globales optimizados */
 html {
-  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: var(--font-family-sans);
   -webkit-tap-highlight-color: transparent;
+  scroll-behavior: smooth;
+}
+
+/* Clase para transiciones suaves al cambiar de tema */
+.theme-transition {
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
 }
 
 body {
-  background-color: var(--nest-background);
-  /* color: var(--nest-text-primary); */
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overscroll-behavior: none;
+  line-height: var(--leading-normal);
 }
 
-
-
-/* Estilos base para asegurar que el texto sea visible en los inputs y selectores */
+/* Asegurar que los inputs sean legibles en todos los temas */
 input, select, textarea, button {
-  @apply text-gray-800;
+  font-family: inherit;
 }
 
 input::placeholder, textarea::placeholder {
-  @apply text-gray-500;
+  color: var(--text-tertiary);
+  opacity: 1;
 }
 
-/* Asegurar que las etiquetas de los checkboxes sean visibles */
+/* Mejorar accesibilidad de checkboxes y labels */
 input[type="checkbox"] + label,
-label:has(input[type="checkbox"]) {
-  @apply text-gray-800;
+label:has(input[type="checkbox"]),
+label,
+label span {
+  color: var(--text-primary);
 }
 
-/* Estilos personalizados para el mapa */
+/* Estilos para mapas (Leaflet) */
 .leaflet-container-custom {
   width: 100% !important;
   height: 100% !important;
@@ -60,36 +69,262 @@ label:has(input[type="checkbox"]) {
   margin-left: 0 !important;
 }
 
-/* Asegurar que el texto dentro de labels sea visible */
-label {
-  @apply text-gray-800;
+/* Map Preview Container - Para proporción 16:9 */
+.map-preview-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
 }
 
-/* Estilos para spans dentro de labels (comúnmente usado con checkboxes) */
-label span {
-  @apply text-gray-800;
+.map-preview-container .leaflet-container {
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
 }
+
+/* Estilos específicos para el preview de mapa en desktop */
+.map-preview-container {
+  height: 100%;
+  width: 100%;
+  position: relative;
+}
+
+.map-preview-container .leaflet-container {
+  height: 100% !important;
+  width: 100% !important;
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+}
+
+/* Map preview sizing for larger display */
+.map-preview-large {
+  min-height: 400px;
+}
+
+@media (min-width: 1024px) {
+  .map-preview-large {
+    min-height: 500px;
+  }
+}
+
+@media (min-width: 1280px) {
+  .map-preview-large {
+    min-height: 600px;
+  }
+}
+
+/* Componentes Tailwind personalizados */
 @layer components {
+  /* Botones mejorados */
   .btn {
-    @apply px-4 py-2 rounded font-medium focus:outline-none focus:ring-2 focus:ring-dashcam-500 focus:ring-opacity-50 transition-colors;
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-medium 
+           transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 
+           touch-manipulation select-none whitespace-nowrap;
   }
+  
   .btn-primary {
-    @apply bg-dashcam-600 hover:bg-dashcam-700 text-white;
+    @apply bg-primary-600 hover:bg-primary-700 text-white focus:ring-primary-500 
+           shadow-sm hover:shadow-md active:transform active:scale-95;
   }
+  
   .btn-secondary {
-    @apply bg-gray-200 hover:bg-gray-300 text-gray-800;
+    @apply bg-white hover:bg-gray-50 text-gray-900 border border-gray-300 
+           focus:ring-primary-500 shadow-sm hover:shadow-md;
   }
-  .btn-danger {
-    @apply bg-red-600 hover:bg-red-700 text-white;
+  
+  .btn-outline {
+    @apply bg-transparent hover:bg-primary-50 text-primary-600 border border-primary-600 
+           hover:border-primary-700 focus:ring-primary-500;
   }
+ 
+  .btn-ghost {
+    @apply bg-transparent hover:bg-gray-100 text-gray-600 hover:text-gray-900 
+           focus:ring-gray-500;
+  }
+  
+  .btn-success {
+    @apply bg-success-600 hover:bg-success-700 text-white focus:ring-success-500 
+           shadow-sm hover:shadow-md;
+  }
+  
+  .btn-warning {
+    @apply bg-warning-600 hover:bg-warning-700 text-white focus:ring-warning-500 
+           shadow-sm hover:shadow-md;
+  }
+  
+  .btn-error {
+    @apply bg-error-600 hover:bg-error-700 text-white focus:ring-error-500 
+           shadow-sm hover:shadow-md;
+  }
+  
+  .btn-sm {
+    @apply px-3 py-1.5 text-sm rounded-md;
+  }
+  
+  .btn-lg {
+    @apply px-6 py-3 text-lg rounded-lg;
+  }
+
+  /* Tarjetas mejoradas con mejor padding responsive */
   .card {
-    @apply bg-white rounded-lg shadow-md overflow-hidden;
+    @apply rounded-xl shadow-sm border overflow-hidden 
+           transition-all duration-200 hover:shadow-md;
+    /* Padding más consistente */
+    padding: 1rem;
   }
+
+  /* Tema claro para tarjetas */
+  :root:not(.dark-mode) .card {
+    @apply bg-white border-gray-200;
+  }
+
+  /* Tema oscuro para tarjetas */
+  .dark-mode .card {
+    @apply bg-neutral-800 border-neutral-700;
+  }
+  
+  /* Padding optimizado para tablet y desktop */
+  @media (min-width: 640px) {
+    .card {
+      padding: 1.5rem;
+    }
+  }
+  
+  @media (min-width: 1024px) {
+    .card {
+      padding: 2rem;
+    }
+  }
+  
+  .card-header {
+    @apply px-6 py-4 border-b border-gray-200 bg-gray-50;
+    margin: -1rem -1rem 1rem -1rem;
+  }
+  
+  @media (min-width: 640px) {
+    .card-header {
+      margin: -1.5rem -1.5rem 1.5rem -1.5rem;
+    }
+  }
+  
+  @media (min-width: 1024px) {
+    .card-header {
+      margin: -2rem -2rem 2rem -2rem;
+    }
+  }
+  
+  .card-body {
+    @apply px-0 py-0;
+  }
+  
+  .card-footer {
+    @apply px-6 py-4 border-t border-gray-200 bg-gray-50;
+    margin: 1rem -1rem -1rem -1rem;
+  }
+  
+  @media (min-width: 640px) {
+    .card-footer {
+      margin: 1.5rem -1.5rem -1.5rem -1.5rem;
+    }
+  }
+  
+  @media (min-width: 1024px) {
+    .card-footer {
+      margin: 2rem -2rem -2rem -2rem;
+    }
+  }
+  
+  .card-compact {
+    padding: 0.75rem;
+  }
+  
+  @media (min-width: 640px) {
+    .card-compact {
+      padding: 1rem;
+    }
+  }
+  
+  @media (min-width: 1024px) {
+    .card-compact {
+      padding: 1.25rem;
+    }
+  }
+  
+  .card-compact .card-header,
+  .card-compact .card-body,
+  .card-compact .card-footer {
+    @apply px-0 py-0;
+  }
+
+  /* Inputs mejorados */
   .input {
-    @apply px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-dashcam-500 focus:border-dashcam-500 text-gray-800 bg-white;
+    @apply w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none 
+           focus:ring-2 focus:ring-primary-500 focus:border-primary-500 
+           text-gray-900 bg-white placeholder-gray-500 transition-colors;
   }
+  
+  .textarea {
+    @apply w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none 
+           focus:ring-2 focus:ring-primary-500 focus:border-primary-500 
+           text-gray-900 bg-white placeholder-gray-500 resize-y;
+    min-height: 5rem;
+  }
+  
   .select {
-    @apply px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-dashcam-500 focus:border-dashcam-500 text-gray-800 bg-white;
+    @apply w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none 
+           focus:ring-2 focus:ring-primary-500 focus:border-primary-500 
+           text-gray-900 bg-white;
+  }
+
+  /* Alertas */
+  .alert {
+    @apply p-4 rounded-lg border font-medium;
+  }
+  
+  .alert-info {
+    @apply bg-info-50 border-info-200 text-info-800;
+  }
+  
+  .alert-success {
+    @apply bg-success-50 border-success-200 text-success-800;
+  }
+  
+  .alert-warning {
+    @apply bg-warning-50 border-warning-200 text-warning-800;
+  }
+  
+  .alert-error {
+    @apply bg-error-50 border-error-200 text-error-800;
+  }
+
+  /* Badges */
+  .badge {
+    @apply inline-flex items-center px-2 py-1 text-xs font-medium rounded-full uppercase tracking-wide;
+  }
+  
+  .badge-primary {
+    @apply bg-primary-100 text-primary-800;
+  }
+  
+  .badge-success {
+    @apply bg-success-100 text-success-800;
+  }
+  
+  .badge-warning {
+    @apply bg-warning-100 text-warning-800;
+  }
+  
+  .badge-error {
+    @apply bg-error-100 text-error-800;
+  }
+  
+  .badge-neutral {
+    @apply bg-gray-100 text-gray-800;
   }
 }
 
@@ -170,13 +405,73 @@ html, body, #root {
 /* Ajustes específicos para el padding en pantallas muy pequeñas */
 @media (max-width: 375px) {
   .content-wrapper {
-    padding-left: 8px;
-    padding-right: 8px;
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
   }
   
   .card {
-    padding-left: 10px !important;
-    padding-right: 10px !important;
+    padding: 0.75rem !important;
+    margin-bottom: 0.75rem;
+  }
+  
+  .card-header {
+    padding: 0.75rem 1rem;
+    margin: -0.75rem -0.75rem 0.75rem -0.75rem;
+  }
+  
+  .card-footer {
+    padding: 0.75rem 1rem;
+    margin: 0.75rem -0.75rem -0.75rem -0.75rem;
+  }
+}
+
+/* Optimización general para evitar overflow horizontal */
+* {
+  box-sizing: border-box;
+}
+
+.container, .content-wrapper, .page-layout {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+/* Mejoras para la navegación responsive */
+@media (max-width: 640px) {
+  .btn {
+    @apply text-sm px-3 py-2;
+  }
+  
+  .btn-sm {
+    @apply text-xs px-2 py-1;
+  }
+  
+  .grid {
+    @apply gap-3;
+  }
+}
+
+/* Optimización para elementos con mucho contenido */
+.text-overflow-responsive {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .text-overflow-responsive {
+    max-width: 200px;
+  }
+}
+
+@media (min-width: 641px) and (max-width: 1023px) {
+  .text-overflow-responsive {
+    max-width: 300px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .text-overflow-responsive {
+    max-width: 400px;
   }
 }
 
@@ -237,4 +532,191 @@ html, body, #root {
   width: 30px !important;
   line-height: 30px !important;
   font-size: 18px !important;
+}
+
+/* ===== DRAWER & MAP MOBILE STYLES ===== */
+
+/* Keyframes for drawer animations */
+@keyframes slide-up {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slide-down {
+  from {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+}
+
+/* Animation classes */
+.animate-slide-up {
+  animation: slide-up 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+.animate-slide-down {
+  animation: slide-down 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Z-index hierarchy for mobile drawer */
+.map-drawer {
+  z-index: 9999 !important;
+  position: fixed !important;
+}
+
+.drawer-backdrop {
+  z-index: 9998 !important;
+  backdrop-filter: blur(4px);
+}
+
+.drawer-content {
+  z-index: 9999 !important;
+  position: relative !important;
+  will-change: transform;
+}
+
+/* Mobile Drawer Styles */
+.map-drawer-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 9998;
+  background-color: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+}
+
+.map-drawer {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 9999;
+  background: white;
+  border-top-left-radius: 1rem;
+  border-top-right-radius: 1rem;
+  box-shadow: 0 -10px 25px -3px rgba(0, 0, 0, 0.1), 0 -4px 6px -2px rgba(0, 0, 0, 0.05);
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  animation: slideUp 0.3s ease-out;
+}
+
+.map-drawer.closing {
+  animation: slideDown 0.3s ease-in;
+}
+
+/* Floating Action Button */
+.floating-action-button {
+  position: fixed;
+  bottom: 2rem;
+  right: 2rem;
+  z-index: 1000;
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: 50%;
+  background: #2563eb;
+  color: white;
+  border: none;
+  box-shadow: 0 10px 25px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.floating-action-button:hover {
+  background: #1d4ed8;
+  transform: scale(1.05);
+}
+
+/* Animations */
+@keyframes slideUp {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slideDown {
+  from {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+}
+
+/* Ensure Leaflet map renders correctly in drawer */
+.map-drawer .leaflet-container {
+  background: #e5e7eb;
+  height: 100% !important;
+  width: 100% !important;
+  position: relative !important;
+}
+
+.map-drawer .leaflet-control-container {
+  position: relative;
+  z-index: 1;
+}
+
+/* Fix for map tiles not loading */
+.leaflet-container .leaflet-tile {
+  border: none !important;
+}
+
+/* Specific styles for TripMapPreview in mobile drawer */
+.map-drawer .leaflet-container-custom,
+.map-drawer .leaflet-container {
+  height: 100% !important;
+  width: 100% !important;
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  z-index: 1 !important;
+  background: transparent !important;
+}
+
+/* Ensure map tiles render properly in drawer */
+.map-drawer .leaflet-tile-pane {
+  z-index: 1 !important;
+}
+
+.map-drawer .leaflet-overlay-pane {
+  z-index: 2 !important;
+}
+
+.map-drawer .leaflet-marker-pane {
+  z-index: 3 !important;
+}
+
+/* Responsive hiding/showing for desktop vs mobile */
+@media (min-width: 768px) {
+  .floating-action-button {
+    display: none;
+  }
+  
+  .map-drawer-overlay,
+  .map-drawer {
+    display: none !important;
+  }
 }

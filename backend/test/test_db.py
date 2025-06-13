@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from landmarks_db import LandmarksDB
+from landmarks.core.landmarks_db import LandmarksDB
 import json
 import uuid
 import logging

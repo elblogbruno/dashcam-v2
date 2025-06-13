@@ -45,6 +45,10 @@ class VideoMaker:
         self.default_framerate = 30
         self.default_bitrate = '4000k'
         
+        # Track active subprocess processes for proper cleanup
+        self.active_processes = []
+        self._process_lock = asyncio.Lock()
+        
         # Check for ffmpeg availability
         self._check_ffmpeg()
         
@@ -161,8 +165,18 @@ class VideoMaker:
                 stderr=asyncio.subprocess.PIPE
             )
             
-            # Wait for the process to complete
-            stdout, stderr = await process.communicate()
+            # Track the process for cleanup
+            async with self._process_lock:
+                self.active_processes.append(process)
+            
+            try:
+                # Wait for the process to complete
+                stdout, stderr = await process.communicate()
+            finally:
+                # Remove from tracking once completed
+                async with self._process_lock:
+                    if process in self.active_processes:
+                        self.active_processes.remove(process)
             
             if process.returncode == 0:
                 logger.info(f"Successfully created summary video: {output_file}")
@@ -213,7 +227,17 @@ class VideoMaker:
                     stderr=asyncio.subprocess.PIPE
                 )
                 
-                await process.communicate()
+                # Track the process for cleanup
+                async with self._process_lock:
+                    self.active_processes.append(process)
+                
+                try:
+                    await process.communicate()
+                finally:
+                    # Remove from tracking once completed
+                    async with self._process_lock:
+                        if process in self.active_processes:
+                            self.active_processes.remove(process)
                 
             # Create video from frames
             cmd = [
@@ -232,7 +256,17 @@ class VideoMaker:
                 stderr=asyncio.subprocess.PIPE
             )
             
-            await process.communicate()
+            # Track the process for cleanup
+            async with self._process_lock:
+                self.active_processes.append(process)
+            
+            try:
+                await process.communicate()
+            finally:
+                # Remove from tracking once completed
+                async with self._process_lock:
+                    if process in self.active_processes:
+                        self.active_processes.remove(process)
             
             # Clean up temporary frames
             import shutil
@@ -315,7 +349,17 @@ class VideoMaker:
                         stderr=asyncio.subprocess.PIPE
                     )
                     
-                    await process.communicate()
+                    # Track the process for cleanup
+                    async with self._process_lock:
+                        self.active_processes.append(process)
+                    
+                    try:
+                        await process.communicate()
+                    finally:
+                        # Remove from tracking once completed
+                        async with self._process_lock:
+                            if process in self.active_processes:
+                                self.active_processes.remove(process)
                     
                     logger.info(f"Extracted landmark clip: {output_file}")
                     
@@ -328,9 +372,48 @@ class VideoMaker:
             logger.error(f"Error extracting landmark clips: {str(e)}")
             return None
 
+    async def _cleanup_active_processes(self):
+        """Clean up any active subprocess processes"""
+        async with self._process_lock:
+            processes_to_clean = self.active_processes.copy()
+            self.active_processes.clear()
+        
+        for process in processes_to_clean:
+            try:
+                if process.returncode is None:  # Process is still running
+                    logger.info(f"Terminating active ffmpeg subprocess with PID {process.pid}")
+                    process.terminate()
+                    
+                    # Wait up to 3 seconds for graceful termination
+                    try:
+                        await asyncio.wait_for(process.wait(), timeout=3.0)
+                        logger.info(f"Process {process.pid} terminated gracefully")
+                    except asyncio.TimeoutError:
+                        logger.warning(f"Process {process.pid} did not terminate gracefully, force killing")
+                        process.kill()
+                        await process.wait()
+                        logger.info(f"Process {process.pid} force killed")
+            except Exception as e:
+                logger.error(f"Error cleaning up subprocess {getattr(process, 'pid', 'unknown')}: {str(e)}")
+
     def cleanup(self):
         """Clean up resources before shutdown"""
         logger.info("Cleaning up VideoMaker resources")
+        
+        # Clean up any active subprocess processes
+        try:
+            # Run async cleanup in a new event loop if needed
+            loop = None
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                # No running loop, create one
+                asyncio.run(self._cleanup_active_processes())
+            else:
+                # Already in a loop, schedule the cleanup
+                asyncio.create_task(self._cleanup_active_processes())
+        except Exception as e:
+            logger.error(f"Error cleaning up VideoMaker processes: {str(e)}")
         
         # Cancel any running asyncio tasks
         try:

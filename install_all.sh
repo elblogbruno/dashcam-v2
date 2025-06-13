@@ -14,6 +14,13 @@ if ! command -v pip3 &> /dev/null; then
     echo "pip3 no está instalado. Instalando..."
     sudo apt-get update && sudo apt-get install -y python3-pip
 fi
+
+# Verificar e instalar python3-venv
+if ! python3 -m venv --help &> /dev/null; then
+    echo "python3-venv no está disponible. Instalando..."
+    sudo apt-get update && sudo apt-get install -y python3.11-venv
+fi
+
 if ! command -v node &> /dev/null; then
     echo "Node.js no está instalado. Instalando..."
     sudo apt-get update && sudo apt-get install -y nodejs npm
@@ -21,6 +28,27 @@ fi
 if ! command -v npm &> /dev/null; then
     echo "npm no está instalado. Instalando..."
     sudo apt-get update && sudo apt-get install -y npm
+fi
+
+sudo apt-get install libhdf5-dev -y
+sudo apt install gcc g++ python3-dev build-essential -y
+sudo apt install python3-gpiozero -y
+
+# we need to install ffmpeg using dietpi's package manager
+if ! command -v ffmpeg &> /dev/null; then
+    echo "ffmpeg no está instalado. Instalando..."
+    sudo apt-get update && sudo apt-get install -y ffmpeg
+fi
+
+#install espeak if it is not installed
+if ! command -v espeak &> /dev/null; then
+    echo "espeak no está instalado. Instalando..."
+    sudo apt-get update && sudo apt-get install -y espeak
+fi
+
+if ! command -v espeak-ng &> /dev/null; then
+    echo "espeak-ng no está instalado. Instalando..."
+    sudo apt-get update && sudo apt-get install -y espeak-ng
 fi
 
 # 2. Instalar picamera si es necesario (antes de crear el entorno virtual)
@@ -59,6 +87,15 @@ if [ -d "frontend" ] && [ -f "frontend/package.json" ]; then
     cd ..
 else
     echo "No se encontró la carpeta frontend o package.json. Skipping frontend dependencies."
+fi
+
+# 6. Ejecutar script de instalación de drivers ReSpeaker
+if [ -f "scripts/install-respeaker-drivers.sh" ]; then
+    echo "[6/6] Ejecutando instalación de drivers ReSpeaker..."
+    chmod +x scripts/install-respeaker-drivers.sh
+    ./scripts/install-respeaker-drivers.sh
+else
+    echo "No se encontró scripts/install-respeaker-drivers.sh. Skipping ReSpeaker drivers."
 fi
 
 echo "\n¡Instalación completa! Usa 'source venv/bin/activate' para activar el entorno Python."

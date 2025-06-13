@@ -5,11 +5,17 @@ import { FaRoute, FaPlus, FaMapMarkerAlt, FaStop, FaFileImport } from 'react-ico
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 
+// Importar el nuevo sistema de diseño
+import { PageLayout, Section, Grid, Stack, Flex } from '../components/common/Layout';
+import { Button, Card, Alert, Badge, Spinner } from '../components/common/UI';
+
 // Import custom components
-import TripForm from '../components/TripPlanner/TripForm';
+import TripFormModal from '../components/TripPlanner/TripFormModal';
 import TripCard from '../components/TripPlanner/TripCard';
 import TripMapPreview from '../components/TripPlanner/TripMapPreview';
 import KmlPreview from '../components/TripPlanner/KmlPreview';
+import MobileMapDrawer from '../components/TripPlanner/MobileMapDrawer';
+import DownloadEstimateModal from '../components/TripPlanner/TripCard/DownloadEstimateModal';
 
 // Import services
 import { 
@@ -38,13 +44,63 @@ L.Marker.prototype.options.icon = DefaultIcon;
 
 const TripPlanner = () => {
   const [trips, setTrips] = useState([]);
-  const [showForm, setShowForm] = useState(false);
+  const [showFormModal, setShowFormModal] = useState(false);
   const [loading, setLoading] = useState(false);
   const [downloadingTrip, setDownloadingTrip] = useState(null);
   const [downloadProgress, setDownloadProgress] = useState(null);
   const [selectedTripForPreview, setSelectedTripForPreview] = useState(null);
   const [selectedTab, setSelectedTab] = useState('upcoming'); // 'upcoming' or 'past'
+  const [geodataStats, setGeodataStats] = useState({}); // Store coverage stats by trip ID
   const [editingTrip, setEditingTrip] = useState(null);
+  const [showMapDrawer, setShowMapDrawer] = useState(false); // New state for mobile map drawer
+  const [mapKey, setMapKey] = useState(0); // Key to force map re-render
+  
+  // Download estimate modal states
+  const [showEstimateModal, setShowEstimateModal] = useState(false);
+  const [estimateModalTripId, setEstimateModalTripId] = useState(null);
+  const [estimateModalType, setEstimateModalType] = useState('both'); // 'landmarks', 'geodata', 'both'
+  
+  // Download control states
+  const [downloadPaused, setDownloadPaused] = useState(false);
+  const [downloadType, setDownloadType] = useState(null); // 'landmarks', 'geodata'
+  
+  // Touch handling for drawer
+  const [touchStart, setTouchStart] = useState(null);
+  const [touchEnd, setTouchEnd] = useState(null);
+
+  // Function to open map drawer with proper map initialization
+  const openMapDrawer = () => {
+    setShowMapDrawer(true);
+    // Force map re-render when drawer opens with longer delay for mobile
+    setTimeout(() => {
+      setMapKey(prev => prev + 1);
+      // Additional resize event to help with map rendering
+      setTimeout(() => {
+        window.dispatchEvent(new Event('resize'));
+      }, 150);
+    }, 200);
+  };
+
+  // Handle touch events for drawer swipe-to-close
+  const handleTouchStart = (e) => {
+    setTouchEnd(null);
+    setTouchStart(e.targetTouches[0].clientY);
+  };
+
+  const handleTouchMove = (e) => {
+    setTouchEnd(e.targetTouches[0].clientY);
+  };
+
+  const handleTouchEnd = () => {
+    if (!touchStart || !touchEnd) return;
+    
+    const distance = touchStart - touchEnd;
+    const isDownSwipe = distance < -100; // Swipe down threshold
+    
+    if (isDownSwipe) {
+      setShowMapDrawer(false);
+    }
+  };
   const [activeTripInfo, setActiveTripInfo] = useState(null); // Para almacenar información del viaje activo
   
   // Estados para la importación de KML/KMZ
@@ -59,7 +115,205 @@ const TripPlanner = () => {
   useEffect(() => {
     fetchTrips();
     checkActiveTrip();
+    checkActiveDownloads();
   }, []);
+
+  // Function to check if there are any active downloads and reconnect
+  const checkActiveDownloads = async () => {
+    console.log(`[TripPlanner] Checking for active downloads...`);
+    try {
+      const tripsData = await fetchTripsService();
+      console.log(`[TripPlanner] Found ${tripsData.length} trips to check`);
+      
+      // Check each trip for active downloads
+      for (const trip of tripsData) {
+        console.log(`[TripPlanner] Checking trip ${trip.id} (${trip.name}) for active downloads`);
+        
+        // Check for active geodata downloads
+        try {
+          const response = await fetch(`/api/geocoding/trip-geodata/${trip.id}/download-geodata-status`);
+          console.log(`[TripPlanner] Geodata status response for ${trip.id}:`, response.status);
+          
+          if (response.ok) {
+            const status = await response.json();
+            console.log(`[TripPlanner] Geodata status for trip ${trip.id}:`, status);
+            
+            if (status.status === 'in_progress') {
+              console.log(`[TripPlanner] Found active geodata download for trip ${trip.id}:`, status);
+              
+              // Set the downloading state
+              setDownloadingTrip(trip.id);
+              setDownloadProgress(status);
+              
+              // Reconnect to the stream
+              console.log(`[TripPlanner] Reconnecting to geodata stream for trip ${trip.id}`);
+              reconnectToGeodataStream(trip.id);
+              break; // Only handle one active download at a time
+            }
+          }
+        } catch (error) {
+          console.warn(`Error checking geodata status for trip ${trip.id}:`, error);
+        }
+        
+        // Check for active landmark downloads
+        try {
+          const response = await fetch(`/api/landmarks/${trip.id}/download-landmarks-status`);
+          if (response.ok) {
+            const status = await response.json();
+            
+            if (status.status === 'in_progress') {
+              console.log(`[TripPlanner] Found active landmark download for trip ${trip.id}:`, status);
+              
+              // Set the downloading state
+              setDownloadingTrip(trip.id);
+              setDownloadProgress(status);
+              
+              // Reconnect to the stream
+              reconnectToLandmarkStream(trip.id);
+              break; // Only handle one active download at a time
+            }
+          }
+        } catch (error) {
+          console.warn(`Error checking landmark status for trip ${trip.id}:`, error);
+        }
+      }
+    } catch (error) {
+      console.error('Error checking active downloads:', error);
+    }
+  };
+
+  // Function to reconnect to geodata stream
+  const reconnectToGeodataStream = (tripId) => {
+    console.log(`[TripPlanner] Creating EventSource for geodata stream: /api/geocoding/trip-geodata/${tripId}/download-geodata-stream`);
+    const eventSource = new EventSource(`/api/geocoding/trip-geodata/${tripId}/download-geodata-stream`);
+    
+    eventSource.onopen = () => {
+      console.log(`[TripPlanner] Geodata EventSource connection opened for trip ${tripId}`);
+    };
+    
+    // Handle general messages (fallback)
+    eventSource.onmessage = (event) => {
+      try {
+        console.log(`[TripPlanner] Received geodata event for trip ${tripId}:`, event.data);
+        
+        const data = JSON.parse(event.data);
+        console.log(`[TripPlanner] Parsed geodata data for trip ${tripId}:`, data);
+        
+        if (data.type === 'progress') {
+          console.log(`[TripPlanner] Updating progress for trip ${tripId}:`, data.progress);
+          setDownloadProgress(data);
+        } else if (data.type === 'complete') {
+          console.log(`[TripPlanner] Geodata download completed for trip ${tripId}`);
+          eventSource.close();
+          setDownloadingTrip(null);
+          setDownloadProgress(null);
+          fetchTrips(); // Refresh to get updated trip status
+        } else if (data.type === 'error') {
+          console.log(`[TripPlanner] Geodata download error for trip ${tripId}:`, data);
+          eventSource.close();
+          setDownloadingTrip(null);
+          setDownloadProgress(null);
+        }
+      } catch (error) {
+        console.error('Error parsing geodata event:', error);
+      }
+    };
+
+    // Handle specific progress events
+    eventSource.addEventListener('progress', (event) => {
+      try {
+        console.log(`[TripPlanner] Received progress event for trip ${tripId}:`, event.data);
+        const data = JSON.parse(event.data);
+        console.log(`[TripPlanner] Updating progress for trip ${tripId}:`, data.progress);
+        setDownloadProgress(data);
+      } catch (error) {
+        console.error('Error parsing progress event:', error);
+      }
+    });
+
+    // Handle completion events
+    eventSource.addEventListener('complete', (event) => {
+      try {
+        console.log(`[TripPlanner] Geodata download completed for trip ${tripId}`);
+        const data = JSON.parse(event.data);
+        console.log(`[TripPlanner] Completion data:`, data);
+        eventSource.close();
+        setDownloadingTrip(null);
+        setDownloadProgress(null);
+        fetchTrips(); // Refresh to get updated trip status
+      } catch (error) {
+        console.error('Error parsing completion event:', error);
+      }
+    });
+
+    // Handle error events
+    eventSource.addEventListener('error', (event) => {
+      try {
+        console.log(`[TripPlanner] Geodata download error for trip ${tripId}:`, event.data);
+        const data = JSON.parse(event.data);
+        console.log(`[TripPlanner] Error data:`, data);
+        eventSource.close();
+        setDownloadingTrip(null);
+        setDownloadProgress(null);
+      } catch (error) {
+        console.error('Error parsing error event:', error);
+      }
+    });
+
+    eventSource.onerror = (error) => {
+      console.error(`[TripPlanner] Geodata EventSource error for trip ${tripId}:`, error);
+      console.error(`[TripPlanner] EventSource readyState:`, eventSource.readyState);
+      eventSource.close();
+      setDownloadingTrip(null);
+      setDownloadProgress(null);
+    };
+  };
+
+  // Function to reconnect to landmark stream
+  const reconnectToLandmarkStream = (tripId) => {
+    const eventSource = new EventSource(`/api/landmarks/${tripId}/download-landmarks-stream`);
+    
+    eventSource.onmessage = (event) => {
+      try {
+        console.log(`[TripPlanner] Received landmark event for trip ${tripId}:`, event.data);
+        
+        // Extract JSON from SSE format if needed
+        let jsonData = event.data;
+        if (typeof event.data === 'string' && event.data.includes('data: ')) {
+          // Extract the JSON part after "data: "
+          const lines = event.data.split('\n');
+          const dataLine = lines.find(line => line.startsWith('data: '));
+          if (dataLine) {
+            jsonData = dataLine.substring(6); // Remove "data: " prefix
+          }
+        }
+        
+        const data = JSON.parse(jsonData);
+        console.log(`[TripPlanner] Reconnected landmark progress for trip ${tripId}:`, data);
+        
+        if (data.type === 'progress') {
+          setDownloadProgress(data);
+        } else if (data.type === 'complete') {
+          eventSource.close();
+          setDownloadingTrip(null);
+          setDownloadProgress(null);
+          fetchTrips(); // Refresh to get updated trip status
+        } else if (data.type === 'error') {
+          eventSource.close();
+          setDownloadingTrip(null);
+          setDownloadProgress(null);
+        }
+      } catch (error) {
+        console.error('Error parsing reconnected landmark event:', error);
+      }
+    };
+
+    eventSource.onerror = () => {
+      eventSource.close();
+      setDownloadingTrip(null);
+      setDownloadProgress(null);
+    };
+  };
   
   const fetchTrips = async () => {
     setLoading(true);
@@ -92,7 +346,7 @@ const TripPlanner = () => {
       setTrips([...trips, newTrip]);
       
       // Reset form state
-      setShowForm(false);
+      setShowFormModal(false);
       
       // Select the new trip for preview
       setSelectedTripForPreview(newTrip);
@@ -151,33 +405,209 @@ const TripPlanner = () => {
   };
   
   const handleDownloadLandmarks = async (tripId) => {
+    // Show estimate modal first
+    setEstimateModalTripId(tripId);
+    setEstimateModalType('landmarks');
+    setShowEstimateModal(true);
+  };
+
+  const handleDownloadGeodata = async (tripId) => {
+    // Show estimate modal first
+    setEstimateModalTripId(tripId);
+    setEstimateModalType('geodata');
+    setShowEstimateModal(true);
+  };
+
+  // New function to handle both downloads
+  const handleDownloadBoth = async (tripId) => {
+    // Show estimate modal first
+    setEstimateModalTripId(tripId);
+    setEstimateModalType('both');
+    setShowEstimateModal(true);
+  };
+
+  // Function called after user confirms in estimate modal
+  const confirmDownload = async (radiusKm) => {
+    const tripId = estimateModalTripId;
+    const downloadType = estimateModalType;
+    
+    // Close modal
+    setShowEstimateModal(false);
+    setEstimateModalTripId(null);
+    setEstimateModalType('both');
+    
+    // Start the actual download
     setDownloadingTrip(tripId);
-    setDownloadProgress(0);
+    setDownloadProgress({ progress: 0, detail: 'Iniciando...' });
     
     try {
-      // Use our new simplified landmark service for downloading
-      // Las notificaciones ahora se gestionan directamente en el servicio
-      await downloadTripLandmarks(tripId, (progress, detail) => {
-        setDownloadProgress(progress);
-        // Ya no necesitamos mostrar toasts aquí, lo hace el servicio
-      });
-      
-      // Mark the trip as having landmarks downloaded
-      setTrips(trips.map(trip => {
-        if (trip.id === tripId) {
-          return { ...trip, landmarks_downloaded: true };
+      if (downloadType === 'landmarks') {
+        // Use our new simplified landmark service for downloading
+        await downloadTripLandmarks(tripId, (progressData) => {
+          console.log(`[TripPlanner DEBUG] Landmark progress data for trip ${tripId}:`, progressData);
+          setDownloadProgress(progressData);
+        });
+        
+        // Mark the trip as having landmarks downloaded
+        setTrips(trips.map(trip => {
+          if (trip.id === tripId) {
+            return { ...trip, landmarks_downloaded: true };
+          }
+          return trip;
+        }));
+        
+      } else if (downloadType === 'geodata') {
+        // Import the new geodata download function
+        const { downloadTripGeodata } = await import('../services/tripService');
+        
+        toast.loading('Iniciando descarga de datos geográficos...', { id: 'geodata-download' });
+        
+        // Download geodata with custom radius
+        const result = await downloadTripGeodata(tripId, { radius_km: radiusKm, format: "both" }, (progress) => {
+          console.log(`[TripPlanner DEBUG] Geodata progress data for trip ${tripId}:`, progress);
+          setDownloadProgress(progress);
+          
+          // Update toast with progress
+          if (progress.waypoint_name) {
+            toast.loading(
+              `Descargando geodata: ${progress.progress.toFixed(1)}% - ${progress.waypoint_name}`, 
+              { id: 'geodata-download' }
+            );
+          }
+        });
+        
+        // Store coverage statistics
+        if (result && result.coverage_stats) {
+          setGeodataStats(prev => ({
+            ...prev,
+            [tripId]: result.coverage_stats
+          }));
         }
-        return trip;
-      }));
+        
+        setTrips(trips.map(trip => {
+          if (trip.id === tripId) {
+            return { ...trip, geodata_downloaded: true };
+          }
+          return trip;
+        }));
+        
+        // Show success message with coverage info
+        const coverageMessage = result?.coverage_stats 
+          ? ` (Cobertura: ${result.coverage_stats.coverage_percentage?.toFixed(1) || 0}%)`
+          : '';
+        
+        toast.success(`Datos geográficos descargados correctamente${coverageMessage}`, { id: 'geodata-download' });
+        
+      } else if (downloadType === 'both') {
+        // Download landmarks first
+        await downloadTripLandmarks(tripId, (progressData) => {
+          console.log(`[TripPlanner DEBUG] Landmark progress data for trip ${tripId}:`, progressData);
+          setDownloadProgress({
+            ...progressData,
+            detail: `Landmarks: ${progressData.detail || ''}`
+          });
+        });
+        
+        // Then download geodata
+        const { downloadTripGeodata } = await import('../services/tripService');
+        
+        const result = await downloadTripGeodata(tripId, { radius_km: radiusKm, format: "both" }, (progress) => {
+          console.log(`[TripPlanner DEBUG] Geodata progress data for trip ${tripId}:`, progress);
+          setDownloadProgress({
+            ...progress,
+            detail: `Geodata: ${progress.detail || ''}`
+          });
+        });
+        
+        // Store coverage statistics
+        if (result && result.coverage_stats) {
+          setGeodataStats(prev => ({
+            ...prev,
+            [tripId]: result.coverage_stats
+          }));
+        }
+        
+        setTrips(trips.map(trip => {
+          if (trip.id === tripId) {
+            return { 
+              ...trip, 
+              landmarks_downloaded: true,
+              geodata_downloaded: true 
+            };
+          }
+          return trip;
+        }));
+        
+        const coverageMessage = result?.coverage_stats 
+          ? ` (Cobertura: ${result.coverage_stats.coverage_percentage?.toFixed(1) || 0}%)`
+          : '';
+        
+        toast.success(`Descarga completa finalizada${coverageMessage}`);
+      }
       
-      // Refresh trips from server to get updated landmark count
+      // Refresh trips from server to get updated data
       fetchTrips();
     } catch (error) {
-      console.error('Error downloading landmarks:', error);
-      // No necesitamos mostrar el error aquí, ya lo hace el servicio
+      console.error('Error downloading:', error);
+      const errorMessage = downloadType === 'landmarks' 
+        ? 'Error al descargar puntos de interés'
+        : downloadType === 'geodata'
+        ? 'Error al descargar datos geográficos'
+        : 'Error en la descarga';
+      toast.error(`${errorMessage}: ${error.message}`);
     } finally {
       setDownloadingTrip(null);
       setDownloadProgress(null);
+    }
+  };
+
+  // Function to cancel download estimate modal
+  const cancelEstimate = () => {
+    setShowEstimateModal(false);
+    setEstimateModalTripId(null);
+    setEstimateModalType('both');
+  };
+
+  // Handle download cancellation from DownloadProgress component
+  const handleCancelDownload = async (tripId) => {
+    try {
+      // Import cancel functions
+      const { cancelLandmarksDownload, cancelGeodataDownload } = await import('../services/tripService');
+      
+      // Determine what type of download is active and cancel it
+      if (downloadProgress?.detail) {
+        const detail = downloadProgress.detail.toLowerCase();
+        if (detail.includes('landmark') || detail.includes('punto')) {
+          await cancelLandmarksDownload(tripId);
+          toast.success('Descarga de puntos de interés cancelada');
+        } else if (detail.includes('geodata') || detail.includes('geográfico')) {
+          await cancelGeodataDownload(tripId);
+          toast.success('Descarga de datos geográficos cancelada');
+        } else {
+          // Try both just in case
+          try {
+            await cancelLandmarksDownload(tripId);
+          } catch (error) {
+            console.warn('No landmarks download to cancel:', error);
+          }
+          try {
+            await cancelGeodataDownload(tripId);
+          } catch (error) {
+            console.warn('No geodata download to cancel:', error);
+          }
+          toast.success('Descarga cancelada');
+        }
+      }
+      
+      // Reset download state
+      setDownloadingTrip(null);
+      setDownloadProgress(null);
+      
+      // Refresh trips to get updated status
+      fetchTrips();
+    } catch (error) {
+      console.error('Error canceling download:', error);
+      toast.error('Error al cancelar la descarga');
     }
   };
   
@@ -190,11 +620,11 @@ const TripPlanner = () => {
 
   const handleEditTrip = (trip) => {
     setEditingTrip(trip);
-    setShowForm(true);
+    setShowFormModal(true);
   };
-  
+
   const handleCancelForm = () => {
-    setShowForm(false);
+    setShowFormModal(false);
     setEditingTrip(null);
   };
 
@@ -327,170 +757,223 @@ const TripPlanner = () => {
     navigate('/landmarks-manager');
   };
 
+  // Function to manage actual trips for a specific planned trip
+  const manageActualTrips = (trip) => {
+    // Navigate to actual trips manager
+    navigate(`/trips/${trip.id}/actual-trips`);
+  };
+
   return (
-    <div className="container mx-auto px-2 sm:px-4 py-3 sm:py-6">
+    <div className="trip-planner-container">
+      <PageLayout
+        title="Trip Planner"
+        icon={<FaRoute size={20} />}
+        actions={
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 w-full sm:w-auto">
+          {/* Mobile: Stack actions vertically */}
+          <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 order-2 sm:order-1">
+            {/* Landmarks Manager button - hidden on small screens, shown as icon on mobile */}
+            <Button
+              onClick={navigateToLandmarksManager}
+              variant="secondary"
+              size="sm"
+              className="w-full sm:w-auto"
+            >
+              <FaMapMarkerAlt className="mr-1 sm:mr-1" /> 
+              <span className="sm:inline">Landmarks</span>
+            </Button>
+            
+            {/* Plan Trip button */}
+            <Button
+              onClick={() => {
+                setShowFormModal(true);
+                setEditingTrip(null);
+              }}
+              variant="primary"
+              size="sm"
+              disabled={editingTrip !== null}
+              className="w-full sm:w-auto min-h-[44px] touch-manipulation"
+            >
+              <FaPlus className="mr-1" /> Plan Trip
+            </Button>
+          </div>
+          
+          {/* Tab switcher - prioritized on mobile */}
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-1 flex order-1 sm:order-2 w-full sm:w-auto">
+            <Button
+              onClick={() => setSelectedTab('upcoming')}
+              variant={selectedTab === 'upcoming' ? 'primary' : 'ghost'}
+              size="sm"
+              className="rounded-md flex-1 sm:flex-none min-h-[40px] touch-manipulation"
+            >
+              Upcoming
+            </Button>
+            <Button
+              onClick={() => setSelectedTab('past')}
+              variant={selectedTab === 'past' ? 'primary' : 'ghost'}
+              size="sm"
+              className="rounded-md flex-1 sm:flex-none min-h-[40px] touch-manipulation"
+            >
+              Past
+            </Button>
+          </div>
+        </div>
+      }
+    >
       <Toaster position="top-right" />
       
       {/* Mostrar alerta cuando hay un viaje activo */}
       {activeTripInfo && (
-        <div className="bg-green-100 border-l-4 border-green-500 text-green-700 p-4 rounded-md mb-4 flex items-center justify-between">
-          <div className="flex items-center">
-            <div className="flex-shrink-0 w-4 h-4 mr-2">
-              <div className="w-3 h-3 rounded-full bg-green-500 animate-pulse"></div>
-            </div>
-            <p className="font-medium">
-              <span className="font-bold">Viaje activo:</span> 
-              {activeTripInfo.planned_trip_id && trips.find(t => t.id === activeTripInfo.planned_trip_id)?.name || "Viaje sin nombre"}
-            </p>
-          </div>
-          <button
-            onClick={() => {
-              if (window.confirm('¿Estás seguro de que quieres detener el viaje actual? Se finalizará la grabación.')) {
-                fetch('/api/trips/end', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' }
-                })
-                .then(response => response.json())
-                .then(data => {
-                  if (data.status === 'success') {
-                    alert('¡Viaje finalizado! La grabación se ha detenido.');
-                    setActiveTripInfo(null);
-                    checkActiveTrip(); // Actualizar el estado
-                  } else {
-                    alert('Error al detener el viaje: ' + (data.detail || 'Error desconocido'));
-                  }
-                })
-                .catch(error => {
-                  console.error('Error al detener el viaje:', error);
-                  alert('Error al detener el viaje. Consulta la consola para más detalles.');
-                });
-              }
-            }}
-            className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded-md text-sm flex items-center"
-          >
-            <FaStop className="mr-1" /> Detener viaje
-          </button>
-        </div>
-      )}
-      
-      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4 sm:mb-6 space-y-3 sm:space-y-0">
-        <h1 className="text-xl sm:text-2xl font-bold text-dashcam-800 flex items-center">
-          <FaRoute className="mr-2" />
-          Trip Planner
-        </h1>
-        
-        <div className="flex flex-wrap gap-2">
-          {/* Add Landmarks Manager button */}
-          <button
-            onClick={navigateToLandmarksManager}
-            className="bg-green-600 hover:bg-green-700 text-white py-1 sm:py-2 px-3 sm:px-4 rounded-md flex items-center text-sm sm:text-base"
-          >
-            <FaMapMarkerAlt className="mr-1" /> Landmarks
-          </button>
-          
-          <div className="bg-white rounded-lg shadow p-1 flex">
-            <button
-              onClick={() => setSelectedTab('upcoming')}
-              className={`px-2 sm:px-4 py-1 sm:py-2 rounded-md text-sm sm:text-base ${selectedTab === 'upcoming' ? 'bg-dashcam-500 text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+        <Alert 
+          type="success" 
+          className="mb-6"
+          title="Viaje activo"
+          message={`${activeTripInfo.planned_trip_id && trips.find(t => t.id === activeTripInfo.planned_trip_id)?.name || "Viaje sin nombre"}`}
+          action={
+            <Button
+              onClick={() => {
+                if (window.confirm('¿Estás seguro de que quieres detener el viaje actual? Se finalizará la grabación.')) {
+                  fetch('/api/trips/end', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                  })
+                  .then(response => response.json())
+                  .then(data => {
+                    if (data.status === 'success') {
+                      alert('¡Viaje finalizado! La grabación se ha detenido.');
+                      setActiveTripInfo(null);
+                      checkActiveTrip();
+                    } else {
+                      alert('Error al detener el viaje: ' + (data.detail || 'Error desconocido'));
+                    }
+                  })
+                  .catch(error => {
+                    console.error('Error al detener el viaje:', error);
+                    alert('Error al detener el viaje. Consulta la consola para más detalles.');
+                  });
+                }
+              }}
+              variant="danger"
+              size="sm"
             >
-              Upcoming
-            </button>
-            <button
-              onClick={() => setSelectedTab('past')}
-              className={`px-2 sm:px-4 py-1 sm:py-2 rounded-md text-sm sm:text-base ${selectedTab === 'past' ? 'bg-dashcam-500 text-white' : 'text-gray-600 hover:bg-gray-100'}`}
-            >
-              Past
-            </button>
-          </div>
-          
-          <button
-            onClick={() => {
-              setShowForm(!showForm);
-              if (showForm) setEditingTrip(null);
-            }}
-            className="bg-dashcam-600 hover:bg-dashcam-700 text-white py-1 sm:py-2 px-3 sm:px-4 rounded-md flex items-center text-sm sm:text-base"
-            disabled={editingTrip !== null}
-          >
-            {showForm && !editingTrip ? 'Cancel' : <>
-              <FaPlus className="mr-1" /> Plan Trip
-            </>}
-          </button>
-        </div>
-      </div>
-      
-      {showForm && (
-        <TripForm
-          initialData={editingTrip}
-          onSubmit={editingTrip ? handleUpdateTrip : handleCreateTrip}
-          onCancel={handleCancelForm}
+              <FaStop className="mr-1" /> Detener viaje
+            </Button>
+          }
         />
       )}
       
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-6">
-        <div className="lg:col-span-2">
+      {/* Trip Form Modal */}
+      <TripFormModal
+        isOpen={showFormModal}
+        onClose={handleCancelForm}
+        initialData={editingTrip}
+        onSubmit={editingTrip ? handleUpdateTrip : handleCreateTrip}
+      />
+      
+      <div className="lg:grid lg:grid-cols-5 lg:gap-6">
+        {/* Trip Cards - Full width on mobile, 3/5 on desktop */}
+        <div className="lg:col-span-3">
           {loading ? (
-            <div className="text-center py-6 sm:py-10 bg-white rounded-lg shadow-md">
-              <div className="animate-spin h-8 w-8 sm:h-10 sm:w-10 border-4 border-dashcam-500 border-t-transparent rounded-full mx-auto mb-3 sm:mb-4"></div>
-              <p className="text-gray-600 text-sm sm:text-base">Loading trips...</p>
-            </div>
+            <Card>
+              <Flex justify="center" align="center" className="py-12">
+                <Stack align="center" space="sm">
+                  <Spinner size="lg" />
+                  <p className="text-gray-600">Loading trips...</p>
+                </Stack>
+              </Flex>
+            </Card>
           ) : filteredTrips.length === 0 ? (
-            <div className="text-center py-6 sm:py-10 bg-white rounded-lg shadow-md">
-              <h3 className="text-lg sm:text-xl font-medium text-gray-600">No {selectedTab} trips found</h3>
-              <p className="text-sm sm:text-base text-gray-500 mt-2">
-                {selectedTab === 'upcoming' 
-                  ? 'Plan your first trip to prepare for your journey' 
-                  : 'Your past trips will appear here'}
-              </p>
-              {selectedTab === 'upcoming' && (
-                <button
-                  onClick={() => {
-                    setShowForm(true);
-                    setEditingTrip(null);
-                  }}
-                  className="mt-4 bg-dashcam-600 hover:bg-dashcam-700 text-white py-1 sm:py-2 px-3 sm:px-4 rounded-md text-sm sm:text-base"
-                >
-                  Plan a Trip
-                </button>
-              )}
-            </div>
+            <Card>
+              <Flex justify="center" align="center" className="py-12">
+                <Stack align="center" space="sm" className="text-center">
+                  <FaRoute className="w-12 h-12 text-gray-400" />
+                  <div>
+                    <h3 className="text-lg font-medium text-gray-600">No {selectedTab} trips found</h3>
+                    <p className="text-gray-500 mt-1">
+                      {selectedTab === 'upcoming' 
+                        ? 'Plan your first trip to prepare for your journey' 
+                        : 'Your past trips will appear here'}
+                    </p>
+                  </div>
+                  {selectedTab === 'upcoming' && (
+                    <Button
+                      onClick={() => {
+                        setShowFormModal(true);
+                        setEditingTrip(null);
+                      }}
+                      variant="primary"
+                      className="min-h-[44px] touch-manipulation"
+                    >
+                      Plan a Trip
+                    </Button>
+                  )}
+                </Stack>
+              </Flex>
+            </Card>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
+            <Grid cols={1} gap="md" className="xl:grid-cols-2">
               {filteredTrips.map((trip) => (
                 <TripCard
                   key={trip.id}
                   trip={trip}
-                  onSelect={setSelectedTripForPreview}
+                  onSelect={(trip) => {
+                    setSelectedTripForPreview(trip);
+                    // On mobile, show the map drawer when a trip is selected
+                    if (window.innerWidth < 1024) {
+                      openMapDrawer();
+                    }
+                  }}
                   onDelete={handleDeleteTrip}
                   onDownloadLandmarks={handleDownloadLandmarks}
+                  onDownloadGeodata={handleDownloadGeodata}
+                  onDownloadBoth={handleDownloadBoth}
                   onStartNavigation={startNavigation}
                   onEdit={handleEditTrip}
                   onManageLandmarks={manageTripLandmarks}
+                  onManageActualTrips={manageActualTrips}
                   onImportLandmarksFromKml={handleImportLandmarksFile}
+                  onCancelDownload={handleCancelDownload}
                   isSelected={selectedTripForPreview?.id === trip.id}
                   downloadingTrip={downloadingTrip}
                   downloadProgress={downloadingTrip === trip.id ? downloadProgress : null}
                   isActiveTripId={activeTripInfo && activeTripInfo.planned_trip_id === trip.id}
+                  geodataStats={geodataStats[trip.id]}
                 />
               ))}
-            </div>
+            </Grid>
           )}
         </div>
         
-        {/* Map preview panel */}
-        <div className="bg-white rounded-lg shadow-md overflow-hidden">
-          <div className="bg-dashcam-700 text-white p-3 sm:p-4">
-            <h3 className="text-base sm:text-lg font-semibold">Trip Preview</h3>
-          </div>
-          
-          <div className="h-[450px] sm:h-[500px] md:h-[550px] lg:h-[600px]">
-            <TripMapPreview
-              trip={selectedTripForPreview}
-              onStartNavigation={startNavigation}
-              isUpcoming={selectedTab === 'upcoming'}
-            />
+        {/* Desktop Map preview panel - Hidden on mobile, shown on desktop */}
+        <div className="hidden lg:block lg:col-span-2">
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden sticky top-4">
+            <div className="bg-primary-600 text-white p-3 sm:p-4">
+              <h3 className="text-base sm:text-lg font-semibold">Trip Preview</h3>
+            </div>
+            
+            {/* Proporción más grande 3:2 para mejor visualización */}
+            <div className="aspect-[3/2]">
+              <TripMapPreview
+                trip={selectedTripForPreview}
+                onStartNavigation={startNavigation}
+                isUpcoming={selectedTab === 'upcoming'}
+              />
+            </div>
           </div>
         </div>
       </div>
+
+      {/* Mobile Map Drawer - Only visible on mobile */}
+      <MobileMapDrawer
+        selectedTrip={selectedTripForPreview}
+        isOpen={showMapDrawer}
+        onClose={() => setShowMapDrawer(false)}
+        onOpen={openMapDrawer}
+        mapKey={mapKey}
+        selectedTab={selectedTab}
+        onStartNavigation={startNavigation}
+        onManageLandmarks={manageTripLandmarks}
+      />
 
       {/* Modal para previsualizar landmarks desde KML/KMZ */}
       {isImportingLandmarks && kmlPlacemarks.length > 0 && (
@@ -501,6 +984,16 @@ const TripPlanner = () => {
           type="landmarks"
         />
       )}
+
+      {/* Download Estimate Modal */}
+      <DownloadEstimateModal
+        tripId={estimateModalTripId}
+        isOpen={showEstimateModal}
+        onClose={cancelEstimate}
+        onConfirm={confirmDownload}
+        downloadType={estimateModalType}
+      />
+    </PageLayout>
     </div>
   );
 };

@@ -4,7 +4,7 @@ websockets>=11.0.1
 python-multipart>=0.0.6
 aiofiles>=23.1.0
 opencv-python>=4.7.0.72
-# numpy>=1.24.2
+numpy>=1.24.2
 Pillow>=9.5.0
 pyttsx3>=2.90
 moviepy>=1.0.3
@@ -21,3 +21,13 @@ mapbox-vector-tile>=2.1.0
 piper-tts
 aiohttp>=3.8.4
 spidev>=3.5.0
+pandas>=1.5.0
+reverse_geocoder>=1.5.1
+# Video metadata manipulation
+ffmpeg-python>=0.2.0
+# GPIO dependencies for Raspberry Pi
+RPi.GPIO>=0.7.1
+gpiozero>=1.6.2
+# ORM and Data Validation
+sqlalchemy>=2.0.0
+alembic>=1.16.0

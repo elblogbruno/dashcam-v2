@@ -1,12 +1,17 @@
 import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useNavigation } from '../contexts/NavigationContext';
+import { Flex } from './common/Layout';
+import { Button, Badge } from './common/UI';
 
-function Navigation() {
+function Navigation({ darkMode }) {
   const location = useLocation();
   const { currentPage, setCurrentPage } = useNavigation();
   const [showLabels, setShowLabels] = useState(true);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
+  
+  // Si no se proporciona darkMode como prop, intentamos detectar el tema del sistema
+  const isDarkMode = darkMode !== undefined ? darkMode : document.documentElement.classList.contains('dark-mode');
 
   // Auto-hide labels on smaller screens for more space
   useEffect(() => {
@@ -19,7 +24,7 @@ function Navigation() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
   
-  // Manejo mejorado para cerrar el menú "más" al hacer clic fuera
+  // Enhanced handling to close "more" menu when clicking outside
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (showMoreMenu && !event.target.closest('.more-menu-container')) {
@@ -27,7 +32,6 @@ function Navigation() {
       }
     };
     
-    // Usar mousedown para capturar clics antes de que otros controladores de eventos
     document.addEventListener('mousedown', handleClickOutside);
     document.addEventListener('touchstart', handleClickOutside);
     
@@ -37,13 +41,12 @@ function Navigation() {
     };
   }, [showMoreMenu]);
   
-  // Cerrar el menú al cambiar de ruta
+  // Close menu when route changes
   useEffect(() => {
     setShowMoreMenu(false);
   }, [location.pathname]);
 
-  // Navigation items with mobile-optimized icons
-  // Items principales que siempre aparecen en la barra de navegación móvil
+  // Primary navigation items that always appear in mobile navigation bar
   const primaryNavItems = [
     {
       path: '/',
@@ -87,7 +90,7 @@ function Navigation() {
     }
   ];
   
-  // Items secundarios que aparecen en el menú "Más" en móvil
+  // Secondary navigation items that appear in "More" menu on mobile
   const secondaryNavItems = [
     {
       path: '/settings',
@@ -130,9 +133,6 @@ function Navigation() {
       )
     }
   ];
-  
-  // Todos los elementos de navegación para desktop
-  const allNavItems = [...primaryNavItems, ...secondaryNavItems];
 
   const handleNavClick = (name) => {
     setCurrentPage(name);
@@ -145,7 +145,7 @@ function Navigation() {
     return location.pathname.startsWith(path);
   };
 
-  // Íconos para el botón "Más" en la barra de navegación móvil
+  // More icon for mobile navigation bar
   const MoreIcon = () => (
     <svg className={`w-6 h-6 transition-transform duration-200 ${showMoreMenu ? 'rotate-90' : ''}`} 
          fill="none" 
@@ -155,7 +155,7 @@ function Navigation() {
     </svg>
   );
   
-  // Renderizar un elemento de navegación
+  // Render navigation item with unified design system
   const renderNavItem = (item) => {
     const active = isActive(item.path);
     return (
@@ -163,44 +163,70 @@ function Navigation() {
         key={item.path}
         to={item.path}
         onClick={() => handleNavClick(item.name)}
-        className={`flex flex-col items-center justify-center flex-1 py-2 px-1 transition-all duration-200 rounded-xl mx-1 touch-target no-select md:w-16 md:h-16 md:mx-auto md:p-3 md:desktop-nav-item ${
+        className={`group flex flex-col items-center justify-center flex-1 py-2 px-1 transition-all duration-200 rounded-xl mx-1 min-h-[48px] md:w-16 md:h-16 md:mx-auto md:p-3 ${
           active
-            ? 'text-dashcam-600 bg-dashcam-50 md:active'
-            : 'text-gray-600 hover:text-dashcam-600 hover:bg-gray-50 active:bg-gray-100'
+            ? isDarkMode
+              ? 'text-primary-400 bg-primary-900/40 shadow-sm'
+              : 'text-primary-600 bg-primary-50 shadow-sm'
+            : isDarkMode
+              ? 'text-gray-300 hover:text-primary-400 hover:bg-neutral-700 active:bg-neutral-600'
+              : 'text-gray-600 hover:text-primary-600 hover:bg-gray-50 active:bg-gray-100'
         }`}
       >
-        <div className={`transition-transform duration-200 ${active ? 'scale-115' : ''}`}>
+        <div className={`transition-all duration-200 ${active ? 'scale-110' : 'group-hover:scale-105'}`}>
           {item.icon}
         </div>
         {showLabels && (
           <span className={`text-xs mt-1 font-medium leading-tight text-center ${
-            active ? 'text-dashcam-600' : 'text-gray-500'
+            active 
+              ? isDarkMode 
+                ? 'text-primary-400' 
+                : 'text-primary-600'
+              : isDarkMode
+                ? 'text-gray-400'
+                : 'text-gray-500'
           }`}>
             {item.name}
           </span>
         )}
         {!showLabels && active && (
-          <div className="nav-indicator"></div>
+          <div className="w-1 h-1 bg-primary-600 rounded-full mt-1"></div>
         )}
       </Link>
     );
   };
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 safe-area-bottom shadow-lg md:shadow-none md:border-t-0 md:border-r md:border-gray-100 md:static md:h-full md:w-20 md:flex md:flex-col">
-      <div className="flex justify-around items-center h-16 px-2 max-w-7xl mx-auto w-full md:h-full md:flex-col md:justify-start md:pt-10 md:space-y-6">
-        {/* Elementos principales en móvil */}
+    <nav className={`fixed bottom-0 left-0 right-0 z-50 pb-safe shadow-lg backdrop-blur-sm md:shadow-none md:border-t-0 md:border-r md:static md:h-full md:w-20 md:flex md:flex-col ${
+      isDarkMode 
+        ? 'bg-neutral-800/95 border-t border-neutral-700 md:border-neutral-700 md:bg-neutral-800/100' 
+        : 'bg-white/95 border-t border-gray-200 md:border-gray-100 md:bg-white/100'
+    }`}>
+      <Flex 
+        align="center" 
+        justify="around" 
+        className="h-16 px-2 max-w-7xl mx-auto w-full md:h-full md:flex-col md:justify-start md:pt-10 md:space-y-6"
+      >
+        {/* Primary navigation items */}
         {primaryNavItems.map(renderNavItem)}
         
-        {/* Botón "Más" solo en móvil - mejorado para asegurar visibilidad y manejo de clics */}
+        {/* More button for mobile only */}
         <div className="md:hidden flex-1 relative more-menu-container">
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={(e) => {
               e.stopPropagation();
               setShowMoreMenu(!showMoreMenu);
             }}
-            className={`flex flex-col items-center justify-center w-full py-2 px-1 transition-all duration-200 rounded-xl mx-1 touch-target no-select relative z-[100] ${
-              showMoreMenu ? 'text-dashcam-600 bg-dashcam-50' : 'text-gray-600'
+            className={`flex flex-col items-center justify-center w-full py-2 px-1 transition-all duration-200 rounded-xl mx-1 min-h-[48px] relative ${
+              showMoreMenu 
+                ? isDarkMode 
+                  ? 'text-primary-400 bg-primary-900/40' 
+                  : 'text-primary-600 bg-primary-50'
+                : isDarkMode
+                  ? 'text-gray-300'
+                  : 'text-gray-600'
             }`}
             aria-label="Mostrar más opciones"
             aria-expanded={showMoreMenu}
@@ -208,25 +234,31 @@ function Navigation() {
             <MoreIcon />
             {showLabels && (
               <span className={`text-xs mt-1 font-medium leading-tight text-center ${
-                showMoreMenu ? 'text-dashcam-600' : 'text-gray-500'
+                showMoreMenu 
+                  ? isDarkMode 
+                    ? 'text-primary-400' 
+                    : 'text-primary-600'
+                  : isDarkMode
+                    ? 'text-gray-400'
+                    : 'text-gray-500'
               }`}>
                 Más
               </span>
             )}
-          </button>
+          </Button>
           
-          {/* Menú desplegable - con mejor posicionamiento, z-index elevado y animación */}
+          {/* Dropdown menu with enhanced styling */}
           <div 
-            className={`fixed z-[9999] bottom-16 right-1 bg-white rounded-lg shadow-lg border border-gray-200 w-52 p-2 transition-all duration-200 origin-bottom-right transform ${
+            className={`fixed z-[9999] bottom-16 right-1 rounded-lg shadow-xl border w-52 p-2 transition-all duration-200 origin-bottom-right ${
               showMoreMenu ? 'scale-100 opacity-100 pointer-events-auto' : 'scale-95 opacity-0 pointer-events-none'
+            } ${isDarkMode 
+              ? 'bg-neutral-800 border-neutral-700 text-white' 
+              : 'bg-white border-gray-200 text-gray-800'
             }`}
             style={{ 
-              boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2)',
+              boxShadow: 'var(--shadow-xl)',
               maxHeight: '80vh',
-              overflowY: 'auto',
-              backgroundColor: '#ffffff',
-              borderWidth: '1px',
-              borderColor: 'rgba(0, 0, 0, 0.15)'
+              overflowY: 'auto'
             }}
           >
             {secondaryNavItems.map((item) => {
@@ -239,32 +271,36 @@ function Navigation() {
                     handleNavClick(item.name);
                     setShowMoreMenu(false);
                   }}
-                  className={`flex items-center px-3 py-2 rounded-lg mb-1 touch-target ${
-                    active ? 'bg-dashcam-50 text-dashcam-600' : 'hover:bg-gray-50'
+                  className={`flex items-center px-3 py-2 rounded-lg mb-1 min-h-[44px] transition-all duration-200 ${
+                    active 
+                      ? isDarkMode 
+                        ? 'bg-primary-900/40 text-primary-400 shadow-sm' 
+                        : 'bg-primary-50 text-primary-600 shadow-sm' 
+                      : isDarkMode
+                        ? 'hover:bg-neutral-700 text-neutral-300 hover:text-white'
+                        : 'hover:bg-gray-50 text-gray-700 hover:text-gray-900'
                   }`}
                 >
-                  <div className="mr-3 flex-shrink-0 text-gray-800">
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={active ? 2.2 : 1.8} viewBox="0 0 24 24">
-                      {item.icon.props.children}
-                    </svg>
+                  <div className="mr-3 flex-shrink-0">
+                    {item.icon}
                   </div>
-                  <span className="font-medium text-gray-800">{item.name}</span>
+                  <span className="font-medium">{item.name}</span>
                 </Link>
               );
             })}
           </div>
         </div>
         
-        {/* Separador visible solo en escritorio */}
+        {/* Separator for desktop */}
         <div className="hidden md:block w-12 h-px bg-gray-200 my-4 mx-auto"></div>
         
-        {/* Todos los elementos en desktop */}
+        {/* All secondary items for desktop */}
         {secondaryNavItems.map((item) => (
           <div key={item.path} className="hidden md:block">
             {renderNavItem(item)}
           </div>
         ))}
-      </div>
+      </Flex>
     </nav>
   );
 }

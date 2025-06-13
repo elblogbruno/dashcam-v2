@@ -2,6 +2,10 @@ import { useState, useRef, useCallback, useEffect } from 'react'
 import { format } from 'date-fns'
 import { FaAngleUp, FaAngleDown, FaFileUpload, FaFolderOpen } from 'react-icons/fa'
 
+// Layout y UI Components
+import { PageLayout, Section, Flex, Stack, Grid } from '../components/common/Layout'
+import { Button, Card, Alert } from '../components/common/UI'
+
 // Componentes
 import DragDropZone from '../components/BulkUploader/DragDropZone'
 import UploadOptions from '../components/BulkUploader/UploadOptions'
@@ -254,21 +258,22 @@ function BulkUploader() {
   }
 
   return (
-    <div className="bg-gray-100 p-2 sm:p-4 w-full min-h-screen overflow-hidden has-floating-button">
-      <h1 className="text-xl sm:text-2xl font-bold text-dashcam-800 flex items-center mb-4 sm:mb-6">
-        <FaFileUpload className="mr-2" />
-        Carga Masiva de Videos
-      </h1>
-      
+    <PageLayout
+      title="Carga Masiva de Videos"
+      icon={<FaFileUpload />}
+      className="has-floating-button"
+    >
       {/* En móvil, mostrar/ocultar opciones con un botón */}
       {isMobile && (
-        <button 
+        <Button
           onClick={() => setShowOptions(!showOptions)}
-          className="w-full bg-white border border-gray-300 rounded-lg p-3 mb-4 flex items-center justify-between shadow-sm hover:shadow-md transition-shadow"
+          variant="secondary"
+          size="lg"
+          className="w-full mb-4 justify-between"
         >
-          <span className="font-medium text-gray-700">Opciones de Carga</span>
+          <span>Opciones de Carga</span>
           {showOptions ? <FaAngleUp /> : <FaAngleDown />}
-        </button>
+        </Button>
       )}
       
       <div className={`flex flex-col lg:flex-row gap-6 ${isMobile && !showOptions ? 'mb-0' : 'mb-4'}`}>
@@ -299,29 +304,30 @@ function BulkUploader() {
         {/* Contenido principal */}
         <div className="flex-1 w-full">
           {/* Botones de acción para seleccionar archivos/carpetas y explorar archivos */}
-          <div className="mb-4 flex items-center justify-between flex-wrap gap-2">
-            <div className="flex items-center gap-2">
-              <button 
-                className={`px-4 py-2 ${showFileExplorer ? 'bg-orange-600 hover:bg-orange-700' : 'bg-purple-600 hover:bg-purple-700'} text-white rounded-lg flex items-center gap-2`} 
-                onClick={toggleFileExplorer}>
+          <Flex className="mb-4 justify-between flex-wrap gap-2">
+            <Flex className="gap-2">
+              <Button
+                onClick={toggleFileExplorer}
+                variant={showFileExplorer ? "warning" : "primary"}
+                size="md"
+              >
                 {showFileExplorer ? 'Cerrar Explorador' : 'Explorar Archivos'}
-              </button>
-            </div>
+              </Button>
+            </Flex>
             
-            <div className="flex items-center gap-2">
-              {showFileExplorer && (
-                <button 
-                  className="px-4 py-2 bg-gray-600 text-white rounded-lg flex items-center gap-2 hover:bg-gray-700"
-                  onClick={switchDisk}
-                >
-                  {selectedDisk === 'internal' ? 'Cambiar a Disco Externo' : 'Cambiar a Disco Interno'}
-                </button>
-              )}
-            </div>
-          </div>
+            {showFileExplorer && (
+              <Button
+                onClick={switchDisk}
+                variant="secondary"
+                size="md"
+              >
+                {selectedDisk === 'internal' ? 'Cambiar a Disco Externo' : 'Cambiar a Disco Interno'}
+              </Button>
+            )}
+          </Flex>
           
           {showFileExplorer ? (
-            <div className="mb-6">
+            <Section className="mb-6">
               <FileExplorer 
                 onFileSelect={handleFileFromExplorer}
                 showVideosOnly={true}
@@ -330,9 +336,9 @@ function BulkUploader() {
                 selectedDisk={selectedDisk}
                 height="50vh"
               />
-            </div>
+            </Section>
           ) : (
-            <>
+            <Stack spacing="lg">
               {/* Drag & Drop Area */}
               <DragDropZone 
                 dragActive={dragActive}
@@ -365,7 +371,7 @@ function BulkUploader() {
                 uploadResults={uploadResults}
                 isMobile={isMobile}
               />
-            </>
+            </Stack>
           )}
         </div>
       </div>
@@ -373,10 +379,11 @@ function BulkUploader() {
       {/* Botón flotante de carga en móvil cuando hay archivos y no hay opciones visibles */}
       {isMobile && !showOptions && files.length > 0 && (
         <div className="fixed bottom-20 right-6 z-10">
-          <button 
+          <Button
             onClick={uploadFiles}
             disabled={uploading}
-            className="bg-dashcam-600 hover:bg-dashcam-700 text-white rounded-full h-16 w-16 flex items-center justify-center shadow-lg transition-all transform hover:scale-105 disabled:opacity-50"
+            className="rounded-full h-16 w-16 shadow-lg hover:scale-105 disabled:opacity-50"
+            variant="primary"
           >
             {uploading ? (
               <div className="loader-sm"></div>
@@ -385,10 +392,10 @@ function BulkUploader() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
               </svg>
             )}
-          </button>
+          </Button>
         </div>
       )}
-    </div>
+    </PageLayout>
   )
 }
 

@@ -20,8 +20,52 @@ command_exists() {
   command -v "$1" >/dev/null 2>&1
 }
 
+# Function to kill existing processes
+kill_existing_processes() {
+  echo "Verificando y terminando procesos existentes..."
+  
+  # Kill existing backend processes
+  echo "Terminando procesos backend existentes..."
+  pkill -f "python3.*start_server.py" 2>/dev/null || true
+  pkill -f "python3.*main.py" 2>/dev/null || true
+  pkill -f "uvicorn" 2>/dev/null || true
+  
+  # Kill existing frontend processes
+  echo "Terminando procesos frontend existentes..."
+  pkill -f "npm.*preview" 2>/dev/null || true
+  pkill -f "vite.*preview" 2>/dev/null || true
+  pkill -f "node.*vite" 2>/dev/null || true
+  
+  # Kill processes using ports 8000 and 4173
+  echo "Liberando puertos 8000 y 4173..."
+  sudo lsof -ti:8000 | xargs sudo kill -9 2>/dev/null || true
+  sudo lsof -ti:4173 | xargs sudo kill -9 2>/dev/null || true
+  
+  # Kill camera processes
+  echo "Liberando cámaras..."
+  sudo fuser -k /dev/video0 2>/dev/null || true
+  sudo fuser -k /dev/video1 2>/dev/null || true
+  sudo fuser -k /dev/vchiq 2>/dev/null || true
+  
+  # Kill ffmpeg and other video processes
+  pkill -f "ffmpeg" 2>/dev/null || true
+  pkill -f "v4l2" 2>/dev/null || true
+  pkill -f "gstreamer" 2>/dev/null || true
+  
+  # Restart USB camera modules
+  sudo rmmod uvcvideo 2>/dev/null || true
+  sleep 1
+  sudo modprobe uvcvideo 2>/dev/null || true
+  
+  echo "Esperando 3 segundos para que los procesos terminen completamente..."
+  sleep 3
+}
+
 # Check for required dependencies
 echo "Checking dependencies..."
+
+# Kill existing processes first
+kill_existing_processes
 
 if ! command_exists python3; then
   echo "Error: Python 3 is required but not installed."
@@ -99,39 +143,26 @@ check_camera_usage() {
     echo "⚠️ /dev/vchiq no existe - PiCamera no detectada"
   fi
   
-  # Si hay cámaras ocupadas, ofrecer opciones
+  # Si hay cámaras ocupadas, liberarlas automáticamente
   if [ "$CAMERAS_IN_USE" = true ]; then
     echo ""
-    echo "⚠️ Algunas cámaras parecen estar siendo utilizadas por otros procesos."
-    echo "Esto podría causar problemas al iniciar la aplicación."
-    echo ""
-    echo "Opciones:"
-    echo "1) Intentar liberar las cámaras automáticamente"
-    echo "2) Continuar de todos modos"
-    echo "3) Salir"
-    echo ""
-    read -p "¿Qué deseas hacer? (1/2/3): " CAM_OPTION
+    echo "⚠️ Algunas cámaras están siendo utilizadas por otros procesos."
+    echo "Liberando cámaras automáticamente..."
     
-    case "$CAM_OPTION" in
-      1)
-        echo "Intentando liberar cámaras..."
-        # Terminar procesos que usan dispositivos de video específicos
-        sudo fuser -k /dev/video0 2>/dev/null
-        # Reiniciar módulo USB para la cámara USB
-        sudo rmmod uvcvideo 2>/dev/null || true
-        sleep 1
-        sudo modprobe uvcvideo 2>/dev/null || true
-        sleep 2
-        echo "Reinicio de cámaras completado."
-        ;;
-      2)
-        echo "Continuando con cámaras ocupadas..."
-        ;;
-      3|*)
-        echo "Saliendo..."
-        exit 1
-        ;;
-    esac
+    # Terminar procesos que usan dispositivos de video específicos
+    sudo fuser -k /dev/video0 2>/dev/null || true
+    sudo fuser -k /dev/vchiq 2>/dev/null || true
+    
+    # Reiniciar módulo USB para la cámara USB
+    echo "Reiniciando módulo de cámara USB..."
+    sudo rmmod uvcvideo 2>/dev/null || true
+    sleep 1
+    sudo modprobe uvcvideo 2>/dev/null || true
+    sleep 2
+    
+    echo "✓ Liberación de cámaras completada."
+  else
+    echo "✓ Todas las cámaras están disponibles."
   fi
 }
 
@@ -146,6 +177,7 @@ cleanup() {
   echo "Shutting down services..."
   kill $BACKEND_PID 2>/dev/null
   kill $FRONTEND_PID 2>/dev/null
+  kill $TAIL_PID 2>/dev/null
   exit 0
 }
 
@@ -186,6 +218,11 @@ cd backend
 python3 start_server.py > ../backend_log.txt 2>&1 &
 BACKEND_PID=$!
 cd ..
+
+# Show backend logs in real time in background
+echo "Mostrando logs del backend en tiempo real..."
+tail -f backend_log.txt &
+TAIL_PID=$!
 
 # Poll until backend is ready or failed
 echo "Esperando a que el servidor backend inicie..."
@@ -243,10 +280,10 @@ fi
 
 echo "✓ Servidor backend ejecutándose (PID: $BACKEND_PID)"
 
-# Start frontend development server
-echo "Iniciando servidor frontend..."
+# Start frontend production server
+echo "Iniciando servidor frontend en modo producción..."
 cd frontend
-npm run preview &
+npm run preview -- --host 0.0.0.0 --port 4173 &
 FRONTEND_PID=$!
 cd ..
 
@@ -269,9 +306,10 @@ EOF
 
 echo ""
 echo "==================================================="
-echo "Smart Dashcam está ejecutándose!"
+echo "Smart Dashcam está ejecutándose en modo PRODUCCIÓN!"
 echo "Accede al panel en: http://localhost:4173"
 echo "API en: http://localhost:8000"
+echo "Los logs del servidor se muestran arriba en tiempo real"
 echo "Presiona Ctrl+C para detener todos los servicios"
 echo "==================================================="
 echo ""

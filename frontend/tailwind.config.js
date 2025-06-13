@@ -4,66 +4,25 @@ export default {
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
+  darkMode: 'class',
   theme: {
     extend: {
       fontFamily: {
         sans: ['Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'Helvetica Neue', 'Arial', 'sans-serif'],
       },
-      scale: {
-        '115': '1.15',
-      },
-      animation: {
-        'fadeIn': 'fadeIn 0.3s ease-out',
-        'slideInUp': 'slideInUp 0.3s ease-out',
-        'pulse': 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
-      },
-      keyframes: {
-        fadeIn: {
-          '0%': { opacity: 0 },
-          '100%': { opacity: 1 },
-        },
-        slideInUp: {
-          '0%': { transform: 'translateY(10px)', opacity: 0 },
-          '100%': { transform: 'translateY(0)', opacity: 1 },
-        },
-      },
       colors: {
-        // Los colores de Nest Doorbell
-        'nest-background': '#202124',
-        'nest-card-bg': '#2e3033',
-        'nest-text-primary': '#ffffff',
-        'nest-text-secondary': 'rgba(255, 255, 255, 0.7)',
-        'nest-accent': '#8ab4f8',
-        'nest-border': 'rgba(255, 255, 255, 0.1)',
-        'nest-event-indicator': '#8ab4f8',
-        'nest-selected': '#4285f4',
-        'nest-timeline-bg': '#282a2d',
-        'nest-event-bg': '#2e3033',
-        dashcam: {
-          50: '#f0f9ff',
-          100: '#e0f2fe',
-          200: '#bae6fd',
-          300: '#7dd3fc',
-          400: '#38bdf8',
-          500: '#0ea5e9',
-          600: '#0284c7',
-          700: '#0369a1',
-          800: '#075985',
-          900: '#0c4a6e',
-          'content': '#ffffff'
-        },
+        // Sistema de colores unificado
         primary: {
-          50: '#f0f9ff',
-          100: '#e0f2fe',
-          200: '#bae6fd',
-          300: '#7dd3fc',
-          400: '#38bdf8',
-          500: '#0ea5e9',
-          600: '#0284c7',
-          700: '#0369a1',
-          800: '#075985',
-          900: '#0c4a6e',
-          'content': '#ffffff'
+          50: '#eff6ff',
+          100: '#dbeafe',
+          200: '#bfdbfe',
+          300: '#93c5fd',
+          400: '#60a5fa',
+          500: '#3b82f6',
+          600: '#2563eb',
+          700: '#1d4ed8',
+          800: '#1e40af',
+          900: '#1e3a8a',
         },
         secondary: {
           50: '#f5f3ff',
@@ -76,46 +35,6 @@ export default {
           700: '#6d28d9',
           800: '#5b21b6',
           900: '#4c1d95',
-          'content': '#ffffff'
-        },
-        neutral: {
-          50: '#fafafa',
-          100: '#f5f5f5',
-          200: '#e5e5e5',
-          300: '#d4d4d4',
-          400: '#a3a3a3',
-          500: '#737373',
-          600: '#525252',
-          700: '#404040',
-          800: '#262626',
-          900: '#171717',
-          'content': '#ffffff'
-        },
-        accent: {
-          50: '#f5f3ff',
-          100: '#ede9fe',
-          200: '#ddd6fe',
-          300: '#c4b5fd',
-          400: '#a78bfa',
-          500: '#8b5cf6',
-          600: '#7c3aed',
-          700: '#6d28d9',
-          800: '#5b21b6',
-          900: '#4c1d95',
-          'content': '#ffffff'
-        },
-        info: {
-          50: '#eff6ff',
-          100: '#dbeafe',
-          200: '#bfdbfe',
-          300: '#93c5fd',
-          400: '#60a5fa',
-          500: '#3b82f6',
-          600: '#2563eb',
-          700: '#1d4ed8',
-          800: '#1e40af',
-          900: '#1e3a8a',
-          'content': '#ffffff'
         },
         success: {
           50: '#f0fdf4',
@@ -128,7 +47,6 @@ export default {
           700: '#15803d',
           800: '#166534',
           900: '#14532d',
-          'content': '#ffffff'
         },
         warning: {
           50: '#fffbeb',
@@ -141,7 +59,6 @@ export default {
           700: '#b45309',
           800: '#92400e',
           900: '#78350f',
-          'content': '#ffffff'
         },
         error: {
           50: '#fef2f2',
@@ -154,24 +71,108 @@ export default {
           700: '#b91c1c',
           800: '#991b1b',
           900: '#7f1d1d',
-          'content': '#ffffff'
-        }
+        },
+        info: {
+          50: '#eff6ff',
+          100: '#dbeafe',
+          200: '#bfdbfe',
+          300: '#93c5fd',
+          400: '#60a5fa',
+          500: '#3b82f6',
+          600: '#2563eb',
+          700: '#1d4ed8',
+          800: '#1e40af',
+          900: '#1e3a8a',
+        },
+        // Colores azules unificados - ahora mapean al primary
+        dashcam: {
+          50: '#eff6ff',
+          100: '#dbeafe',
+          200: '#bfdbfe',
+          300: '#93c5fd',
+          400: '#60a5fa',
+          500: '#3b82f6',
+          600: '#2563eb',
+          700: '#1d4ed8',
+          800: '#1e40af',
+          900: '#1e3a8a',
+        },
+        // Colores para compatibilidad con tema Nest (mapean a primary)
+        nest: {
+          accent: '#3b82f6',
+          selected: '#2563eb',
+          light: '#60a5fa',
+        },
+      },
+      spacing: {
+        '18': '4.5rem',
+        '88': '22rem',
+        '112': '28rem',
+        '128': '32rem',
       },
       animation: {
         'fadeIn': 'fadeIn 0.3s ease-in-out',
         'fadeOut': 'fadeOut 0.3s ease-in-out',
+        'slideInUp': 'slideInUp 0.3s ease-out',
+        'slideInDown': 'slideInDown 0.3s ease-out',
+        'slideInLeft': 'slideInLeft 0.3s ease-out',
+        'slideInRight': 'slideInRight 0.3s ease-out',
+        'scaleIn': 'scaleIn 0.2s ease-out',
+        'pulse-subtle': 'pulse-subtle 2s ease-in-out infinite',
       },
       keyframes: {
         fadeIn: {
-          '0%': { opacity: 0, transform: 'translateY(-10px)' },
-          '100%': { opacity: 1, transform: 'translateY(0)' }
+          '0%': { opacity: '0', transform: 'translateY(-10px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' }
         },
         fadeOut: {
-          '0%': { opacity: 1, transform: 'translateY(0)' },
-          '100%': { opacity: 0, transform: 'translateY(-10px)' }
+          '0%': { opacity: '1', transform: 'translateY(0)' },
+          '100%': { opacity: '0', transform: 'translateY(-10px)' }
+        },
+        slideInUp: {
+          '0%': { opacity: '0', transform: 'translateY(10px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' }
+        },
+        slideInDown: {
+          '0%': { opacity: '0', transform: 'translateY(-10px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' }
+        },
+        slideInLeft: {
+          '0%': { opacity: '0', transform: 'translateX(-10px)' },
+          '100%': { opacity: '1', transform: 'translateX(0)' }
+        },
+        slideInRight: {
+          '0%': { opacity: '0', transform: 'translateX(10px)' },
+          '100%': { opacity: '1', transform: 'translateX(0)' }
+        },
+        scaleIn: {
+          '0%': { opacity: '0', transform: 'scale(0.95)' },
+          '100%': { opacity: '1', transform: 'scale(1)' }
+        },
+        'pulse-subtle': {
+          '0%, 100%': { opacity: '1' },
+          '50%': { opacity: '0.8' }
         }
+      },
+      boxShadow: {
+        'soft': '0 2px 15px 0 rgba(0, 0, 0, 0.1)',
+        'medium': '0 4px 25px 0 rgba(0, 0, 0, 0.15)',
+        'strong': '0 8px 40px 0 rgba(0, 0, 0, 0.2)',
+      },
+      backdropBlur: {
+        xs: '2px',
+      },
+      fontSize: {
+        '2xs': ['0.625rem', { lineHeight: '0.75rem' }],
+      },
+      zIndex: {
+        '60': '60',
+        '70': '70',
+        '80': '80',
+        '90': '90',
+        '100': '100',
       }
     },
   },
   plugins: [],
-}
+} 

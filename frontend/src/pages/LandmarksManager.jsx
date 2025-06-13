@@ -1,92 +1,81 @@
 import React, { useState, useEffect } from 'react';
 import { toast, Toaster } from 'react-hot-toast';
-import { FaMapMarkerAlt, FaSearch, FaPlus, FaTrash, FaRoute, FaDownload, FaArrowLeft, FaSpinner } from 'react-icons/fa';
-import { MapContainer, Marker, Popup, Circle, useMap } from 'react-leaflet';
-import 'leaflet/dist/leaflet.css';
-import L from 'leaflet';
+import { FaSpinner } from 'react-icons/fa';
 
-import OfflineTileLayer from '../components/Maps/OfflineTileLayer';
-import LandmarkMarker from '../components/Maps/LandmarkMarker';
-import offlineMapManager from '../services/offlineMapService';
-import landmarkImageManager from '../services/landmarkImageService';
+// Layout y UI Components
+import { Alert, Button } from '../components/common/UI';
+import { Flex } from '../components/common/Layout';
 
-import { fetchAllLandmarks, searchLandmarks, addLandmark, deleteLandmark } from '../services/landmarkService';
-import { fetchTrips } from '../services/tripService';
-import { searchPlaces } from '../services/tripService'; // Import place search service
-import LandmarkSettings from '../components/LandmarkManager/LandmarkSettings'; // Import the settings component
+// LandmarkManager Components
+import LandmarkMap from '../components/LandmarkManager/LandmarkMap';
+import TopBar from '../components/LandmarkManager/TopBar';
+import LandmarkListOverlay from '../components/LandmarkManager/LandmarkListOverlay';
+import AddLandmarkForm from '../components/LandmarkManager/AddLandmarkForm';
+import LandmarkStatistics from '../components/LandmarkManager/LandmarkStatistics';
+import LandmarkSettings from '../components/LandmarkManager/LandmarkSettings';
+import MobileLandmarkOverlay from '../components/LandmarkManager/MobileLandmarkOverlay';
+import BulkDeleteModal from '../components/LandmarkManager/BulkDeleteModal';
 
-// Fix Leaflet icon issues
-import icon from 'leaflet/dist/images/marker-icon.png';
-import iconShadow from 'leaflet/dist/images/marker-shadow.png';
+// Custom Hooks
+import { useLandmarks } from '../components/LandmarkManager/useLandmarks';
+import { useLandmarkMap } from '../components/LandmarkManager/useLandmarkMap';
 
-// Estilos globales para asegurar que los popups aparezcan sobre el mapa
-// const globalStyles = `
-//   .leaflet-container {
-//     z-index: 1;
-//   }
-//   .landmark-settings-popup {
-//     z-index: 1000 !important;
-//   }
-// `;
+// Styles
+import '../components/LandmarkManager/LandmarkManager.css';
 
-// // Fix para el estilo global
-// const GlobalStyle = () => {
-//   useEffect(() => {
-//     // Crear y agregar estilos globales
-//     const styleEl = document.createElement('style');
-//     styleEl.innerHTML = globalStyles;
-//     document.head.appendChild(styleEl);
-    
-//     return () => {
-//       // Limpieza al desmontar
-//       document.head.removeChild(styleEl);
-//     };
-//   }, []);
-  
-//   return null;
-// };
-
-let DefaultIcon = L.icon({
-  iconUrl: icon,
-  shadowUrl: iconShadow,
-  iconSize: [25, 41],
-  iconAnchor: [12, 41]
-});
-
-L.Marker.prototype.options.icon = DefaultIcon;
-
-// Create colored marker icon
-const createColoredIcon = (color) => {
-  return L.divIcon({
-    className: 'custom-div-icon',
-    html: `<div style="background-color: ${color}; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white;"></div>`,
-    iconSize: [12, 12],
-    iconAnchor: [6, 6]
-  });
-};
-
-// Create MapController to programmatically control the map
-const MapController = ({ center, zoom }) => {
-  const map = useMap();
-  
-  useEffect(() => {
-    if (center && zoom) {
-      map.setView(center, zoom);
-    }
-  }, [center, zoom, map]);
-  
-  return null;
-};
+// Initialize map icons
+import '../components/LandmarkManager/MapIcons';
 
 const LandmarksManager = () => {
-  const [landmarks, setLandmarks] = useState([]);
-  const [filteredLandmarks, setFilteredLandmarks] = useState([]);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [selectedLandmark, setSelectedLandmark] = useState(null);
-  const [trips, setTrips] = useState([]);
-  const [selectedTrip, setSelectedTrip] = useState(null);
+  // Offset para la barra de estado
+  const STATUS_BAR_OFFSET = 60;
+  const DESKTOP_NAV_WIDTH = 80; // Ancho de la navegación lateral en desktop
+  
+  // Custom hooks
+  const {
+    landmarks,
+    paginatedLandmarks,
+    trips,
+    loading,
+    selectedLandmark,
+    selectedTrip,
+    specificTripFilter,
+    searchQuery,
+    categoryFilter,
+    showFilters,
+    hasActiveFilters,
+    currentPage,
+    itemsPerPage,
+    totalPages,
+    setSearchQuery,
+    setCategoryFilter,
+    setShowFilters,
+    setCurrentPage,
+    handleAddLandmark,
+    handleDeleteLandmark,
+    handleLandmarkSelect,
+    handleTripChange,
+    clearFilters,
+    landmarkCount,
+    totalLandmarkCount
+  } = useLandmarks();
+
+  const {
+    mapCenter,
+    mapZoom,
+    currentZoom,
+    handleZoomChange,
+    handleMapClick,
+    centerMapOnLandmark,
+    resetMapView
+  } = useLandmarkMap();
+
+  // Local state
   const [showAddForm, setShowAddForm] = useState(false);
+  const [showLandmarkList, setShowLandmarkList] = useState(false);
+  const [showStatistics, setShowStatistics] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showBulkDelete, setShowBulkDelete] = useState(false);
   const [newLandmark, setNewLandmark] = useState({
     name: '',
     lat: '',
@@ -95,196 +84,75 @@ const LandmarksManager = () => {
     category: '',
     description: ''
   });
-  const [mapCenter, setMapCenter] = useState([34.0522, -118.2437]); // Default to LA
-  const [mapZoom, setMapZoom] = useState(5);
-  const [searchingPlace, setSearchingPlace] = useState(false);
-  const [placeSearchQuery, setPlaceSearchQuery] = useState('');
-  const [placeSearchResults, setPlaceSearchResults] = useState([]);
-  const [specificTripFilter, setSpecificTripFilter] = useState(null);
-  const [landmarkCount, setLandmarkCount] = useState(0);
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
+  const [showPerformanceWarning, setShowPerformanceWarning] = useState(true);
 
-  // Fetch landmarks and trips on component mount
+  // Performance optimization: usar umbral más bajo para el warning
+  const performanceThreshold = 100;
+
+  // Effect para calcular dinámicamente la altura del TopBar
   useEffect(() => {
-    async function fetchData() {
-      setLoading(true);
-      try {
-        const [landmarksData, tripsData] = await Promise.all([
-          fetchAllLandmarks(),
-          fetchTrips()
-        ]);
-
-        setLandmarks(landmarksData);
-        setFilteredLandmarks(landmarksData);
-        setTrips(tripsData);
-        
-        // Check if we have a specific trip to filter by from localStorage
-        const selectedTripData = localStorage.getItem('selectedTripForLandmarks');
-        if (selectedTripData) {
-          try {
-            const selectedTrip = JSON.parse(selectedTripData);
-            const matchingTrip = tripsData.find(trip => trip.id === selectedTrip.id);
-            
-            if (matchingTrip) {
-              setSpecificTripFilter(selectedTrip);
-              setSelectedTrip(matchingTrip);
-              
-              // Obtener landmarks específicos para este viaje usando el endpoint dedicado
-              const tripLandmarks = await fetch(`/api/landmarks/by-trip/${selectedTrip.id}`)
-                .then(res => res.json());
-              
-              setFilteredLandmarks(tripLandmarks);
-              
-              // Set page title to include trip name
-              document.title = `Landmarks for ${selectedTrip.name} - Smart Dashcam`;
-              
-              // Clear the localStorage item
-              localStorage.removeItem('selectedTripForLandmarks');
-            }
-          } catch (e) {
-            console.error('Error parsing selected trip data:', e);
-          }
-        }
-      } catch (error) {
-        console.error('Error fetching data:', error);
-        toast.error('Failed to load landmarks data');
-      } finally {
-        setLoading(false);
+    const updateTopbarHeight = () => {
+      const topbarElement = document.getElementById('landmark-topbar');
+      if (topbarElement) {
+        const height = topbarElement.offsetHeight;
+        document.documentElement.style.setProperty('--topbar-height', `${height}px`);
       }
-    }
-    fetchData();
-    
-    // Reset title when component unmounts
-    return () => {
-      document.title = 'Smart Dashcam';
     };
-  }, []);
 
-  // Filter landmarks when search query changes
-  useEffect(() => {
-    if (!searchQuery.trim()) {
-      // If no search query or trip filter, show all landmarks
-      if (!selectedTrip) {
-        setFilteredLandmarks(landmarks);
-      } else {
-        // Obtener landmarks para el viaje seleccionado usando el endpoint específico
-        const fetchTripLandmarks = async () => {
-          try {
-            setLoading(true);
-            const tripLandmarks = await fetch(`/api/landmarks/by-trip/${selectedTrip.id}`)
-              .then(res => res.json());
-            setFilteredLandmarks(tripLandmarks);
-          } catch (error) {
-            console.error('Error fetching trip landmarks:', error);
-            toast.error('Failed to load trip landmarks');
-            // Fallback a filtrado en cliente
-            const tripId = selectedTrip.id;
-            const tripLandmarks = landmarks.filter(landmark => 
-              landmark.trip_id === tripId || landmark.id?.includes(`trip_${tripId}_`)
-            );
-            setFilteredLandmarks(tripLandmarks);
-          } finally {
-            setLoading(false);
-          }
-        };
-        
-        fetchTripLandmarks();
+    // Calcular altura inicial
+    updateTopbarHeight();
+
+    // Observar cambios en el TopBar (filtros expandidos, etc.)
+    const resizeObserver = new ResizeObserver(updateTopbarHeight);
+    const topbarElement = document.getElementById('landmark-topbar');
+    
+    if (topbarElement) {
+      resizeObserver.observe(topbarElement);
+    }
+
+    // Cleanup
+    return () => {
+      if (topbarElement) {
+        resizeObserver.unobserve(topbarElement);
       }
-    } else {
-      // If there's a search query, filter by it
-      const filtered = landmarks.filter(landmark => {
-        const name = landmark.name?.toLowerCase() || '';
-        const category = landmark.category?.toLowerCase() || '';
-        const description = landmark.description?.toLowerCase() || '';
-        const query = searchQuery.toLowerCase();
-        
-        const matchesSearch = name.includes(query) || 
-                             category.includes(query) || 
-                             description.includes(query);
-        
-        // If a trip is selected, also filter by trip
-        if (selectedTrip) {
-          const tripId = selectedTrip.id;
-          return matchesSearch && (landmark.trip_id === tripId || landmark.id?.includes(`trip_${tripId}_`));
-        }
-        
-        return matchesSearch;
-      });
-      setFilteredLandmarks(filtered);
-    }
-  }, [searchQuery, landmarks, selectedTrip]);
+      resizeObserver.disconnect();
+    };
+  }, [showFilters]); // Re-ejecutar cuando cambie el estado de filtros
 
-  // Update landmark count whenever filtered landmarks change
+  // Auto-ocultar advertencia de rendimiento después de 10 segundos
   useEffect(() => {
-    setLandmarkCount(filteredLandmarks.length);
-  }, [filteredLandmarks]);
-
-  // Handle search input change
-  const handleSearchChange = (e) => {
-    setSearchQuery(e.target.value);
-  };
-
-  // Handle trip filter change - Actualizar para usar el endpoint específico
-  const handleTripFilterChange = (trip) => {
-    if (trip === selectedTrip) {
-      setSelectedTrip(null);
-      setFilteredLandmarks(landmarks); // Mostrar todos los landmarks
-    } else {
-      setSelectedTrip(trip);
-      
-      // Obtener landmarks específicos para este viaje
-      const fetchTripLandmarks = async () => {
-        try {
-          setLoading(true);
-          const tripLandmarks = await fetch(`/api/landmarks/by-trip/${trip.id}`)
-            .then(res => res.json());
-          setFilteredLandmarks(tripLandmarks);
-        } catch (error) {
-          console.error('Error fetching trip landmarks:', error);
-          toast.error('Failed to load trip landmarks');
-          // Fallback a filtrado en cliente
-          const tripId = trip.id;
-          const tripLandmarks = landmarks.filter(landmark => 
-            landmark.trip_id === tripId || landmark.id?.includes(`trip_${tripId}_`)
-          );
-          setFilteredLandmarks(tripLandmarks);
-        } finally {
-          setLoading(false);
-        }
-      };
-      
-      fetchTripLandmarks();
-    }
-  };
-
-  // Handle selecting a landmark on the map
-  const handleSelectLandmark = (landmark) => {
-    setSelectedLandmark(landmark);
-    setMapCenter([landmark.lat, landmark.lon]);
-    setMapZoom(13);
-  };
-
-  // Handle add new landmark form submission
-  const handleAddLandmark = async (e) => {
-    e.preventDefault();
+    let timer;
     
-    // Validate inputs
-    if (!newLandmark.name || !newLandmark.lat || !newLandmark.lon) {
-      toast.error('Please fill in all required fields');
-      return;
+    if (landmarkCount > performanceThreshold && showPerformanceWarning) {
+      timer = setTimeout(() => {
+        setShowPerformanceWarning(false);
+      }, 10000); // 10 segundos
     }
-    
+
+    return () => {
+      if (timer) {
+        clearTimeout(timer);
+      }
+    };
+  }, [landmarkCount, performanceThreshold, showPerformanceWarning]);
+
+  // Mostrar advertencia cuando se supera el umbral por primera vez
+  useEffect(() => {
+    if (landmarkCount > performanceThreshold && !showPerformanceWarning) {
+      // Solo mostrar si previamente estaba oculta y ahora hay más landmarks
+      setShowPerformanceWarning(true);
+    }
+  }, [landmarkCount]);
+
+  // Handlers
+  const handleAddFormSubmit = async () => {
     try {
-      const landmarkData = {
+      await handleAddLandmark({
         ...newLandmark,
         lat: parseFloat(newLandmark.lat),
-        lon: parseFloat(newLandmark.lon),
-        radius_m: parseInt(newLandmark.radius_m)
-      };
-      
-      await addLandmark(landmarkData);
-      toast.success('Landmark added successfully');
-      
-      // Reset form and refresh landmarks
+        lon: parseFloat(newLandmark.lon)
+      });
       setNewLandmark({
         name: '',
         lat: '',
@@ -294,477 +162,235 @@ const LandmarksManager = () => {
         description: ''
       });
       setShowAddForm(false);
-      
-      // Refresh landmarks
-      const updatedLandmarks = await fetchAllLandmarks();
-      setLandmarks(updatedLandmarks);
-      
     } catch (error) {
-      toast.error('Failed to add landmark');
+      // Error already handled in hook
     }
   };
 
-  // Handle landmark deletion
-  const handleDeleteLandmark = async (id) => {
-    if (window.confirm('Are you sure you want to delete this landmark?')) {
-      try {
-        await deleteLandmark(id);
-        toast.success('Landmark deleted successfully');
-        
-        // Remove from state
-        setLandmarks(landmarks.filter(lm => lm.id !== id));
-        if (selectedLandmark && selectedLandmark.id === id) {
-          setSelectedLandmark(null);
-        }
-      } catch (error) {
-        toast.error('Failed to delete landmark');
-      }
-    }
+  const handleViewOnMap = (landmark) => {
+    centerMapOnLandmark(landmark);
+    handleLandmarkSelect(landmark);
+    setShowLandmarkList(false);
   };
 
-  // Get landmark color based on category
-  const getLandmarkColor = (category) => {
-    const colors = {
-      'natural': '#4caf50',
-      'infrastructure': '#2196f3',
-      'trip_start': '#9c27b0',
-      'trip_waypoint': '#ff9800',
-      'trip_end': '#e91e63'
-    };
-    return colors[category] || '#607d8b';
+  const handleBackToTrips = () => {
+    window.history.back();
   };
 
-  // Check if a landmark belongs to the selected trip
-  const isLandmarkFromSelectedTrip = (landmark) => {
-    if (!selectedTrip) return false;
-    return landmark.id?.includes(`trip_${selectedTrip.id}_`);
+  const handleBulkDelete = () => {
+    setShowBulkDelete(true);
   };
 
-  // Search for a place by name
-  const searchForPlace = async () => {
-    if (!placeSearchQuery.trim()) {
-      toast.error('Please enter a search term');
-      return;
-    }
-    
-    setSearchingPlace(true);
-    try {
-      const results = await searchPlaces(placeSearchQuery);
-      setPlaceSearchResults(results);
-      
-      if (results.length === 0) {
-        toast.error('No places found with that name');
-      }
-    } catch (error) {
-      console.error('Error searching for places:', error);
-      toast.error('Failed to search for places');
-    } finally {
-      setSearchingPlace(false);
-    }
+  const handleBulkDeleteComplete = () => {
+    setShowBulkDelete(false);
+    // Refresh landmarks will be handled by the BulkDeleteModal via the hook
   };
 
-  // Select a place from search results
-  const selectPlace = (place) => {
-    setNewLandmark({
-      ...newLandmark,
-      name: place.name,
-      lat: place.lat,
-      lon: place.lon,
-      description: place.display_name || ''
-    });
-    
-    // Update map to show the selected location
-    setMapCenter([place.lat, place.lon]);
-    setMapZoom(13);
-    
-    // Clear search results
-    setPlaceSearchResults([]);
-    setPlaceSearchQuery('');
-  };
-
-  // Clear specific trip filter
-  const clearTripFilter = () => {
-    setSpecificTripFilter(null);
-    setSelectedTrip(null);
-    setFilteredLandmarks(landmarks);
-  };
-
-  // Función para descargar mapas y recursos offline
-  const downloadOfflineResources = async (trip) => {
-    if (!trip || !trip.id) {
-      toast.error('No hay un viaje seleccionado para descargar recursos offline');
-      return;
-    }
-
-    // Mostrar toast de progreso
-    const toastId = toast.loading(`Descargando recursos offline para ${trip.name}...`, {
-      position: 'top-center',
-    });
-    
-    try {
-      // Progress tracker para mostrar el estado de la descarga
-      const onProgress = (progress, message) => {
-        toast.loading(`${message} (${Math.round(progress)}%)`, { id: toastId });
-      };
-      
-      // 1. Descargar mapas offline
-      await offlineMapManager.downloadMapTilesForTrip(trip, onProgress);
-      
-      // 2. Obtener los landmarks de este viaje
-      const response = await fetch(`/api/landmarks/by-trip/${trip.id}`);
-      if (!response.ok) {
-        throw new Error('No se pudieron obtener los landmarks del viaje');
-      }
-      
-      const tripLandmarks = await response.json();
-      
-      // 3. Descargar imágenes para los landmarks
-      await landmarkImageManager.downloadLandmarkImages(trip.id, tripLandmarks, onProgress);
-      
-      // Mostrar mensaje de éxito
-      toast.success(`Recursos offline descargados exitosamente para ${trip.name}`, { id: toastId });
-      
-    } catch (error) {
-      console.error('Error descargando recursos offline:', error);
-      toast.error(`Error descargando recursos: ${error.message}`, { id: toastId });
-    }
-  };
-
-  return (
-    <div className="container mx-auto px-2 sm:px-4 py-3 sm:py-6">
-      <Toaster position="top-right" />
-      
-      {/* Trip-specific header */}
-      {specificTripFilter && (
-        <div className="bg-dashcam-700 text-white p-2 sm:p-3 rounded-lg mb-3 sm:mb-4 flex flex-col sm:flex-row justify-between sm:items-center gap-2 sm:gap-0">
-          <div className="flex items-center">
-            <FaRoute className="mr-2 flex-shrink-0" />
-            <h2 className="font-bold text-sm sm:text-base truncate">Landmarks for: {specificTripFilter.name}</h2>
-          </div>
-          <button 
-            onClick={clearTripFilter}
-            className="bg-white text-dashcam-700 px-2 sm:px-3 py-1 rounded-md flex items-center justify-center text-xs sm:text-sm"
-          >
-            <FaArrowLeft className="mr-1" /> Back to All Landmarks
-          </button>
-        </div>
-      )}
-      
-      <div className="flex flex-col lg:flex-row gap-3 sm:gap-6">
-        {/* Left sidebar */}
-        <div className="lg:w-1/3 xl:w-1/4">
-          <div className="bg-white rounded-lg shadow-md overflow-hidden mb-3 sm:mb-6">
-            <div className="bg-dashcam-700 text-white p-2 sm:p-4 flex justify-between items-center">
-              <h2 className="font-bold text-sm sm:text-base flex items-center">
-                <FaMapMarkerAlt className="mr-2" /> Landmarks Manager
-              </h2>
-              <LandmarkSettings />
-            </div>
-            
-            {/* Search */}
-            <div className="p-2 sm:p-4">
-              <div className="relative mb-3 sm:mb-4">
-                <input
-                  type="text"
-                  placeholder="Search landmarks..."
-                  className="w-full px-3 sm:px-4 py-1.5 sm:py-2 pr-8 sm:pr-10 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-dashcam-500"
-                  value={searchQuery}
-                  onChange={handleSearchChange}
-                />
-                <FaSearch className="absolute right-3 sm:right-4 top-2 sm:top-3 text-gray-400" />
-              </div>
-              
-              {/* Trip filter - hide if we have a specific trip filter */}
-              {!specificTripFilter && (
-                <div className="mb-3 sm:mb-4">
-                  <h3 className="font-medium text-gray-700 text-xs sm:text-sm mb-1 sm:mb-2">Filter by Trip</h3>
-                  <div className="max-h-32 sm:max-h-40 overflow-y-auto">
-                    {trips.map(trip => (
-                      <div 
-                        key={trip.id}
-                        className={`px-2 sm:px-3 py-1.5 sm:py-2 rounded-md cursor-pointer mb-1 text-xs sm:text-sm ${
-                          selectedTrip?.id === trip.id 
-                            ? 'bg-dashcam-500 text-white' 
-                            : 'bg-gray-100 hover:bg-gray-200 text-gray-800'
-                        }`}
-                      >
-                        <div className="flex justify-between items-center">
-                          <div
-                            className="flex items-center flex-grow"
-                            onClick={() => handleTripFilterChange(trip)}
-                          >
-                            <FaRoute className="inline-block mr-1 sm:mr-2" />
-                            <span className="truncate">{trip.name}</span>
-                          </div>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              downloadOfflineResources(trip);
-                            }}
-                            className="ml-2 p-1 text-gray-600 hover:text-dashcam-500 hover:bg-gray-100 rounded-full"
-                            title="Descargar recursos offline"
-                          >
-                            <FaDownload size={12} />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              
-              {/* Add landmark button */}
-              <div className="flex gap-2">
-                <button
-                  className="flex-1 bg-dashcam-600 hover:bg-dashcam-700 text-white px-3 sm:px-4 py-1.5 sm:py-2 rounded-md flex items-center justify-center text-xs sm:text-sm"
-                  onClick={() => setShowAddForm(!showAddForm)}
-                >
-                  <FaPlus className="mr-1 sm:mr-2" />
-                  {showAddForm ? 'Cancel' : 'Add New Landmark'}
-                </button>
-              </div>
-              
-              {/* Performance warning */}
-              {landmarkCount > 150 && (
-                <div className="mt-2 sm:mt-3 p-1.5 sm:p-2 bg-yellow-50 border border-yellow-200 rounded text-xs sm:text-sm text-yellow-700">
-                  You have {landmarkCount} landmarks displayed, which might impact performance. Use the settings to limit the number of automatically downloaded landmarks.
-                </div>
-              )}
-            </div>
-            
-            {/* Add landmark form */}
-            {showAddForm && (
-              <form className="p-2 sm:p-4 border-t" onSubmit={handleAddLandmark}>
-                <h3 className="font-medium text-gray-700 text-xs sm:text-sm mb-2 sm:mb-3">Add New Landmark</h3>
-                
-                {/* Place search */}
-                <div className="mb-2 sm:mb-4">
-                  <label className="block text-xs sm:text-sm text-gray-600 mb-0.5 sm:mb-1">Search for a place</label>
-                  <div className="flex gap-1 sm:gap-2">
-                    <input
-                      type="text"
-                      className="flex-grow px-2 sm:px-3 py-1 sm:py-2 border rounded-md text-xs sm:text-sm"
-                      placeholder="Search for a place..."
-                      value={placeSearchQuery}
-                      onChange={(e) => setPlaceSearchQuery(e.target.value)}
-                    />
-                    <button
-                      type="button"
-                      className="px-2 sm:px-3 py-1 sm:py-2 bg-gray-100 hover:bg-gray-200 border rounded-md flex items-center"
-                      onClick={searchForPlace}
-                      disabled={searchingPlace}
-                    >
-                      {searchingPlace ? (
-                        <FaSpinner className="animate-spin" />
-                      ) : (
-                        <FaSearch />
-                      )}
-                    </button>
-                  </div>
-                  
-                  {/* Place search results */}
-                  {placeSearchResults.length > 0 && (
-                    <div className="mt-1 sm:mt-2 border rounded-md overflow-hidden max-h-32 sm:max-h-40 overflow-y-auto">
-                      {placeSearchResults.map((place, index) => (
-                        <div 
-                          key={index} 
-                          className="p-1.5 sm:p-2 hover:bg-gray-100 cursor-pointer border-b last:border-b-0"
-                          onClick={() => selectPlace(place)}
-                        >
-                          <div className="font-medium text-xs sm:text-sm">{place.name}</div>
-                          <div className="text-xs text-gray-600 truncate">{place.display_name}</div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                
-                <div className="mb-2 sm:mb-3">
-                  <label className="block text-xs sm:text-sm text-gray-600 mb-0.5 sm:mb-1">Name*</label>
-                  <input
-                    type="text"
-                    className="w-full px-2 sm:px-3 py-1 sm:py-2 border rounded-md text-xs sm:text-sm"
-                    value={newLandmark.name}
-                    onChange={e => setNewLandmark({...newLandmark, name: e.target.value})}
-                    required
-                  />
-                </div>
-                
-                <div className="grid grid-cols-2 gap-2 sm:gap-3 mb-2 sm:mb-3">
-                  <div>
-                    <label className="block text-xs sm:text-sm text-gray-600 mb-0.5 sm:mb-1">Latitude*</label>
-                    <input
-                      type="number"
-                      step="any"
-                      className="w-full px-2 sm:px-3 py-1 sm:py-2 border rounded-md text-xs sm:text-sm"
-                      value={newLandmark.lat}
-                      onChange={e => setNewLandmark({...newLandmark, lat: e.target.value})}
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs sm:text-sm text-gray-600 mb-0.5 sm:mb-1">Longitude*</label>
-                    <input
-                      type="number"
-                      step="any"
-                      className="w-full px-2 sm:px-3 py-1 sm:py-2 border rounded-md text-xs sm:text-sm"
-                      value={newLandmark.lon}
-                      onChange={e => setNewLandmark({...newLandmark, lon: e.target.value})}
-                      required
-                    />
-                  </div>
-                </div>
-                
-                <div className="grid grid-cols-2 gap-2 sm:gap-3 mb-2 sm:mb-3">
-                  <div>
-                    <label className="block text-xs sm:text-sm text-gray-600 mb-0.5 sm:mb-1">Radius (m)</label>
-                    <input
-                      type="number"
-                      className="w-full px-2 sm:px-3 py-1 sm:py-2 border rounded-md text-xs sm:text-sm"
-                      value={newLandmark.radius_m}
-                      onChange={e => setNewLandmark({...newLandmark, radius_m: e.target.value})}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs sm:text-sm text-gray-600 mb-0.5 sm:mb-1">Category</label>
-                    <select
-                      className="w-full px-2 sm:px-3 py-1 sm:py-2 border rounded-md text-xs sm:text-sm"
-                      value={newLandmark.category}
-                      onChange={e => setNewLandmark({...newLandmark, category: e.target.value})}
-                    >
-                      <option value="">Select category</option>
-                      <option value="natural">Natural</option>
-                      <option value="infrastructure">Infrastructure</option>
-                      <option value="gas_station">Gas Station</option>
-                      <option value="restaurant">Restaurant</option>
-                      <option value="hotel">Hotel</option>
-                      <option value="custom">Custom</option>
-                    </select>
-                  </div>
-                </div>
-                
-                <div className="mb-2 sm:mb-3">
-                  <label className="block text-xs sm:text-sm text-gray-600 mb-0.5 sm:mb-1">Description</label>
-                  <textarea
-                    className="w-full px-2 sm:px-3 py-1 sm:py-2 border rounded-md text-xs sm:text-sm"
-                    rows="2"
-                    value={newLandmark.description}
-                    onChange={e => setNewLandmark({...newLandmark, description: e.target.value})}
-                  ></textarea>
-                </div>
-                
-                <button
-                  type="submit"
-                  className="w-full bg-green-600 hover:bg-green-700 text-white px-3 sm:px-4 py-1.5 sm:py-2 rounded-md text-xs sm:text-sm"
-                >
-                  Save Landmark
-                </button>
-              </form>
-            )}
-          </div>
-          
-          {/* Landmarks list */}
-          <div className="bg-white rounded-lg shadow-md overflow-hidden">
-            <div className="bg-dashcam-700 text-white p-2 sm:p-4">
-              <h2 className="font-bold text-sm sm:text-base">
-                {filteredLandmarks.length} {filteredLandmarks.length === 1 ? 'Landmark' : 'Landmarks'} Found
-              </h2>
-            </div>
-            
-            <div className="overflow-y-auto max-h-64 sm:max-h-96">
-              {loading ? (
-                <div className="text-center py-4 sm:py-8">
-                  <div className="animate-spin h-6 w-6 sm:h-8 sm:w-8 border-3 sm:border-4 border-dashcam-500 border-t-transparent rounded-full mx-auto"></div>
-                  <p className="mt-2 text-gray-600 text-xs sm:text-sm">Loading landmarks...</p>
-                </div>
-              ) : filteredLandmarks.length === 0 ? (
-                <div className="text-center py-4 sm:py-8 text-gray-500 text-xs sm:text-sm">
-                  No landmarks found matching your criteria
-                </div>
-              ) : (
-                <ul>
-                  {filteredLandmarks.map(landmark => (
-                    <li 
-                      key={landmark.id} 
-                      className={`p-2 sm:p-3 border-b cursor-pointer hover:bg-gray-50 ${selectedLandmark?.id === landmark.id ? 'bg-gray-100' : ''}`}
-                      onClick={() => handleSelectLandmark(landmark)}
-                    >
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <h3 className="font-medium text-xs sm:text-sm">{landmark.name}</h3>
-                          <div className="flex items-center text-xs text-gray-500">
-                            <span className={`inline-block w-2 h-2 sm:w-3 sm:h-3 rounded-full mr-1`} style={{ backgroundColor: getLandmarkColor(landmark.category) }}></span>
-                            <span className="capitalize">{landmark.category || 'Unknown'}</span>
-                          </div>
-                          {landmark.description && (
-                            <p className="text-xs text-gray-600 mt-0.5 sm:mt-1 line-clamp-1">{landmark.description}</p>
-                          )}
-                        </div>
-                        <button
-                          className="text-red-500 hover:text-red-700 p-1"
-                          title="Delete landmark"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteLandmark(landmark.id);
-                          }}
-                        >
-                          <FaTrash size={12} className="sm:text-sm" />
-                        </button>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </div>
-        </div>
-        
-        {/* Map area */}
-        <div className="lg:w-2/3 xl:w-3/4 h-[350px] sm:h-[450px] md:h-[500px] lg:h-[600px] bg-white rounded-lg shadow-md overflow-hidden">
-          <MapContainer 
-            center={mapCenter} 
-            zoom={mapZoom} 
-            style={{ height: '100%', width: '100%' }}
-            zoomControl={window.innerWidth > 640} // Ocultar controles de zoom en móviles
-          >
-            <OfflineTileLayer
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-              tripId={selectedTrip?.id}
-            />
-            
-            {/* Controller to update map view */}
-            <MapController center={mapCenter} zoom={mapZoom} />
-            
-            {/* Display landmarks on the map */}
-            {filteredLandmarks.map(landmark => (
-              <React.Fragment key={landmark.id}>
-                <Circle
-                  center={[landmark.lat, landmark.lon]}
-                  radius={landmark.radius_m || 100}
-                  pathOptions={{ 
-                    color: getLandmarkColor(landmark.category),
-                    fillColor: getLandmarkColor(landmark.category),
-                    fillOpacity: 0.2 
-                  }}
-                />
-                <LandmarkMarker
-                  landmark={landmark}
-                  icon={createColoredIcon(getLandmarkColor(landmark.category))}
-                >
-                  <div className="flex justify-center mt-1 sm:mt-2">
-                    <button
-                      className="text-red-500 hover:text-red-700 px-1 sm:px-2 py-0.5 sm:py-1 text-xs sm:text-sm"
-                      onClick={() => handleDeleteLandmark(landmark.id)}
-                    >                      <FaTrash className="inline-block mr-1" /> Delete
-                    </button>
-                  </div>
-                </LandmarkMarker>
-              </React.Fragment>
-            ))}
-          </MapContainer>
+  if (loading) {
+    return (
+      <div className="h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <FaSpinner className="animate-spin text-4xl text-primary-600 mx-auto mb-4" />
+          <p className="text-gray-600">Cargando landmarks...</p>
         </div>
       </div>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 bg-gray-50">
+      <Toaster position="top-right" />
+      
+      {/* Top Bar con filtros integrados */}
+      <div 
+        id="landmark-topbar"
+        className="absolute right-0 z-50 left-0 md:left-20"
+        style={{ 
+          top: `${STATUS_BAR_OFFSET}px`
+        }}
+      >
+        <TopBar 
+          title={specificTripFilter ? `Landmarks - ${specificTripFilter.name}` : 'Landmarks Manager'}
+          showBackButton={!!specificTripFilter}
+          onBack={handleBackToTrips}
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+          categoryFilter={categoryFilter}
+          onCategoryChange={setCategoryFilter}
+          selectedTrip={selectedTrip}
+          onTripChange={handleTripChange}
+          trips={trips}
+          showFilters={showFilters}
+          onToggleFilters={() => setShowFilters(!showFilters)}
+          hasActiveFilters={hasActiveFilters}
+          onClearFilters={clearFilters}
+          filteredCount={landmarkCount}
+          totalCount={totalLandmarkCount}
+          onAddLandmark={() => setShowAddForm(true)}
+          onToggleStatistics={() => setShowStatistics(!showStatistics)}
+          onToggleSettings={() => setShowSettings(true)}
+          onBulkDelete={handleBulkDelete}
+          loading={loading}
+        />
+      </div>
+
+      {/* Contenedor principal con mapa grande */}
+      <div 
+        className="absolute right-0 bottom-0 overflow-hidden z-0 left-0 md:left-20"
+        style={{ 
+          top: `${STATUS_BAR_OFFSET}px`,
+        }}
+      >
+        <div className="w-full h-full">
+          <LandmarkMap
+            landmarks={landmarks}
+            mapCenter={mapCenter}
+            mapZoom={mapZoom}
+            selectedLandmark={selectedLandmark}
+            onLandmarkSelect={handleLandmarkSelect}
+            onLandmarkEdit={(landmark) => {
+              // TODO: Implement edit functionality
+              toast.info('Funcionalidad de edición próximamente');
+            }}
+            onLandmarkDelete={handleDeleteLandmark}
+            onZoomChange={handleZoomChange}
+            onMapClick={handleMapClick}
+            tripRoute={selectedTrip?.route_points || null}
+          />
+        </div>
+        
+        {/* Overlay para lista de landmarks (versión desktop) */}
+        <LandmarkListOverlay
+          show={showLandmarkList}
+          onToggle={() => setShowLandmarkList(!showLandmarkList)}
+          landmarks={paginatedLandmarks}
+          selectedLandmark={selectedLandmark}
+          onLandmarkSelect={handleLandmarkSelect}
+          onLandmarkEdit={(landmark) => {
+            // TODO: Implement edit functionality
+            toast.info('Funcionalidad de edición próximamente');
+          }}
+          onLandmarkDelete={handleDeleteLandmark}
+          onViewOnMap={handleViewOnMap}
+          currentPage={currentPage}
+          itemsPerPage={itemsPerPage}
+          onPageChange={setCurrentPage}
+          totalPages={totalPages}
+          position="left"
+        />
+      </div>
+
+      {/* Add Form Modal */}
+      {showAddForm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-[60] flex items-center justify-center p-4">
+          <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <AddLandmarkForm
+              newLandmark={newLandmark}
+              onLandmarkChange={setNewLandmark}
+              onSubmit={handleAddFormSubmit}
+              onCancel={() => setShowAddForm(false)}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Settings Modal */}
+      {showSettings && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-[60] flex items-center justify-center p-4">
+          <div className="w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <LandmarkSettings onClose={() => setShowSettings(false)} />
+          </div>
+        </div>
+      )}
+
+      {/* Statistics Panel (como modal ahora) */}
+      {showStatistics && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-[60] flex items-center justify-center p-4">
+          <div className="w-full max-w-4xl max-h-[90vh] overflow-y-auto bg-white rounded-lg shadow-lg">
+            <div className="p-4 border-b flex justify-between items-center">
+              <h2 className="text-xl font-bold">Estadísticas de Landmarks</h2>
+              <Button 
+                onClick={() => setShowStatistics(false)} 
+                variant="secondary"
+                size="sm"
+              >
+                Cerrar
+              </Button>
+            </div>
+            <div className="p-4">
+              <LandmarkStatistics 
+                landmarks={landmarks}
+                trips={trips}
+                selectedTrip={selectedTrip}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Delete Modal */}
+      {showBulkDelete && (
+        <BulkDeleteModal
+          isOpen={showBulkDelete}
+          onClose={() => setShowBulkDelete(false)}
+          onDeleteComplete={handleBulkDeleteComplete}
+          landmarks={landmarks}
+          trips={trips}
+        />
+      )}
+
+      {/* Mobile Overlay para dispositivos móviles */}
+      <MobileLandmarkOverlay
+        show={showLandmarkList} // Usar el estado real en lugar de false
+        onToggle={() => setShowLandmarkList(!showLandmarkList)}
+        landmarks={paginatedLandmarks}
+        selectedLandmark={selectedLandmark}
+        onLandmarkSelect={handleLandmarkSelect}
+        onLandmarkEdit={(landmark) => {
+          // TODO: Implement edit functionality
+          toast.info('Funcionalidad de edición próximamente');
+        }}
+        onLandmarkDelete={handleDeleteLandmark}
+        onViewOnMap={handleViewOnMap}
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        categoryFilter={categoryFilter}
+        onCategoryChange={setCategoryFilter}
+        selectedTrip={selectedTrip}
+        onTripChange={handleTripChange}
+        trips={trips}
+        showFilters={showFilters}
+        onToggleFilters={setShowFilters}
+        onClearFilters={clearFilters}
+        currentPage={currentPage}
+        itemsPerPage={itemsPerPage}
+        onPageChange={setCurrentPage}
+      />
+
+      {/* Performance Warning - auto-hide después de 10 segundos */}
+      {landmarkCount > performanceThreshold && showPerformanceWarning && (
+        <div className="fixed bottom-4 left-4 right-4 md:left-auto md:w-96 z-40">
+          <Alert type="warning">
+            <Flex align="start" className="gap-2 justify-between"> 
+              <div className="flex-1">
+                <div className="font-medium">Aviso de Rendimiento</div>
+                <div className="text-sm mt-1">
+                  Tienes {landmarkCount} landmarks mostrados, lo que podría afectar el rendimiento del mapa.
+                  Considera usar filtros para reducir la cantidad de landmarks visibles.
+                </div>
+              </div>
+              <Button
+                onClick={() => setShowPerformanceWarning(false)}
+                variant="secondary"
+                size="xs"
+                className="ml-2 flex-shrink-0"
+              >
+                ×
+              </Button>
+            </Flex>
+          </Alert>
+        </div>
+      )}
     </div>
   );
 };

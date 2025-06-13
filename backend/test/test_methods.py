@@ -23,7 +23,7 @@ def test_method(name, func):
 
 def main():
     """Probar métodos individualmente"""
-    from landmarks_db import LandmarksDB
+    from landmarks.core.landmarks_db import LandmarksDB
     db = LandmarksDB()
     
     # Probar métodos uno por uno

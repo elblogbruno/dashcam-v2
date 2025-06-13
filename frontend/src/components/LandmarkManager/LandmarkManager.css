@@ -1,0 +1,82 @@
+/* TopBar height calculation and viewport optimization */
+:root {
+  --topbar-height: 100px;
+  --topbar-height-mobile: 120px;
+  --topbar-height-expanded: 140px;
+}
+
+/* Responsive TopBar heights */
+@media (max-width: 640px) {
+  :root {
+    --topbar-height: var(--topbar-height-mobile);
+  }
+}
+
+/* Dynamic height calculation based on content */
+.topbar-container {
+  min-height: 60px;
+  max-height: 140px;
+  transition: height 0.2s ease-in-out;
+}
+
+.topbar-container.expanded {
+  --topbar-height: var(--topbar-height-expanded);
+}
+
+/* Map container optimization */
+.map-container {
+  height: calc(100vh - var(--topbar-height));
+  position: relative;
+  overflow: hidden;
+}
+
+/* Performance optimizations for landmarks */
+.landmark-cluster-icon {
+  will-change: transform;
+  transform: translateZ(0);
+}
+
+.landmark-marker {
+  will-change: transform;
+  transform: translateZ(0);
+}
+
+/* Smooth transitions for map interactions */
+.leaflet-zoom-animated {
+  transition: transform 0.25s cubic-bezier(0, 0, 0.25, 1);
+}
+
+/* Optimize rendering performance */
+.leaflet-container {
+  background: #f8f9fa;
+}
+
+.leaflet-container .leaflet-marker-icon {
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: crisp-edges;
+}
+
+/* Loading states */
+.landmark-loading-overlay {
+  backdrop-filter: blur(2px);
+  transition: opacity 0.2s ease-in-out;
+}
+
+/* Responsive layout improvements */
+@media (max-width: 768px) {
+  .landmark-list-overlay {
+    width: 100vw !important;
+    right: 0 !important;
+  }
+  
+  .map-container {
+    height: calc(100vh - var(--topbar-height-mobile));
+  }
+}
+
+/* High DPI display optimizations */
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+  .leaflet-container .leaflet-marker-icon {
+    image-rendering: -webkit-optimize-contrast;
+  }
+}

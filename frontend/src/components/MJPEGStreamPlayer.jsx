@@ -1091,51 +1091,7 @@ function MJPEGStreamPlayer({ streamUrl, width = '100%', height = '100%', classNa
         />
       )}
       
-      {/* Botón para expandir/contraer */}
-      {isConnected && (
-        <button
-          className="absolute bottom-2 right-2 bg-blue-600 hover:bg-blue-700 text-white p-1 rounded-full z-20 opacity-70 hover:opacity-100 transition-opacity"
-          onClick={toggleExpand}
-          style={{
-            width: '32px',
-            height: '32px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}
-          title={isExpanded ? "Contraer" : "Expandir"}
-        >
-          <svg 
-            xmlns="http://www.w3.org/2000/svg" 
-            width="16" 
-            height="16" 
-            viewBox="0 0 24 24" 
-            fill="none" 
-            stroke="currentColor" 
-            strokeWidth="2" 
-            strokeLinecap="round" 
-            strokeLinejoin="round"
-          >
-            {isExpanded ? (
-              // Icono de contracción (flechas hacia adentro)
-              <>
-                <polyline points="4 14 10 14 10 20"></polyline>
-                <polyline points="20 10 14 10 14 4"></polyline>
-                <line x1="14" y1="10" x2="21" y2="3"></line>
-                <line x1="3" y1="21" x2="10" y2="14"></line>
-              </>
-            ) : (
-              // Icono de expansión (flechas hacia afuera)
-              <>
-                <polyline points="15 3 21 3 21 9"></polyline>
-                <polyline points="9 21 3 21 3 15"></polyline>
-                <line x1="21" y1="3" x2="14" y2="10"></line>
-                <line x1="3" y1="21" x2="10" y2="14"></line>
-              </>
-            )}
-          </svg>
-        </button>
-      )}
+      
     </div>
   );
 }

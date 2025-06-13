@@ -6,7 +6,7 @@ import { Link } from 'react-router-dom';
 /**
  * Componente que muestra información de localización con diseño mejorado
  */
-function LocationInfo({ location, landmark, darkMode = false }) {
+function LocationInfo({ location, landmark, speed, darkMode = false }) {
   // Función para abrir las coordenadas en Google Maps
   const openInGoogleMaps = () => {
     if (location && location.lat && location.lon) {
@@ -55,13 +55,40 @@ function LocationInfo({ location, landmark, darkMode = false }) {
         <div className="mb-3">
           <div className={`flex justify-between bg-gray-100 p-3 rounded-lg ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
             <div className="flex flex-col">
-              <span className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Velocidad</span>
+              <div className="flex items-center">
+                <span className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Velocidad</span>
+                {speed && speed.source && (
+                  <span className={`ml-2 px-1.5 py-0.5 text-xs rounded ${
+                    speed.source === 'gps' ? 'bg-green-500' :
+                    speed.source === 'calculated' ? 'bg-blue-500' :
+                    speed.source === 'combined' ? 'bg-purple-500' :
+                    'bg-gray-500'
+                  } text-white`}>
+                    {speed.source === 'gps' ? 'GPS' :
+                     speed.source === 'calculated' ? 'CALC' :
+                     speed.source === 'combined' ? 'MIX' : 'N/A'}
+                  </span>
+                )}
+              </div>
               <span className="text-2xl font-bold">
-                {location && location.speed ? Math.round(location.speed) : '0'} <span className="text-sm">km/h</span>
+                {speed && speed.kmh ? Math.round(speed.kmh) : 
+                 (location && location.speed ? Math.round(location.speed) : '0')} 
+                <span className="text-sm"> km/h</span>
               </span>
+              {speed && speed.source !== 'none' && (
+                <div className="text-xs text-gray-500 mt-1">
+                  <div>GPS: {Math.round(speed.gps_speed_kmh || 0)} km/h</div>
+                  <div>Calc: {Math.round(speed.calculated_speed_kmh || 0)} km/h</div>
+                </div>
+              )}
             </div>
             <div className="flex items-center">
-              <FaTachometerAlt className={`text-3xl ${darkMode ? 'text-blue-400' : 'text-blue-500'}`} />
+              <FaTachometerAlt className={`text-3xl ${
+                speed && speed.source === 'none' ? 'text-gray-400' :
+                speed && speed.source === 'gps' || speed && speed.source === 'combined' ? 'text-green-400' :
+                speed && speed.source === 'calculated' ? 'text-blue-400' :
+                darkMode ? 'text-blue-400' : 'text-blue-500'
+              }`} />
             </div>
           </div>
         </div>
@@ -98,6 +125,7 @@ function LocationInfo({ location, landmark, darkMode = false }) {
 LocationInfo.propTypes = {
   location: PropTypes.object,
   landmark: PropTypes.object,
+  speed: PropTypes.object,
   darkMode: PropTypes.bool
 };
 

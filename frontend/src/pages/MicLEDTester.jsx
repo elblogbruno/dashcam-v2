@@ -2,6 +2,10 @@ import { useState, useEffect } from 'react'
 import { FaCircle, FaPlay, FaStop, FaSyncAlt, FaLightbulb, FaPowerOff, FaSun } from 'react-icons/fa'
 import axios from 'axios'
 
+// Layout y UI Components
+import { PageLayout, Section, Flex, Stack, Grid } from '../components/common/Layout'
+import { Button, Card, Alert, Badge } from '../components/common/UI'
+
 function MicLEDTester() {
   const [initialized, setInitialized] = useState(false)
   const [status, setStatus] = useState({
@@ -277,332 +281,346 @@ function MicLEDTester() {
   }
   
   return (
-    <div className="p-4">
-      <div className="flex justify-between items-center mb-4">
-        <h1 className="text-xl font-medium flex items-center">
-          <FaLightbulb className="mr-2" /> Control de LEDs del Micrófono ReSpeaker
-        </h1>
-        <a href="/settings#debug-section" className="text-dashcam-600 hover:text-dashcam-800 text-sm">
+    <PageLayout
+      title="Control de LEDs del Micrófono ReSpeaker"
+      icon={<FaLightbulb />}
+      action={
+        <a href="/settings#debug-section" className="text-primary-600 hover:text-primary-800 text-sm">
           &larr; Volver a Configuración
         </a>
-      </div>
-      
+      }
+    >
       {message && (
-        <div className={`p-3 mb-4 rounded-md ${message.type === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+        <Alert
+          type={message.type}
+          onClose={() => setMessage(null)}
+          className="mb-4"
+        >
           {message.text}
-        </div>
+        </Alert>
       )}
       
-      {/* Status Card */}
-      <div className="card p-4 mb-4">
-        <h2 className="text-lg font-medium mb-2">Estado</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <div className="mb-2">
-              <span className={`inline-block w-3 h-3 rounded-full mr-2 ${status.initialized ? 'bg-green-500' : 'bg-red-500'}`}></span>
-              <span className="font-medium">
-                {status.initialized ? 'LEDs Inicializados' : 'LEDs No Inicializados'}
-              </span>
-            </div>
-            
-            <div className="text-sm text-gray-600">
-              <p>Número de LEDs: {status.leds_count}</p>
-              <p>Animación activa: {status.animation_running ? status.animation_type : 'Ninguna'}</p>
-            </div>
-          </div>
-          
-          <div className="flex justify-end">
-            <button
-              onClick={() => initLEDs(brightness)}
-              disabled={loading}
-              className="btn btn-primary flex items-center"
-            >
-              <FaPowerOff className="mr-1" /> {status.initialized ? 'Reinicializar' : 'Inicializar'} LEDs
-            </button>
-          </div>
-        </div>
-        
-        {/* Brightness slider */}
-        <div className="mt-4">
-          <label className="block text-sm font-medium mb-2 flex items-center">
-            <FaSun className="mr-2" /> Brillo ({brightness}/31)
-          </label>
-          <input
-            type="range"
-            min="1"
-            max="31"
-            value={brightness}
-            onChange={handleBrightnessChange}
-            className="w-full"
-          />
-        </div>
-      </div>
-      
-      {/* LED Select */}
-      <div className="card p-4 mb-4">
-        <h2 className="text-lg font-medium mb-3">LED a controlar</h2>
-        
-        <div className="flex space-x-4">
-          <button
-            className={`px-3 py-2 rounded-md flex items-center ${selectedLED === 'all' ? 'bg-primary text-white' : 'bg-gray-200 text-gray-700'}`}
-            onClick={() => setSelectedLED('all')}
-          >
-            <FaCircle className="mr-2" /> Todos
-          </button>
-          
-          {Array.from({length: status.leds_count}, (_, i) => (
-            <button
-              key={i}
-              className={`px-3 py-2 rounded-md flex items-center ${selectedLED === i.toString() ? 'bg-primary text-white' : 'bg-gray-200 text-gray-700'}`}
-              onClick={() => setSelectedLED(i.toString())}
-            >
-              <FaCircle className="mr-2" /> LED {i}
-            </button>
-          ))}
-        </div>
-      </div>
-      
-      {/* Color Control */}
-      <div className="card p-4 mb-4">
-        <h2 className="text-lg font-medium mb-3">Control de Color</h2>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Custom color picker */}
-          <div>
-            <h3 className="font-medium mb-2">Color Personalizado</h3>
-            
-            <div className="flex items-center mb-3">
-              <div
-                className="w-10 h-10 rounded-md mr-3"
-                style={{ backgroundColor: rgbToHex(customColor) }}
-              ></div>
+      <Stack spacing="lg">
+        {/* Status Card */}
+        <Card>
+          <h2 className="text-lg font-medium mb-4">Estado</h2>
+          <Grid cols="1" mdCols="2" className="gap-4">
+            <Stack spacing="md">
+              <Flex align="center" className="gap-2">
+                <span className={`w-3 h-3 rounded-full ${status.initialized ? 'bg-green-500' : 'bg-red-500'}`}></span>
+                <span className="font-medium">
+                  {status.initialized ? 'LEDs Inicializados' : 'LEDs No Inicializados'}
+                </span>
+              </Flex>
               
-              <input
-                type="color"
-                value={rgbToHex(customColor)}
-                onChange={(e) => setCustomColor(hexToRgb(e.target.value))}
-                className="p-1 border rounded"
-              />
-            </div>
+              <div className="text-sm text-gray-600 space-y-1">
+                <p>Número de LEDs: {status.leds_count}</p>
+                <p>Animación activa: {status.animation_running ? status.animation_type : 'Ninguna'}</p>
+              </div>
+            </Stack>
             
-            <div className="space-y-2">
-              {/* RGB sliders */}
-              <div>
-                <label className="block text-sm mb-1">Rojo ({customColor.r})</label>
-                <input
-                  type="range"
-                  min="0"
-                  max="255"
-                  value={customColor.r}
-                  onChange={(e) => setCustomColor(prev => ({ ...prev, r: parseInt(e.target.value) }))}
-                  className="w-full"
-                  style={{ accentColor: '#ff0000' }}
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm mb-1">Verde ({customColor.g})</label>
-                <input
-                  type="range"
-                  min="0"
-                  max="255"
-                  value={customColor.g}
-                  onChange={(e) => setCustomColor(prev => ({ ...prev, g: parseInt(e.target.value) }))}
-                  className="w-full"
-                  style={{ accentColor: '#00ff00' }}
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm mb-1">Azul ({customColor.b})</label>
-                <input
-                  type="range"
-                  min="0"
-                  max="255"
-                  value={customColor.b}
-                  onChange={(e) => setCustomColor(prev => ({ ...prev, b: parseInt(e.target.value) }))}
-                  className="w-full"
-                  style={{ accentColor: '#0000ff' }}
-                />
-              </div>
-            </div>
-            
-            <div className="mt-3">
-              <button
-                onClick={setColor}
-                disabled={loading || !initialized}
-                className="btn btn-primary mr-2"
+            <Flex justify="end" align="start">
+              <Button
+                onClick={() => initLEDs(brightness)}
+                disabled={loading}
+                variant="primary"
+                size="md"
               >
-                Establecer Color
-              </button>
-              
-              <button
-                onClick={turnOffLEDs}
-                disabled={loading || !initialized}
-                className="btn btn-gray"
-              >
-                Apagar LEDs
-              </button>
-            </div>
-          </div>
+                <FaPowerOff className="mr-2" /> {status.initialized ? 'Reinicializar' : 'Inicializar'} LEDs
+              </Button>
+            </Flex>
+          </Grid>
           
-          {/* Preset colors */}
-          <div>
-            <h3 className="font-medium mb-2">Colores Predefinidos</h3>
+          {/* Brightness slider */}
+          <div className="mt-4">
+            <label className="block text-sm font-medium mb-2 flex items-center">
+              <FaSun className="mr-2" /> Brillo ({brightness}/31)
+            </label>
+            <input
+              type="range"
+              min="1"
+              max="31"
+              value={brightness}
+              onChange={handleBrightnessChange}
+              className="w-full"
+            />
+          </div>
+        </Card>
+        
+        {/* LED Select */}
+        <Card>
+          <h2 className="text-lg font-medium mb-3">LED a controlar</h2>
+          
+          <Flex className="gap-4 flex-wrap">
+            <Button
+              onClick={() => setSelectedLED('all')}
+              variant={selectedLED === 'all' ? 'primary' : 'secondary'}
+              size="md"
+            >
+              <FaCircle className="mr-2" /> Todos
+            </Button>
             
-            <div className="grid grid-cols-4 gap-2">
-              {presetColors.map(preset => (
-                <button
-                  key={preset.name}
-                  className="flex flex-col items-center p-2 rounded-md border hover:border-gray-500"
-                  onClick={() => setPresetColor(preset.name)}
+            {Array.from({length: status.leds_count}, (_, i) => (
+              <Button
+                key={i}
+                onClick={() => setSelectedLED(i.toString())}
+                variant={selectedLED === i.toString() ? 'primary' : 'secondary'}
+                size="md"
+              >
+                <FaCircle className="mr-2" /> LED {i}
+              </Button>
+            ))}
+          </Flex>
+        </Card>
+        
+        {/* Color Control */}
+        <Card>
+          <h2 className="text-lg font-medium mb-4">Control de Color</h2>
+          
+          <Grid cols="1" mdCols="2" className="gap-6">
+            {/* Custom color picker */}
+            <Stack spacing="md">
+              <h3 className="font-medium">Color Personalizado</h3>
+              
+              <Flex align="center" className="gap-3">
+                <div
+                  className="w-10 h-10 rounded-md border"
+                  style={{ backgroundColor: rgbToHex(customColor) }}
+                ></div>
+                
+                <input
+                  type="color"
+                  value={rgbToHex(customColor)}
+                  onChange={(e) => setCustomColor(hexToRgb(e.target.value))}
+                  className="p-1 border rounded"
+                />
+              </Flex>
+              
+              <Stack spacing="sm">
+                {/* RGB sliders */}
+                <div>
+                  <label className="block text-sm mb-1">Rojo ({customColor.r})</label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="255"
+                    value={customColor.r}
+                    onChange={(e) => setCustomColor(prev => ({ ...prev, r: parseInt(e.target.value) }))}
+                    className="w-full"
+                    style={{ accentColor: '#ff0000' }}
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm mb-1">Verde ({customColor.g})</label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="255"
+                    value={customColor.g}
+                    onChange={(e) => setCustomColor(prev => ({ ...prev, g: parseInt(e.target.value) }))}
+                    className="w-full"
+                    style={{ accentColor: '#00ff00' }}
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm mb-1">Azul ({customColor.b})</label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="255"
+                    value={customColor.b}
+                    onChange={(e) => setCustomColor(prev => ({ ...prev, b: parseInt(e.target.value) }))}
+                    className="w-full"
+                    style={{ accentColor: '#0000ff' }}
+                  />
+                </div>
+              </Stack>
+              
+              <Flex className="gap-2">
+                <Button
+                  onClick={setColor}
                   disabled={loading || !initialized}
+                  variant="primary"
+                  size="md"
+                >
+                  Establecer Color
+                </Button>
+                
+                <Button
+                  onClick={turnOffLEDs}
+                  disabled={loading || !initialized}
+                  variant="secondary"
+                  size="md"
+                >
+                  Apagar LEDs
+                </Button>
+              </Flex>
+            </Stack>
+            
+            {/* Preset colors */}
+            <Stack spacing="md">
+              <h3 className="font-medium">Colores Predefinidos</h3>
+              
+              <div className="grid grid-cols-4 gap-2">
+                {presetColors.map(preset => (
+                  <Button
+                    key={preset.name}
+                    onClick={() => setPresetColor(preset.name)}
+                    disabled={loading || !initialized}
+                    variant="ghost"
+                    className="flex flex-col items-center p-2 border hover:border-gray-500"
+                  >
+                    <div
+                      className="w-8 h-8 rounded-full mb-1"
+                      style={{ backgroundColor: preset.color }}
+                    ></div>
+                    <span className="text-xs">{preset.name}</span>
+                  </Button>
+                ))}
+              </div>
+              
+              {/* Add special color: black for turning off */}
+              <Flex justify="center">
+                <Button
+                  onClick={() => setPresetColor('black')}
+                  disabled={loading || !initialized}
+                  variant="ghost"
+                  className="flex flex-col items-center p-2 border hover:border-gray-500"
                 >
                   <div
-                    className="w-8 h-8 rounded-full mb-1"
-                    style={{ backgroundColor: preset.color }}
+                    className="w-8 h-8 rounded-full mb-1 border border-gray-400"
+                    style={{ backgroundColor: '#000000' }}
                   ></div>
-                  <span className="text-xs">{preset.name}</span>
-                </button>
-              ))}
-            </div>
-            
-            {/* Add special color: black for turning off */}
-            <div className="mt-3 flex justify-center">
-              <button
-                className="flex flex-col items-center p-2 rounded-md border hover:border-gray-500"
-                onClick={() => setPresetColor('black')}
-                disabled={loading || !initialized}
-              >
-                <div
-                  className="w-8 h-8 rounded-full mb-1 border border-gray-400"
-                  style={{ backgroundColor: '#000000' }}
-                ></div>
-                <span className="text-xs">off (black)</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-      
-      {/* Animations */}
-      <div className="card p-4 mb-4">
-        <h2 className="text-lg font-medium mb-3">Animaciones</h2>
+                  <span className="text-xs">off (black)</span>
+                </Button>
+              </Flex>
+            </Stack>
+          </Grid>
+        </Card>
         
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            {/* Animation type selector */}
-            <div className="mb-4">
-              <label className="block text-sm font-medium mb-2">Tipo de animación</label>
-              <select
-                value={animationSettings.type}
-                onChange={handleAnimationTypeChange}
-                className="w-full p-2 border rounded-md"
-                disabled={loading || !initialized}
-              >
-                <option value="rotate">Rotación de colores</option>
-                <option value="pulse">Pulsación</option>
-                <option value="rainbow">Arcoíris</option>
-                <option value="blink">Parpadeo</option>
-              </select>
-            </div>
-            
-            {/* Animation delay control */}
-            <div className="mb-4">
-              <label className="block text-sm font-medium mb-2">
-                Velocidad (retardo: {animationSettings.delay}s)
-              </label>
-              <input
-                type="range"
-                min="0.05"
-                max="1"
-                step="0.05"
-                value={animationSettings.delay}
-                onChange={handleAnimationDelayChange}
-                className="w-full"
-                disabled={loading || !initialized}
-              />
-            </div>
-            
-            {/* Animation control buttons */}
-            <div className="flex space-x-2">
-              <button
-                onClick={startAnimation}
-                disabled={loading || !initialized || status.animation_running}
-                className="btn btn-primary flex items-center"
-              >
-                <FaPlay className="mr-2" /> Iniciar
-              </button>
-              
-              <button
-                onClick={stopAnimation}
-                disabled={loading || !initialized || !status.animation_running}
-                className="btn btn-danger flex items-center"
-              >
-                <FaStop className="mr-2" /> Detener
-              </button>
-            </div>
-          </div>
+        {/* Animations */}
+        <Card>
+          <h2 className="text-lg font-medium mb-4">Animaciones</h2>
           
-          <div>
-            <h3 className="font-medium mb-2">Ejemplos de animaciones</h3>
+          <Grid cols="1" mdCols="2" className="gap-6">
+            <Stack spacing="md">
+              {/* Animation type selector */}
+              <div>
+                <label className="block text-sm font-medium mb-2">Tipo de animación</label>
+                <select
+                  value={animationSettings.type}
+                  onChange={handleAnimationTypeChange}
+                  className="w-full p-2 border rounded-md focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                  disabled={loading || !initialized}
+                >
+                  <option value="rotate">Rotación de colores</option>
+                  <option value="pulse">Pulsación</option>
+                  <option value="rainbow">Arcoíris</option>
+                  <option value="blink">Parpadeo</option>
+                </select>
+              </div>
+              
+              {/* Animation delay control */}
+              <div>
+                <label className="block text-sm font-medium mb-2">
+                  Velocidad (retardo: {animationSettings.delay}s)
+                </label>
+                <input
+                  type="range"
+                  min="0.05"
+                  max="1"
+                  step="0.05"
+                  value={animationSettings.delay}
+                  onChange={handleAnimationDelayChange}
+                  className="w-full"
+                  disabled={loading || !initialized}
+                />
+              </div>
+              
+              {/* Animation control buttons */}
+              <Flex className="gap-2">
+                <Button
+                  onClick={startAnimation}
+                  disabled={loading || !initialized || status.animation_running}
+                  variant="primary"
+                  size="md"
+                >
+                  <FaPlay className="mr-2" /> Iniciar
+                </Button>
+                
+                <Button
+                  onClick={stopAnimation}
+                  disabled={loading || !initialized || !status.animation_running}
+                  variant="danger"
+                  size="md"
+                >
+                  <FaStop className="mr-2" /> Detener
+                </Button>
+              </Flex>
+            </Stack>
             
-            <div className="space-y-2 text-sm">
-              <p className="flex items-center">
-                <FaSyncAlt className="mr-2 text-blue-500" /> 
-                <strong>Rotación:</strong> Los colores se mueven alrededor de los LEDs
-              </p>
+            <Stack spacing="md">
+              <h3 className="font-medium">Ejemplos de animaciones</h3>
               
-              <p className="flex items-center">
-                <FaSyncAlt className="mr-2 text-blue-500" /> 
-                <strong>Pulsación:</strong> Los LEDs aumentan y disminuyen su brillo
-              </p>
-              
-              <p className="flex items-center">
-                <FaSyncAlt className="mr-2 text-blue-500" /> 
-                <strong>Arcoíris:</strong> Transición de colores del arcoíris
-              </p>
-              
-              <p className="flex items-center">
-                <FaSyncAlt className="mr-2 text-blue-500" /> 
-                <strong>Parpadeo:</strong> Los LEDs se encienden y apagan alternativamente
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-      
-      {/* Wyoming Integration */}
-      <div className="card p-4">
-        <h2 className="text-lg font-medium mb-3">Integración con Wyoming</h2>
+              <Stack spacing="sm" className="text-sm">
+                <Flex align="center" className="gap-2">
+                  <FaSyncAlt className="text-blue-500" /> 
+                  <span><strong>Rotación:</strong> Los colores se mueven alrededor de los LEDs</span>
+                </Flex>
+                
+                <Flex align="center" className="gap-2">
+                  <FaSyncAlt className="text-blue-500" /> 
+                  <span><strong>Pulsación:</strong> Los LEDs aumentan y disminuyen su brillo</span>
+                </Flex>
+                
+                <Flex align="center" className="gap-2">
+                  <FaSyncAlt className="text-blue-500" /> 
+                  <span><strong>Arcoíris:</strong> Transición de colores del arcoíris</span>
+                </Flex>
+                
+                <Flex align="center" className="gap-2">
+                  <FaSyncAlt className="text-blue-500" /> 
+                  <span><strong>Parpadeo:</strong> Los LEDs se encienden y apagan alternativamente</span>
+                </Flex>
+              </Stack>
+            </Stack>
+          </Grid>
+        </Card>
         
-        <p className="text-sm text-gray-600 mb-3">
-          Este controlador permite probar los LEDs del ReSpeaker 2mic HAT. El código 
-          original proviene del proyecto Wyoming y puede integrarse con él para indicar
-          estados de detección de voz, transcripción, etc.
-        </p>
-        
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-          <div className="border rounded-md p-3 text-center">
-            <div className="w-4 h-4 rounded-full mx-auto mb-2" style={{ backgroundColor: '#FFFF00' }}></div>
-            <span className="text-sm font-medium">Amarillo</span>
-            <p className="text-xs text-gray-500">Escuchando / Procesando</p>
-          </div>
+        {/* Wyoming Integration */}
+        <Card>
+          <h2 className="text-lg font-medium mb-4">Integración con Wyoming</h2>
           
-          <div className="border rounded-md p-3 text-center">
-            <div className="w-4 h-4 rounded-full mx-auto mb-2" style={{ backgroundColor: '#0000FF' }}></div>
-            <span className="text-sm font-medium">Azul</span>
-            <p className="text-xs text-gray-500">Detección activada</p>
-          </div>
+          <p className="text-sm text-gray-600 mb-4">
+            Este controlador permite probar los LEDs del ReSpeaker 2mic HAT. El código 
+            original proviene del proyecto Wyoming y puede integrarse con él para indicar
+            estados de detección de voz, transcripción, etc.
+          </p>
           
-          <div className="border rounded-md p-3 text-center">
-            <div className="w-4 h-4 rounded-full mx-auto mb-2" style={{ backgroundColor: '#00FF00' }}></div>
-            <span className="text-sm font-medium">Verde</span>
-            <p className="text-xs text-gray-500">Transcripción completada</p>
-          </div>
-        </div>
-      </div>
-    </div>
+          <Grid cols="1" mdCols="3" className="gap-4">
+            <Card className="text-center p-4">
+              <div className="w-4 h-4 rounded-full mx-auto mb-2" style={{ backgroundColor: '#FFFF00' }}></div>
+              <Badge variant="warning" className="mb-2">Amarillo</Badge>
+              <p className="text-xs text-gray-500">Escuchando / Procesando</p>
+            </Card>
+            
+            <Card className="text-center p-4">
+              <div className="w-4 h-4 rounded-full mx-auto mb-2" style={{ backgroundColor: '#0000FF' }}></div>
+              <Badge variant="primary" className="mb-2">Azul</Badge>
+              <p className="text-xs text-gray-500">Detección activada</p>
+            </Card>
+            
+            <Card className="text-center p-4">
+              <div className="w-4 h-4 rounded-full mx-auto mb-2" style={{ backgroundColor: '#00FF00' }}></div>
+              <Badge variant="success" className="mb-2">Verde</Badge>
+              <p className="text-xs text-gray-500">Transcripción completada</p>
+            </Card>
+          </Grid>
+        </Card>
+      </Stack>
+    </PageLayout>
   )
 }
 

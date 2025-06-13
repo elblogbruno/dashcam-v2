@@ -87,7 +87,7 @@ export const downloadTripLandmarks = async (tripId, onProgress = null) => {
     });
     
     // Start the download process
-    const response = await fetch(`${API_BASE_URL}/trip-planner/${tripId}/download-landmarks`, {
+    const response = await fetch(`${API_BASE_URL}/landmarks/${tripId}/download-landmarks`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -108,7 +108,7 @@ export const downloadTripLandmarks = async (tripId, onProgress = null) => {
     }
     
     // Create an EventSource to track progress
-    const eventSource = new EventSource(`${API_BASE_URL}/trip-planner/${tripId}/download-landmarks-stream`);
+    const eventSource = new EventSource(`${API_BASE_URL}/landmarks/${tripId}/download-landmarks-stream`);
     
     let lastProgressNotification = null;
     
@@ -118,7 +118,8 @@ export const downloadTripLandmarks = async (tripId, onProgress = null) => {
         
         if (data.type === 'progress') {
           if (onProgress) {
-            onProgress(data.progress, data.detail);
+            // Pass the complete data object with all granular information
+            onProgress(data);
           }
           
           // Mostrar notificaciones de progreso en hitos importantes (cada 25%)
@@ -245,7 +246,7 @@ export const deleteLandmark = async (landmarkId) => {
  */
 export const getLandmarkSettings = async () => {
   try {
-    const response = await fetch(`${API_BASE_URL}/trip-planner/settings/landmarks`);
+    const response = await fetch(`${API_BASE_URL}/settings/landmarks`);
     if (!response.ok) throw new Error('Failed to fetch landmark settings');
     return await response.json();
   } catch (error) {
@@ -261,7 +262,7 @@ export const getLandmarkSettings = async () => {
  */
 export const updateLandmarkSettings = async (settingsData) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/trip-planner/settings/landmarks`, {
+    const response = await fetch(`${API_BASE_URL}/settings/landmarks`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -277,6 +278,49 @@ export const updateLandmarkSettings = async (settingsData) => {
     return await response.json();
   } catch (error) {
     console.error('Error updating landmark settings:', error);
+    throw error;
+  }
+};
+
+/**
+ * Bulk delete landmarks based on criteria
+ * @param {Object} criteria - Deletion criteria
+ * @returns {Promise<Object>} Result of the bulk deletion
+ */
+export const bulkDeleteLandmarks = async (criteria) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/landmarks/bulk-delete`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(criteria),
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.detail || 'Failed to bulk delete landmarks');
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error('Error bulk deleting landmarks:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get all unique landmark categories
+ * @returns {Promise<Array>} List of unique categories
+ */
+export const getLandmarkCategories = async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/landmarks/categories`);
+    if (!response.ok) throw new Error('Failed to fetch landmark categories');
+    const data = await response.json();
+    return data.categories;
+  } catch (error) {
+    console.error('Error fetching landmark categories:', error);
     throw error;
   }
 };

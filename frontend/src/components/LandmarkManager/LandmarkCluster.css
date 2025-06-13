@@ -1,0 +1,66 @@
+/* filepath: /root/dashcam-v2/frontend/src/components/LandmarkManager/LandmarkCluster.css */
+/* Estilos personalizados para los clusters - sobrescribiendo los estilos por defecto */
+
+/* Estilos generales para los clusters */
+.marker-cluster {
+  background-clip: padding-box;
+  border-radius: 50%;
+  text-align: center;
+  font-weight: bold;
+  font-family: sans-serif;
+}
+
+.marker-cluster div {
+  width: 34px; 
+  height: 34px;
+  margin-left: 5px;
+  margin-top: 5px;
+  text-align: center;
+  border-radius: 50%;
+  font: 12px "Helvetica Neue", Arial, Helvetica, sans-serif;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: rgba(255, 255, 255, 0.85);
+}
+
+.marker-cluster span {
+  color: #333;
+  font-weight: bold;
+}
+
+/* Estilos específicos por tamaño de cluster */
+.marker-cluster-small {
+  background-color: rgba(41, 128, 185, 0.7); /* Azul */
+}
+
+.marker-cluster-medium {
+  background-color: rgba(243, 156, 18, 0.7); /* Naranja */
+}
+
+.marker-cluster-large {
+  background-color: rgba(231, 76, 60, 0.7); /* Rojo */
+}
+
+/* Mejorar visibilidad del texto en hover */
+.marker-cluster:hover div {
+  background-color: rgba(255, 255, 255, 0.95);
+}
+
+.marker-cluster:hover span {
+  font-weight: bold;
+}
+
+.marker-cluster-medium {
+  background-color: rgba(243, 156, 18, 0.6);
+}
+
+.marker-cluster-large {
+  background-color: rgba(231, 76, 60, 0.6);
+}
+
+/* Animación para los clusters al acercarse */
+.leaflet-cluster-anim .leaflet-marker-icon, 
+.leaflet-cluster-anim .leaflet-marker-shadow {
+  transition: transform 0.3s ease-out, opacity 0.3s ease-in;
+}

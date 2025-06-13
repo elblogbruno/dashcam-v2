@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 def main():
     """Función para probar añadir y recuperar viajes"""
     try:
-        from landmarks_db import LandmarksDB
+        from landmarks.core.landmarks_db import LandmarksDB
         db = LandmarksDB()
         
         # Crear un viaje de prueba

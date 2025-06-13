@@ -43,13 +43,10 @@ async def stop_recording():
         
         # Verificar la base de datos después de detener la grabación
         try:
-            import sqlite3
-            conn = sqlite3.connect(trip_logger.db_path)
-            cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM video_clips WHERE trip_id = ?", (trip_id,))
-            count = cursor.fetchone()[0]
+            # Use the new trip logger system to get video clip count
+            videos = trip_logger.get_trip_videos(trip_id) if hasattr(trip_logger, 'get_trip_videos') else []
+            count = len(videos)
             logger.info(f"Database now has {count} clips for trip {trip_id}")
-            conn.close()
         except Exception as e:
             logger.error(f"Error verifying database: {e}")
         
@@ -71,50 +68,61 @@ async def recording_status():
 async def debug_database():
     """Endpoint para depurar la base de datos y verificar el contenido de las tablas importantes"""
     try:
-        import sqlite3
-        conn = sqlite3.connect(trip_logger.db_path)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
+        # Use the new trip logger system for database debugging
+        all_trips = trip_logger.get_all_trips(limit=10)
+        trips_count = len(trip_logger.get_all_trips(limit=None))
         
-        # Contar registros en trips
-        cursor.execute("SELECT COUNT(*) as count FROM trips")
-        trips_count = cursor.fetchone()["count"]
+        # Get video clips count (if method exists)
+        clips_count = 0
+        recent_clips = []
         
-        # Contar registros en video_clips
-        cursor.execute("SELECT COUNT(*) as count FROM video_clips")
-        clips_count = cursor.fetchone()["count"]
-        
-        # Obtener hasta 10 viajes más recientes
-        cursor.execute("""
-            SELECT id, start_time, end_time, 
-            (SELECT COUNT(*) FROM video_clips WHERE trip_id = trips.id) as clips_count
-            FROM trips 
-            ORDER BY start_time DESC LIMIT 10
-        """)
-        recent_trips = [dict(trip) for trip in cursor.fetchall()]
-        
-        # Obtener hasta 10 clips más recientes
-        cursor.execute("""
-            SELECT id, trip_id, start_time, end_time, sequence_num, quality,
-            road_video_file, interior_video_file
-            FROM video_clips 
-            ORDER BY start_time DESC LIMIT 10
-        """)
-        recent_clips = [dict(clip) for clip in cursor.fetchall()]
-        
-        conn.close()
+        # Format recent trips for response
+        recent_trips = []
+        for trip in all_trips:
+            trip_dict = trip if isinstance(trip, dict) else {
+                'id': getattr(trip, 'id', None),
+                'start_time': getattr(trip, 'start_time', None),
+                'end_time': getattr(trip, 'end_time', None)
+            }
+            
+            # Get clips count for this trip if possible
+            if hasattr(trip_logger, 'get_trip_videos'):
+                trip_videos = trip_logger.get_trip_videos(trip_dict['id'])
+                trip_dict['clips_count'] = len(trip_videos)
+                clips_count += len(trip_videos)
+                
+                # Add recent clips
+                for video in trip_videos[:5]:  # Limit to 5 per trip
+                    if len(recent_clips) < 10:  # Total limit of 10
+                        video_dict = video if isinstance(video, dict) else {
+                            'id': getattr(video, 'id', None),
+                            'trip_id': getattr(video, 'trip_id', None),
+                            'start_time': getattr(video, 'start_time', None),
+                            'end_time': getattr(video, 'end_time', None),
+                            'sequence_num': getattr(video, 'sequence_num', None),
+                            'quality': getattr(video, 'quality', None),
+                            'road_video_file': getattr(video, 'road_video_file', None),
+                            'interior_video_file': getattr(video, 'interior_video_file', None)
+                        }
+                        recent_clips.append(video_dict)
+            else:
+                trip_dict['clips_count'] = 0
+                
+            recent_trips.append(trip_dict)
         
         return {
             "db_path": trip_logger.db_path,
             "trips_count": trips_count,
             "clips_count": clips_count,
             "recent_trips": recent_trips,
-            "recent_clips": recent_clips
+            "recent_clips": recent_clips,
+            "using_new_system": True
         }
     except Exception as e:
         logger.error(f"Error depurando base de datos: {e}")
         import traceback
         return {
             "error": str(e),
-            "traceback": traceback.format_exc()
+            "traceback": traceback.format_exc(),
+            "using_new_system": True
         }

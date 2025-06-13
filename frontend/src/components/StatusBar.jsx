@@ -1,4 +1,6 @@
+
 import { FaSun, FaMoon } from 'react-icons/fa'
+import SystemMenu from './SystemMenu'
 
 /**
  * Componente de barra de estado que muestra información del sistema y controles
@@ -8,7 +10,7 @@ function StatusBar({
   recordingStatus, 
   isMapPage, 
   darkMode, 
-  onToggleDarkMode 
+  onToggleDarkMode
 }) {
   return (
     <div 
@@ -54,6 +56,11 @@ function StatusBar({
         >
           {darkMode ? <FaSun className="text-yellow-400" /> : <FaMoon className="text-gray-300" />}
         </button>
+
+        {/* Menú del sistema */}
+        <SystemMenu 
+          darkMode={darkMode}
+        />
       </div>
     </div>
   )

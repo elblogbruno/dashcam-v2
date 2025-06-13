@@ -18,6 +18,7 @@ function SimplifiedView({
   streamingMode,
   location,
   landmark,
+  speed,
   cameraStatus,
   cameraImages,
   isRefreshing,
@@ -318,8 +319,28 @@ function SimplifiedView({
                 <div className="mb-3 sm:mb-4"> 
                   <div className="text-base sm:text-lg text-gray-500 mb-1">Velocidad:</div>
                   <div className="text-base sm:text-xl font-medium flex items-center">
-                    <FaCar className="text-dashcam-600 mr-2 text-base sm:text-xl flex-shrink-0" />
-                    {Math.round(location.speed)} km/h
+                    <FaCar className={`mr-2 text-base sm:text-xl flex-shrink-0 ${
+                      speed && speed.source === 'none' ? 'text-gray-400' :
+                      speed && speed.source === 'gps' || speed && speed.source === 'combined' ? 'text-green-500' :
+                      speed && speed.source === 'calculated' ? 'text-blue-500' :
+                      'text-dashcam-600'
+                    }`} />
+                    <span>
+                      {speed && speed.kmh ? Math.round(speed.kmh) : 
+                       (location && location.speed ? Math.round(location.speed) : '0')} km/h
+                    </span>
+                    {speed && speed.source && (
+                      <span className={`ml-2 px-1.5 py-0.5 text-xs rounded ${
+                        speed.source === 'gps' ? 'bg-green-500' :
+                        speed.source === 'calculated' ? 'bg-blue-500' :
+                        speed.source === 'combined' ? 'bg-purple-500' :
+                        'bg-gray-500'
+                      } text-white`}>
+                        {speed.source === 'gps' ? 'GPS' :
+                         speed.source === 'calculated' ? 'CALC' :
+                         speed.source === 'combined' ? 'MIX' : 'N/A'}
+                      </span>
+                    )}
                   </div>
                 </div>
                 
@@ -576,6 +597,7 @@ SimplifiedView.propTypes = {
   streamingMode: PropTypes.number.isRequired,
   location: PropTypes.object.isRequired,
   landmark: PropTypes.object,
+  speed: PropTypes.object,
   cameraStatus: PropTypes.object.isRequired,
   cameraImages: PropTypes.object.isRequired,
   isRefreshing: PropTypes.object.isRequired,

@@ -17,8 +17,9 @@ class Config:
         self.base_path = self._get_base_path()
         self.data_path = self._get_data_path()
         
-        # Database path
+        # Database paths
         self.db_path = os.environ.get('DASHCAM_DB_PATH') or os.path.join(self.data_path, "recordings.db")
+        self.geocoding_db_path = os.environ.get('DASHCAM_GEOCODING_DB_PATH') or os.path.join(self.data_path, "geocoding_offline.db")
         
         # Video storage paths
         self.video_path = os.path.join(self.data_path, "videos")
@@ -33,6 +34,11 @@ class Config:
         
         # Other data paths
         self.landmarks_path = os.path.join(self.data_path, "landmarks.json")
+        
+        # Reverse geocoding configuration
+        self.reverse_geocoding_enabled = os.environ.get('REVERSE_GEOCODING_ENABLED', 'true').lower() == 'true'
+        self.reverse_geocoding_batch_size = int(os.environ.get('REVERSE_GEOCODING_BATCH_SIZE', '10'))
+        self.reverse_geocoding_batch_delay = int(os.environ.get('REVERSE_GEOCODING_BATCH_DELAY', '30'))
         
         # External storage config
         self.default_mount_point = "/mnt/dashcam_storage" if self.is_raspberry_pi else os.path.join(os.getcwd(), "mnt")

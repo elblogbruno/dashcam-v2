@@ -97,7 +97,7 @@ export const downloadLandmarks = async (tripId, onProgressUpdate) => {
     // First explicitly start the download process (this was missing)
     try {
       console.log(`[DEBUG] Initiating download via POST request`);
-      const startDownload = await axios.post(`/api/trip-planner/${tripId}/download-landmarks`, {
+      const startDownload = await axios.post(`/api/landmarks/${tripId}/download-landmarks`, {
         radius_km: 10 // Default radius of 10km
       });
       console.log(`[DEBUG] Download initiation response:`, startDownload.data);
@@ -127,7 +127,7 @@ export const downloadLandmarks = async (tripId, onProgressUpdate) => {
     // Then check if a download is already in progress for this trip
     try {
       console.log(`[DEBUG] Checking if download is in progress via status endpoint`);
-      const statusCheck = await axios.get(`/api/trip-planner/${tripId}/download-landmarks-status`);
+      const statusCheck = await axios.get(`/api/landmarks/${tripId}/download-landmarks-status`);
       console.log(`[DEBUG] Status check response:`, statusCheck.data);
       
       if (statusCheck.data && statusCheck.data.status === "in_progress") {
@@ -147,7 +147,7 @@ export const downloadLandmarks = async (tripId, onProgressUpdate) => {
 
     console.log(`[DEBUG] Creating EventSource for stream endpoint`);
     // Create an EventSource to listen for server-sent events
-    const eventSource = new EventSource(`/api/trip-planner/${tripId}/download-landmarks-stream`);
+    const eventSource = new EventSource(`/api/landmarks/${tripId}/download-landmarks-stream`);
     
     let lastProgressUpdate = 0;
     let lastDetailMessage = "";
@@ -190,9 +190,10 @@ export const downloadLandmarks = async (tripId, onProgressUpdate) => {
       };
       
       eventSource.onerror = (error) => {
-        console.log(`[DEBUG] EventSource error:`, error);
+        console.error(`[DEBUG] EventSource error for geodata:`, error);
+        console.error(`[DEBUG] EventSource readyState:`, eventSource.readyState);
         eventSource.close();
-        reject(error || new Error("Connection lost while downloading landmarks"));
+        reject(error || new Error("Connection lost while downloading geodata"));
       };
     });
   } catch (error) {
@@ -208,6 +209,227 @@ export const searchPlaces = async (query) => {
       limit: 5
     });
     return response.data.results;
+  } catch (error) {
+    throw error;
+  }
+};
+
+export const downloadTripGeodata = async (tripId, options = {}, onProgress = null) => {
+  try {
+    const { radius_km = 10, format = "both", use_optimization = true } = options;
+    
+    console.log(`[DEBUG] Starting geodata download for trip: ${tripId}`);
+    
+    let optimized_radius = radius_km;
+    let download_center = null;
+    let optimization_used = false;
+    
+    // Try to calculate optimized radius first
+    if (use_optimization) {
+      try {
+        console.log(`[DEBUG] Calculating optimal radius for trip: ${tripId}`);
+        const optimizationResponse = await axios.post(`/api/trip-planner/${tripId}/calculate-optimal-geodata-radius`);
+        
+        if (optimizationResponse.data && optimizationResponse.data.recommendation?.use_single_radius) {
+          optimized_radius = optimizationResponse.data.optimal_radius_km;
+          download_center = optimizationResponse.data.center_point;
+          optimization_used = true;
+          
+          console.log(`[DEBUG] Using optimized radius: ${optimized_radius}km at center (${download_center.lat}, ${download_center.lon})`);
+          
+          if (onProgress) {
+            onProgress({
+              progress: 5,
+              detail: `Optimización calculada: radio de ${optimized_radius.toFixed(1)}km (${(optimizationResponse.data.coverage_efficiency * 100).toFixed(1)}% eficiencia)`
+            });
+          }
+        } else {
+          console.log(`[DEBUG] Optimization not efficient for this trip, using traditional approach`);
+          if (onProgress) {
+            onProgress({
+              progress: 5,
+              detail: "Optimización no eficiente, usando descarga tradicional por waypoints"
+            });
+          }
+        }
+      } catch (optimizationError) {
+        console.warn(`[DEBUG] Failed to calculate optimization, falling back to traditional approach:`, optimizationError);
+        if (onProgress) {
+          onProgress({
+            progress: 5,
+            detail: "Error en optimización, usando descarga tradicional"
+          });
+        }
+      }
+    }
+    
+    // Start the download process with appropriate parameters
+    const downloadParams = {
+      radius_km: optimization_used ? optimized_radius : radius_km, // Use optimized radius only if using optimization
+      format
+    };
+    
+    // If we have a single optimized center, use single-point download
+    if (optimization_used && download_center) {
+      downloadParams.use_single_center = true;
+      downloadParams.center_lat = download_center.lat;
+      downloadParams.center_lon = download_center.lon;
+    }
+    
+    const startResponse = await axios.post(`/api/geocoding/trip-geodata/${tripId}/download-geodata`, downloadParams);
+    
+    console.log(`[DEBUG] Geodata download initiation response:`, startResponse.data);
+    
+    // Initial progress update
+    if (onProgress) {
+      onProgress({
+        progress: 0,
+        detail: "Geodata download started..."
+      });
+    }
+    
+    // If no progress callback, just return the initial response
+    if (!onProgress) {
+      return startResponse.data;
+    }
+    
+    // Create EventSource to track progress
+    console.log(`[DEBUG] Creating EventSource for geodata stream: /api/geocoding/trip-geodata/${tripId}/download-geodata-stream`);
+    const eventSource = new EventSource(`/api/geocoding/trip-geodata/${tripId}/download-geodata-stream`);
+    
+    return new Promise((resolve, reject) => {
+      eventSource.onopen = () => {
+        console.log(`[DEBUG] EventSource connection opened for geodata stream`);
+      };
+      
+      eventSource.onmessage = (event) => {
+        try {
+          console.log(`[DEBUG] EventSource received message (length: ${event.data.length}):`, event.data);
+          
+          // Extract JSON from SSE format if needed
+          let jsonData = event.data;
+          if (typeof event.data === 'string' && event.data.includes('data: ')) {
+            // Extract the JSON part after "data: "
+            const lines = event.data.split('\n');
+            const dataLine = lines.find(line => line.startsWith('data: '));
+            if (dataLine) {
+              jsonData = dataLine.substring(6); // Remove "data: " prefix
+            }
+          }
+          
+          console.log(`[DEBUG] Extracted JSON data:`, jsonData);
+          const data = JSON.parse(jsonData);
+          console.log(`[DEBUG] Parsed EventSource data:`, data);
+          
+          if (data.type === 'progress') {
+            if (onProgress) {
+              // Pass the complete data object with all granular information
+              onProgress(data);
+            }
+          } else if (data.type === 'complete') {
+            eventSource.close();
+            resolve(data);
+          } else if (data.type === 'error') {
+            eventSource.close();
+            reject(new Error(data.message || 'Geodata download failed'));
+          }
+        } catch (parseError) {
+          console.error('Error parsing SSE data:', parseError);
+        }
+      };
+      
+      eventSource.onerror = (error) => {
+        console.error('EventSource error:', error);
+        eventSource.close();
+        reject(new Error('Connection lost while downloading geodata'));
+      };
+      
+      // Timeout after 30 minutes
+      setTimeout(() => {
+        eventSource.close();
+        reject(new Error('Geodata download timeout'));
+      }, 30 * 60 * 1000);
+    });
+    
+  } catch (error) {
+    console.error('Error downloading geodata:', error);
+    throw error;
+  }
+};
+
+export const checkGeodataDownloadStatus = async (tripId) => {
+  try {
+    const response = await axios.get(`/api/geocoding/trip-geodata/${tripId}/download-geodata-status`);
+    return response.data;
+  } catch (error) {
+    throw error;
+  }
+};
+
+// Cancel download functions
+export const cancelLandmarksDownload = async (tripId) => {
+  try {
+    const response = await axios.post(`/api/landmarks/${tripId}/cancel-landmarks-download`);
+    return response.data;
+  } catch (error) {
+    throw error;
+  }
+};
+
+export const cancelGeodataDownload = async (tripId) => {
+  try {
+    const response = await axios.post(`/api/geocoding/trip-geodata/${tripId}/cancel-geodata-download`);
+    return response.data;
+  } catch (error) {
+    throw error;
+  }
+};
+
+// Pause and Resume download functions
+export const pauseLandmarksDownload = async (tripId) => {
+  try {
+    const response = await axios.post(`/api/landmarks/${tripId}/pause-landmarks-download`);
+    return response.data;
+  } catch (error) {
+    throw error;
+  }
+};
+
+export const resumeLandmarksDownload = async (tripId) => {
+  try {
+    const response = await axios.post(`/api/landmarks/${tripId}/resume-landmarks-download`);
+    return response.data;
+  } catch (error) {
+    throw error;
+  }
+};
+
+export const pauseGeodataDownload = async (tripId) => {
+  try {
+    const response = await axios.post(`/api/geocoding/trip-geodata/${tripId}/pause-geodata-download`);
+    return response.data;
+  } catch (error) {
+    throw error;
+  }
+};
+
+export const resumeGeodataDownload = async (tripId) => {
+  try {
+    const response = await axios.post(`/api/geocoding/trip-geodata/${tripId}/resume-geodata-download`);
+    return response.data;
+  } catch (error) {
+    throw error;
+  }
+};
+
+// Get download estimates
+export const getDownloadEstimate = async (tripId, radiusKm = 10) => {
+  try {
+    // Use the landmarks optimization endpoint to get estimates
+    const response = await axios.post(`/api/landmarks/${tripId}/optimize-landmarks-radius`, {
+      radius_km: radiusKm
+    });
+    return response.data;
   } catch (error) {
     throw error;
   }
