@@ -2,13 +2,7 @@
 
 A Raspberry Pi dashcam that does more than record. It knows where you are, tells you out loud when you are passing a landmark, switches to high-quality recording near it, and gives you a web app (phone, tablet or in-car screen) to browse every trip.
 
-<p align="center">
-  <a href="docs/media/smart-dashcam.mp4">
-    <img src="docs/media/smart-dashcam.jpg" alt="Smart Dashcam launch video. Click to watch." width="800">
-  </a>
-  <br>
-  <sub>▶ <a href="docs/media/smart-dashcam.mp4">Watch the 22-second video</a></sub>
-</p>
+https://github.com/user-attachments/assets/9fe7ddee-06ec-4674-bfaf-f609fe68f8d9
 
 ## Features
 
